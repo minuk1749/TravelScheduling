@@ -2,7 +2,7 @@
 
 너는 이 저장소의 구현 담당(gpt)이다. **`develop` 브랜치 최신 상태를 기준으로** 작업하라.
 
-먼저 `AGENTS.md`, `docs/requirements.md`, `docs/tasks.md`를 읽어라. 작업 범위와 완료 기준은 `docs/requirements.md` §5의 {{TASK}} 행이다.
+먼저 `AGENTS.md`, `docs/requirements.md`, `docs/tasks.md`, 그리고 있으면 `docs/architecture.md`를 읽어라. 작업 범위와 완료 기준은 `docs/requirements.md` §5의 {{TASK}} 행이다.
 
 ## 반드시 지킬 것
 - **PR 제목은 반드시 `{{TASK}}: `로 시작한다.** (예: `{{TASK}}: {{TITLE}}`) 자동 리뷰가 제목으로 작업을 식별한다.

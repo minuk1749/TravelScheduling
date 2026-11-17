@@ -7,6 +7,7 @@
 - 작업 상태와 담당: `docs/tasks.md` (`develop` 브랜치 기준)
 - 설계 결정 기록: `docs/decisions/NNNN-제목.md` (결정, 이유, 대안)
 - 에이전트의 질문과 가정: `docs/questions.md`
+- 아키텍처: `docs/architecture.md` (T7A에서 작성. 이후 모든 작업은 이 문서의 구조와 인터페이스를 따르고, 바꿔야 하면 문서와 결정 기록을 같은 PR에서 갱신한다)
 
 ## 브랜치
 - `main`: 사람이 검토한 안정 버전. 사람만 머지한다(`develop` → `main`).
