@@ -11,6 +11,9 @@
       },
       "T12": {
         "effort": "xhigh"
+      },
+      "T8A": {
+        "effort": "xhigh"
       }
     }
   },
@@ -20,10 +23,12 @@
       "T7A": "claude-opus-5-5",
       "T12": "claude-opus-5-5",
       "T14": "claude-opus-5-5",
-      "R": "claude-opus-5-5"
+      "R": "claude-opus-5-5",
+      "T8A": "claude-opus-5-5"
     },
     "exec_review": [
       "T7A",
+      "T8A",
       "T12",
       "T14",
       "T15",
