@@ -51,8 +51,8 @@ jobs:
           out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
           R="repos/$GITHUB_REPOSITORY"
 
-          task=$(grep -oE '^T[0-9]+[A-Z]?' <<<"$TITLE" || true)
-          if [ -z "$task" ]; then echo "::notice::작업 PR이 아님(제목이 T번호로 시작하지 않음)"; out go false; exit 0; fi
+          task=$(grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' <<<"$TITLE" || true)
+          if [ -z "$task" ]; then echo "::notice::작업 PR이 아님(제목이 T번호나 R번호로 시작하지 않음)"; out go false; exit 0; fi
           if ! tr ',' '\n' <<<"$ALLOWED" | grep -qxF "$AUTHOR"; then echo "::notice::허용되지 않은 작성자: $AUTHOR"; out go false; exit 0; fi
 
           # 후속 PR이 이전 PR 브랜치를 대상으로 만들어졌으면 develop으로 돌린다
@@ -66,7 +66,7 @@ jobs:
             gh pr close "$old" >/dev/null
           done
 
-          issue=$(gh issue list --state open --label agent-task --json number,title --jq "[.[] | select(.title | startswith(\"$task:\"))] | first | .number // empty")
+          issue=$(gh issue list --state open --json number,title,labels --jq "[.[] | select([.labels[].name] | (index(\"agent-task\") or index(\"refactor-task\"))) | select(.title | startswith(\"$task:\"))] | first | .number // empty")
           out task "$task"; out issue "$issue"
 
           # 보호 경로를 건드리면 자동 처리하지 않는다
@@ -214,7 +214,7 @@ jobs:
             ${{ steps.pick.outputs.exec == 'true' && '이번 리뷰는 실행 리뷰다. `.ctl/.github/agent/prompts/review-exec.md`도 읽고 따르라.' || '' }}
           claude_args: >-
             ${{ steps.pick.outputs.args }}
-            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"}},"required":["verdict","summary","issues"]}'
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"},"refactor":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"scope":{"type":"string"},"reason":{"type":"string"}},"required":["title","scope","reason"]}}},"required":["verdict","summary","issues"]}'
             ${{ steps.pick.outputs.model && format('--model {0}', steps.pick.outputs.model) || '' }}
 
   decide:
@@ -242,6 +242,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           USER_PAT: ${{ secrets.USER_PAT }}
           EXECUTOR: ${{ vars.AGENT_EXECUTOR || 'local' }}
+          REFACTOR_MODE: ${{ vars.AGENT_REFACTOR || 'on' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TASK: ${{ needs.gate.outputs.task }}
           ISSUE: ${{ needs.gate.outputs.issue }}
@@ -261,7 +262,9 @@ jobs:
               "$1" "$TASK" "$PR" "$ROUND" "$RUN_URL" "$R_TEST" "$R_REVIEW" "$PR" > "$RUNNER_TEMP/i.md"
             gh issue create --title "자동 루프 일시중단: $TASK (PR #$PR)" --label agent-paused --body-file "$RUNNER_TEMP/i.md"
           }
-          update_tasks() { # 상태 메시지
+          IS_REFACTOR=false; case "$TASK" in R*) IS_REFACTOR=true;; esac
+          update_tasks() { # 상태 메시지 (리팩터링 작업은 작업표에 없음)
+            if [ "$IS_REFACTOR" = true ]; then return 0; fi
             $T set "$TASK" "상태=$1" "PR=#$PR"
             git add docs/tasks.md
             git commit -q -m "$TASK $1 (PR #$PR)" && git push -q origin develop
@@ -284,6 +287,25 @@ jobs:
             git pull -q --rebase origin develop
             update_tasks 완료
             if [ -n "$ISSUE" ]; then gh issue close "$ISSUE" --comment "PR #$PR 머지로 완료"; fi
+
+            # 리뷰가 구조적 리팩터링을 제안하면 다음 작업 전에 Claude(Opus)가 리팩터링한다
+            nref=$(jq -r '(.refactor // []) | length' <<<"$REVIEW_JSON")
+            if [ "$IS_REFACTOR" = false ] && [ "$REFACTOR_MODE" != off ] && [ "$nref" -gt 0 ]; then
+              gh label create refactor-task --color 0e8a16 --description "Claude가 수행하는 리팩터링" --force >/dev/null
+              k=$(( $(gh issue list --state all --label refactor-task --json number --jq length) + 1 ))
+              rid="R$k"
+              rtitle=$(jq -r '.refactor[0].title' <<<"$REVIEW_JSON")
+              {
+                echo "$TASK (PR #$PR) 리뷰에서 제안된 리팩터링입니다. Claude가 수행하고, 같은 방식으로 테스트와 리뷰를 거쳐 머지됩니다."
+                echo
+                echo "## 항목"
+                jq -r '.refactor[] | "- **" + .title + "**\n  - 범위: " + .scope + "\n  - 이유: " + .reason' <<<"$REVIEW_JSON"
+              } > "$RUNNER_TEMP/r.md"
+              url=$(gh issue create --title "$rid: $rtitle" --label refactor-task --body-file "$RUNNER_TEMP/r.md")
+              gh workflow run agent-refactor.yml --ref develop -f issue="${url##*/}"
+              echo "::notice::리팩터링 $rid 시작 (이슈 ${url##*/})"
+              exit 0
+            fi
             next_task
             exit 0
           fi
@@ -313,6 +335,15 @@ jobs:
             if [ -n "$ISSUE" ]; then gh issue edit "$ISSUE" --remove-label agent-task --add-label needs-human; fi
             update_tasks 보류
             next_task
+            exit 0
+          fi
+
+          # 리팩터링 PR의 수정은 Claude(agent-refactor)가 한다
+          if [ "$IS_REFACTOR" = true ]; then
+            { echo "<!-- agent-feedback round=$ROUND -->"; echo "**자동 피드백 (라운드 $ROUND / 최대 $MAX_ROUNDS)**"; echo; cat "$RUNNER_TEMP/fb.md"; } > "$RUNNER_TEMP/c.md"
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+            gh workflow run agent-refactor.yml --ref develop -f issue="$ISSUE" -f pr="$PR"
+            echo "::notice::리팩터링 수정 요청 → agent-refactor"
             exit 0
           fi
 

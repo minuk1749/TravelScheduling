@@ -39,6 +39,9 @@ jobs:
           if [ "$(gh issue list --label agent-paused --state open --json number --jq length)" != 0 ]; then
             echo "::notice::일시중단 상태(agent-paused 이슈가 열려 있음)"; exit 0
           fi
+          if [ "$(gh issue list --label refactor-task --state open --json number --jq length)" != 0 ]; then
+            echo "::notice::리팩터링 작업이 진행 중이라 새 작업을 시작하지 않음"; exit 0
+          fi
           if [ "$(gh issue list --label agent-task --state open --json number --jq length)" != 0 ]; then
             echo "::notice::진행 중인 작업 이슈가 있어 새 작업을 시작하지 않음"; exit 0
           fi

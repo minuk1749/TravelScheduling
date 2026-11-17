@@ -1,5 +1,5 @@
 {
-  "_설명": "작업별 모델 배정. codex는 Mac 러너(구현·수정), claude는 agent-review(리뷰)가 읽는다. tasks에 없는 작업은 default를 쓴다. 바꾸면 다음 실행부터 적용된다. claude.exec_review에 있는 작업은 Claude가 리뷰 중에 테스트와 확인용 스크립트를 직접 실행한다(사용량·시간 증가, 리뷰 작업에서 PR 코드를 실행).",
+  "_설명": "작업별 모델 배정. codex는 Mac 러너(구현·수정), claude는 agent-review(리뷰)가 읽는다. tasks에 없는 작업은 default를 쓴다. 바꾸면 다음 실행부터 적용된다. claude.exec_review에 있는 작업은 Claude가 리뷰 중에 테스트와 확인용 스크립트를 직접 실행한다(사용량·시간 증가, 리뷰 작업에서 PR 코드를 실행). claude.refactor는 리팩터링 작업(R번호)을 수행하는 모델, tasks와 exec_review의 \"R\"은 모든 리팩터링 PR의 리뷰에 적용된다.",
   "codex": {
     "default": {
       "model": "gpt-6-astra",
@@ -19,13 +19,16 @@
     "tasks": {
       "T7A": "claude-opus-5-5",
       "T12": "claude-opus-5-5",
-      "T14": "claude-opus-5-5"
+      "T14": "claude-opus-5-5",
+      "R": "claude-opus-5-5"
     },
     "exec_review": [
       "T7A",
       "T12",
       "T14",
-      "T15"
-    ]
+      "T15",
+      "R"
+    ],
+    "refactor": "claude-opus-5-5"
   }
 }

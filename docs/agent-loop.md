@@ -70,6 +70,13 @@ bash scripts/agent/install-launchd.sh
 - `claude.exec_review`: 이 목록의 작업은 **실행 리뷰**. Claude가 테스트를 직접 돌리고, 테스트에 없는 경우를 확인용 스크립트로 실행해 본다. 리뷰 시간과 Claude 사용량이 늘고, Claude 토큰이 있는 리뷰 작업에서 PR 코드가 실행된다(본인 러너가 만든 PR만 대상).
 - 이 파일은 보호 파일이라 사람(또는 사람이 지시한 대화형 세션)만 바꾼다.
 
+## 리팩터링 (`agent-refactor.yml`)
+
+- 리뷰가 승인하면서 `refactor` 항목을 제안하면(구조 문제로 곧 버그가 나거나 다음 작업을 막을 때만), 다음 작업 대신 리팩터링 이슈 `R번호`를 만들고 Claude(`models.json`의 `claude.refactor`, 기본 Opus)가 수행한다.
+- 리팩터링 PR은 사용자 토큰으로 올라가 agent-review(테스트 + Opus 실행 리뷰)를 거친다. 수정 요청은 다시 Claude가 반영하고, 머지되면 원래 작업 순서(agent-start)로 돌아간다.
+- 수동 실행: `refactor-task` 라벨 이슈를 제목 `R번호: 내용`으로 만들고 Actions → agent-refactor → 이슈 번호 입력.
+- 끄기: 저장소 변수 `AGENT_REFACTOR=off`.
+
 ## 알려진 제약
 
 - Mac 러너는 저장소 소유자 계정(gh 로그인)으로 PR을 만든다. 그래서 `AGENT_PR_AUTHORS` 기본값에 소유자가 들어 있다.

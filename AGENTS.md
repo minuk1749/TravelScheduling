@@ -15,7 +15,8 @@
 - 작업 브랜치: `t{번호}-{설명}`. PR 대상은 `develop`.
 
 ## 반자동 루프 (`.github/workflows/agent-start.yml`, `agent-review.yml`)
-- 역할: **Codex = 구현(gpt)**, **Claude = 리뷰(claude)**. 한 번에 작업 하나만 진행한다.
+- 역할: **Codex = 구현(gpt)**, **Claude = 리뷰(claude)와 리팩터링**. 한 번에 작업 하나만 진행한다.
+- 리팩터링: 리뷰가 승인하면서 구조적 리팩터링(`refactor` 항목)을 제안하면, 다음 작업 전에 리팩터링 이슈(`R번호: …`, `refactor-task` 라벨)를 만들고 `agent-refactor`에서 Claude(Opus)가 수행해 PR을 올린다. 리팩터링 PR도 테스트와 실행 리뷰를 거쳐 머지되며, 수정 요청도 Claude가 반영한다. 저장소 변수 `AGENT_REFACTOR=off`로 끌 수 있다.
 - 구현 주체는 저장소 변수 `AGENT_EXECUTOR`로 고른다. `local`(기본): Mac 러너(`scripts/agent/local-runner.sh`)가 Codex CLI로 구현하고 PR을 올린다. `cloud`: `@codex` 요청 후 사람이 Codex 화면에서 PR 생성 버튼을 누른다. 두 방식을 동시에 쓰지 않는다.
 - 순서: agent-start가 다음 작업 이슈 생성 → 구현 주체가 PR 생성 → agent-review가 테스트·Claude 리뷰 → 승인이면 `develop`에 머지하고 다음 작업 시작, 아니면 PR에 피드백 댓글(`<!-- agent-feedback -->`) → 구현 주체가 수정.
 - 작업 PR의 제목은 반드시 `T번호: `로 시작한다(자동 리뷰가 제목으로 작업을 식별).

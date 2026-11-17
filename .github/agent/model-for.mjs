@@ -2,11 +2,14 @@
 //   codex  → "모델<TAB>추론강도" 출력 (값이 없으면 빈 칸)
 //   claude → "모델" 출력
 //   claude-exec → 실행 리뷰 대상이면 "true", 아니면 "false"
+//   claude-refactor → 리팩터링 수행 모델
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const [kind, task, file] = process.argv.slice(2);
+const [kind, rawTask, file] = process.argv.slice(2);
+// 리팩터링 작업(R1, R2, …)은 모두 "R" 항목으로 조회한다
+const task = /^R[0-9]+$/.test(rawTask || "") ? "R" : rawTask;
 const src = file || path.join(path.dirname(fileURLToPath(import.meta.url)), "models.json");
 let cfg = {};
 try {
@@ -22,10 +25,12 @@ if (kind === "codex") {
 } else if (kind === "claude") {
   const c = cfg.claude || {};
   process.stdout.write(`${(c.tasks || {})[task] || c.default || ""}\n`);
+} else if (kind === "claude-refactor") {
+  process.stdout.write(`${(cfg.claude || {}).refactor || "claude-opus-5-5"}\n`);
 } else if (kind === "claude-exec") {
   const list = (cfg.claude || {}).exec_review || [];
   process.stdout.write(list.includes(task) ? "true\n" : "false\n");
 } else {
-  console.error("사용법: model-for.mjs <codex|claude|claude-exec> <TASK> [models.json]");
+  console.error("사용법: model-for.mjs <codex|claude|claude-exec|claude-refactor> <TASK> [models.json]");
   process.exit(2);
 }
