@@ -42,7 +42,8 @@ bash scripts/agent/install-launchd.sh
 - 지금 바로 1회 실행: `launchctl kickstart -k gui/$(id -u)/com.travelscheduling.agent`
 - 제거: `bash ~/agent-work/TravelScheduling/scripts/agent/install-launchd.sh --uninstall`
 - Mac이 잠자기에 들어가면 실행되지 않는다. 화면은 꺼져도 되지만 시스템 잠자기는 막아야 한다(시스템 설정 → 배터리 → 옵션 → 전원 어댑터 연결 시 자동 잠자기 방지). 덮개를 닫으면 잠자기에 들어간다.
-- Codex 사용 한도에 걸리면 그 회차는 실패하고 다음 시간에 다시 시도한다.
+- Codex 실행이 **연속 3회 실패**하면(사용 한도 소진, 로그인 만료 등) 러너가 `agent-paused` 이슈를 열고 멈춘다. **사람이 그 이슈를 닫을 때까지 새로 시작하지 않는다.**
+- Codex가 배정한 모델과 다른 모델로 실행되면(자동 대체 등) 결과를 PR로 올리지 않고 바로 `agent-paused` 이슈를 열고 멈춘다.
 
 ## 사람이 하는 일
 

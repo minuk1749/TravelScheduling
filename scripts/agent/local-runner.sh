@@ -19,9 +19,10 @@
 main() {
   set -euo pipefail
 
-  local REPO="${AGENT_REPO:-minuk1749/TravelScheduling}"
+  REPO="${AGENT_REPO:-minuk1749/TravelScheduling}"   # 함수들에서 쓰므로 전역
   local WORKDIR="${AGENT_WORKDIR:-$HOME/agent-work/TravelScheduling}"
   LOCK="${WORKDIR}.lock"   # EXIT trap에서 쓰므로 전역
+  FAILFILE="${WORKDIR}.codex-failures"   # Codex 연속 실패 횟수 (전역)
   local PROTECTED='^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)'
 
   log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
@@ -187,11 +188,48 @@ run_codex() { # prompt_file msg_file task
   if [ -n "$model" ]; then args+=(--model "$model"); fi
   if [ -n "$effort" ]; then args+=(-c "model_reasoning_effort=\"$effort\""); fi
   log "Codex 실행 시작 (작업 ${3:-?}, 모델 ${model:-기본값}, 추론 ${effort:-기본값})"
-  if ! codex "${args[@]}" "$(cat "$1")" < /dev/null; then
-    log "Codex 실행 실패 (사용 한도 소진, 로그인 만료, 네트워크 문제일 수 있음). 다음 실행에서 다시 시도"
+  local out="$TMPD/codex.out" used
+  if ! codex "${args[@]}" "$(cat "$1")" < /dev/null 2>&1 | tee "$out"; then
+    record_failure "${3:-?}" "$out"
     return 1
   fi
+  # 배정한 모델과 실제로 쓰인 모델이 다르면(자동 대체 등) 결과를 쓰지 않고 바로 멈춘다
+  used=$(grep -m1 -E '^model: ' "$out" | sed 's/^model: //' || true)
+  if [ -n "$model" ] && [ -n "$used" ] && [ "$used" != "$model" ]; then
+    log "배정 모델($model)과 실제 모델($used)이 달라 결과를 버리고 멈춤"
+    pause_issue "Codex가 배정한 모델(\`$model\`)이 아니라 \`$used\`로 실행되어, 결과를 PR로 올리지 않고 멈췄습니다 (작업 ${3:-?})." "$out"
+    return 1
+  fi
+  echo 0 > "$FAILFILE"
   log "Codex 실행 종료"
+}
+
+record_failure() { # task output_file
+  local n
+  n=$(( $(cat "$FAILFILE" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > "$FAILFILE"
+  log "Codex 실행 실패 (연속 $n회). 사용 한도 소진, 로그인 만료, 네트워크 문제일 수 있음"
+  if [ "$n" -ge 3 ]; then
+    pause_issue "Codex 실행이 연속 ${n}회 실패해 자동 작업을 멈췄습니다 (작업 $1). 사용 한도 소진이면 한도가 다시 찬 뒤 재개하세요." "$2"
+    echo 0 > "$FAILFILE"
+  fi
+}
+
+pause_issue() { # message output_file
+  gh label create agent-paused -R "$REPO" --color b60205 --description "자동 루프 일시중단" --force >/dev/null 2>&1 || true
+  {
+    echo "$1"
+    echo
+    echo "**재개 방법:** 원인을 해결한 뒤 이 이슈를 닫으면, Mac 러너의 다음 실행(1분 이내)부터 이어서 진행합니다."
+    echo
+    echo "<details><summary>Codex 출력 마지막 부분</summary>"
+    echo
+    echo '```'
+    tail -n 30 "$2" 2>/dev/null || echo "(출력 없음)"
+    echo '```'
+    echo "</details>"
+  } > "$TMPD/pause.md"
+  gh issue create -R "$REPO" --title "자동 루프 일시중단: Codex" --label agent-paused --body-file "$TMPD/pause.md" >/dev/null && log "agent-paused 이슈를 열고 멈춤"
 }
 
 commit_changes() { # message
