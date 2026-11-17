@@ -21,12 +21,16 @@ main() {
 
   local REPO="${AGENT_REPO:-minuk1749/TravelScheduling}"
   local WORKDIR="${AGENT_WORKDIR:-$HOME/agent-work/TravelScheduling}"
-  local LOCK="${WORKDIR}.lock"
+  LOCK="${WORKDIR}.lock"   # EXIT trap에서 쓰므로 전역
   local PROTECTED='^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)'
 
   log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
   # 동시 실행 방지
+  # 비정상 종료로 남은 잠금(3시간 초과)은 지운다
+  if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
+    log "오래된 잠금을 지움: $LOCK"; rmdir "$LOCK" 2>/dev/null || true
+  fi
   if ! mkdir "$LOCK" 2>/dev/null; then
     log "이전 실행이 아직 진행 중이라 건너뜀 ($LOCK)"
     return 0
@@ -166,10 +170,11 @@ install_deps() {
 }
 
 run_codex() { # prompt_file msg_file
-  local args=(exec --full-auto -c sandbox_workspace_write.network_access=true --output-last-message "$2")
+  # codex-cli 0.169 기준: 승인 없이 실행, 작업 폴더 쓰기 허용, 샌드박스 안 네트워크 허용(npm 설치용)
+  local args=(exec -s workspace-write -c 'approval_policy="never"' -c sandbox_workspace_write.network_access=true --output-last-message "$2")
   if [ -n "${CODEX_MODEL:-}" ]; then args+=(--model "$CODEX_MODEL"); fi
   log "Codex 실행 시작"
-  if ! codex "${args[@]}" "$(cat "$1")"; then
+  if ! codex "${args[@]}" "$(cat "$1")" < /dev/null; then
     log "Codex 실행 실패 (사용 한도 소진, 로그인 만료, 네트워크 문제일 수 있음). 다음 실행에서 다시 시도"
     return 1
   fi
