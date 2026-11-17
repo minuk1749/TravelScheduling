@@ -53,6 +53,7 @@ export interface ScheduleResult {
   issues: (
     | { date: string; reason: 'MEAL_UNAVAILABLE'; slot: MealSlot }
     | { date: string; reason: 'UNREACHABLE'; from: string; to: string }
+    | { date: string; reason: 'TIME_WINDOW' }
   )[];
 }
 
@@ -317,6 +318,11 @@ export function scheduleVisits(input: ScheduleInput): ScheduleResult {
     }
     if ('reason' in state.plan) {
       report(day.date, state.plan);
+      // A required daily transfer can overflow even with no visit to reject.
+      // A closed day at the same location needs no transfer and may remain empty.
+      if (state.plan.reason === 'TIME_WINDOW' && (state.available || day.startLocationId !== day.endLocationId)) {
+        result.issues.push({ date: day.date, reason: 'TIME_WINDOW' });
+      }
       for (const item of state.route) {
         if ('visit' in item) result.unplaced.push({
           visitId: item.visit.id, reason: state.plan.reason, fixed: isFixed(item.visit),

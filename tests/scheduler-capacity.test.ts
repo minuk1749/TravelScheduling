@@ -209,6 +209,49 @@ test('can recommend a visit that connects otherwise unreachable daily endpoints'
   assert.equal(connected.time.requiredMinutesLowerBound, 40);
 });
 
+test('rejects an overlong daily transfer even without visits, but accepts an exact fit', () => {
+  const transferDay: SchedulingDay = {
+    ...day([], { activity: { start: '09:00', end: '09:30' } }),
+    endLocationId: 'other-hotel',
+    routes: new Map([['hotel', new Map([['other-hotel', { WALK: { minutes: 60, fare: 0 } }]])]]),
+  };
+  const trip = input([], [transferDay]);
+  const result = checkCapacity(trip);
+  assert.equal(result.status, 'CONFLICT');
+  assert.equal(result.recommendation, null);
+  assert.deepEqual(result.issues, [{ date, reason: 'TIME_WINDOW' }]);
+  assert.equal(result.time.requiredMinutesLowerBound, 60);
+
+  const exact = { ...trip, days: [{ ...transferDay, window: day([], { activity: { start: '09:00', end: '10:00' } }).window }] };
+  const fitted = checkCapacity(exact);
+  assert.equal(fitted.status, 'OK');
+  assert.equal(fitted.recommendation?.schedule.days[0].legs.length, 1);
+  assertRecommendation(exact, fitted);
+});
+
+test('reports a transfer with no available window and rechecks a faster route through a visit', () => {
+  const transferDay: SchedulingDay = {
+    ...day(['bridge'], { activity: { start: '09:00', end: '09:30' } }),
+    endLocationId: 'other-hotel',
+    routes: new Map([
+      ['hotel', new Map([
+        ['other-hotel', { WALK: { minutes: 60, fare: 0 } }],
+        ['bridge', { WALK: { minutes: 5, fare: 0 } }],
+      ])],
+      ['bridge', new Map([['other-hotel', { WALK: { minutes: 5, fare: 0 } }]])],
+    ]),
+  };
+  const unavailable = checkCapacity(input([], [{ ...transferDay, window: { ...transferDay.window, available: null } }]));
+  assert.equal(unavailable.status, 'CONFLICT');
+  assert.deepEqual(unavailable.issues, [{ date, reason: 'TIME_WINDOW' }]);
+
+  const connected = input([visit('bridge', { minutes: 20 })], [transferDay]);
+  const result = checkCapacity(connected);
+  assert.equal(result.status, 'OK');
+  assertRecommendation(connected, result);
+  assert.equal(result.recommendation?.schedule.days[0].legs.length, 2);
+});
+
 test('returns a verified zero when no visit fits, and handles empty input and unavailable days', () => {
   for (const trip of [
     input([visit('too-long', { minutes: 500 })]),

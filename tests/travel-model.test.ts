@@ -29,14 +29,25 @@ test('travel migration preserves existing trips and supports trip settings and c
     await client.query(upsert, [trip, '2026-04-02', '11:00', JSON.stringify(['DINNER'])]);
     const settings = await client.query('SELECT departure_time, meal_slots FROM day_settings WHERE trip_id = $1', [trip]);
     assert.deepEqual(settings.rows, [{ departure_time: '11:00:00', meal_slots: ['DINNER'] }]);
+    const place = randomUUID(), tripPlace = randomUUID();
+    await client.query('INSERT INTO places (id, google_place_id) VALUES ($1, $2)', [place, 'shared-place']);
+    await client.query(`INSERT INTO flights (id, trip_id, direction, airport_place_id, local_datetime)
+      VALUES ($1, $2, 'ARRIVAL', $3, '2026-04-01T08:00')`, [randomUUID(), trip, place]);
+    await client.query(`INSERT INTO lodgings (id, trip_id, place_id, check_in, check_out)
+      VALUES ($1, $2, $3, '2026-04-01', '2026-04-03')`, [randomUUID(), trip, place]);
+    await client.query(`INSERT INTO trip_places (id, trip_id, place_id, kind, duration_minutes, priority)
+      VALUES ($1, $2, $3, 'ATTRACTION', 30, 'REQUIRED')`, [tripPlace, trip, place]);
     const itinerary = randomUUID(), day = randomUUID();
     await client.query("INSERT INTO itineraries (id, trip_id, input_hash, status) VALUES ($1, $2, 'hash', 'OK')", [itinerary, trip]);
     await client.query("INSERT INTO day_plans (id, itinerary_id, date) VALUES ($1, $2, '2026-04-02')", [day, itinerary]);
+    await client.query(`INSERT INTO stops (id, day_plan_id, trip_place_id, place_id, position)
+      VALUES ($1, $2, $3, $4, 0)`, [randomUUID(), day, tripPlace, place]);
     await client.query("INSERT INTO legs (id, day_plan_id, position, selected_mode) VALUES ($1, $2, 0, 'WALK')", [randomUUID(), day]);
     await client.query('DELETE FROM users WHERE id = $1', [user]);
-    for (const table of ['trips', 'day_settings', 'itineraries', 'day_plans', 'legs']) {
+    for (const table of ['trips', 'day_settings', 'flights', 'lodgings', 'trip_places', 'itineraries', 'day_plans', 'stops', 'legs']) {
       assert.equal((await client.query(`SELECT 1 FROM ${table}`)).rowCount, 0, table);
     }
+    assert.deepEqual((await client.query('SELECT id FROM places')).rows, [{ id: place }]);
   } finally {
     await client.query('RESET search_path');
     await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
