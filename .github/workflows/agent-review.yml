@@ -1,7 +1,7 @@
 # 반자동 루프 2단계: Codex가 만든 작업 PR을 테스트하고 Claude가 리뷰한다.
 #
 #  - 승인 + 테스트 통과 → develop에 머지, 작업 완료 처리, agent-start로 다음 작업 시작
-#  - 수정 필요 → PR에 사용자 토큰으로 "@codex 피드백 반영" 요청 (사람이 다시 Codex 화면에서 PR 버튼 클릭)
+#  - 수정 필요 → PR에 피드백 댓글. local이면 Mac 러너가 반영, cloud면 "@codex" 요청 후 사람이 PR 버튼 클릭
 #  - 리뷰 왕복 상한 도달 → needs-human, 작업 보류, 다음 작업 시작
 #  - Claude 실행 실패(구독 한도 소진 포함) → agent-paused 이슈를 열고 멈춤
 #
@@ -61,7 +61,7 @@ jobs:
             echo "::notice::대상 브랜치를 $BASE_REF → develop 으로 변경"
           fi
           # 같은 작업의 이전 PR은 이 PR로 대체되었으므로 닫는다
-          for old in $(gh pr list --state open --json number,title --jq ".[] | select(.number != $PR) | select(.title | test(\"^$task[: ]\")) | .number"); do
+          for old in $(gh pr list --state open --json number,title --jq ".[] | select(.number != $PR) | select(.title | test(\"^${task}[: ]\")) | .number"); do
             gh pr comment "$old" --body "#$PR 로 대체되어 닫습니다."
             gh pr close "$old" >/dev/null
           done
@@ -70,7 +70,7 @@ jobs:
           out task "$task"; out issue "$issue"
 
           # 보호 경로를 건드리면 자동 처리하지 않는다
-          blocked=$(gh api --paginate "$R/pulls/$PR/files" --jq '.[].filename' | grep -E '^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$)' || true)
+          blocked=$(gh api --paginate "$R/pulls/$PR/files" --jq '.[].filename' | grep -E '^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)' || true)
           if [ -n "$blocked" ]; then
             gh pr edit "$PR" --add-label needs-human
             printf '보호된 파일을 수정해서 자동 리뷰·머지를 하지 않습니다. 사람이 확인해 주세요.\n\n```\n%s\n```\n' "$blocked" > "$RUNNER_TEMP/c.md"
@@ -206,6 +206,7 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           USER_PAT: ${{ secrets.USER_PAT }}
+          EXECUTOR: ${{ vars.AGENT_EXECUTOR || 'local' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TASK: ${{ needs.gate.outputs.task }}
           ISSUE: ${{ needs.gate.outputs.issue }}
@@ -280,13 +281,21 @@ jobs:
             exit 0
           fi
 
-          # Codex에 수정 요청 (사용자 토큰: Codex는 연결된 사용자의 댓글에만 반응)
+          # Codex에 수정 요청. 마커는 Mac 러너가 새 피드백을 찾는 데 쓴다.
           {
-            echo "@codex 아래 피드백을 반영해서 이 PR($TASK)을 수정해 줘. 이 PR 브랜치를 기준으로 작업하고, 결과 PR 제목은 반드시 \`$TASK: \`로 시작해야 해. 피드백이 타당하지 않다고 판단하면 고치지 말고 PR 설명의 '남은 이슈'에 근거를 적어 줘."
-            echo
+            echo "<!-- agent-feedback round=$ROUND -->"
+            if [ "$EXECUTOR" = cloud ]; then
+              echo "@codex 아래 피드백을 반영해서 이 PR($TASK)을 수정해 줘. 이 PR 브랜치를 기준으로 작업하고, 결과 PR 제목은 반드시 \`$TASK: \`로 시작해야 해. 피드백이 타당하지 않다고 판단하면 고치지 말고 PR 설명의 '남은 이슈'에 근거를 적어 줘."
+              echo
+            fi
             echo "**자동 피드백 (라운드 $ROUND / 최대 $MAX_ROUNDS)**"
             echo
             cat "$RUNNER_TEMP/fb.md"
           } > "$RUNNER_TEMP/c.md"
-          GH_TOKEN="$USER_PAT" gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
-          echo "::notice::Codex에 수정 요청함. Codex 완료 후 Codex 화면에서 PR 버튼을 눌러 주세요."
+          if [ "$EXECUTOR" = cloud ]; then
+            GH_TOKEN="$USER_PAT" gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+            echo "::notice::Codex에 수정 요청함. Codex 완료 후 Codex 화면에서 PR 버튼을 눌러 주세요."
+          else
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+            echo "::notice::피드백을 남김. Mac 러너가 다음 실행 때 반영한다."
+          fi
