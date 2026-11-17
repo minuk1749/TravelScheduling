@@ -10,3 +10,4 @@ test-results/
 !.env.example
 .agent-prompt.md
 .ctl/
+*.tsbuildinfo
