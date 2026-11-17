@@ -41,3 +41,7 @@ PWA 구성 참고: [Next.js 공식 PWA 안내](https://nextjs.org/docs/app/guide
 `migrations/001_auth.sql`을 PostgreSQL에 적용한 뒤 `.env.local`에 `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 설정합니다. Google OAuth 웹 클라이언트의 승인된 리디렉션 URI에 `http://localhost:3000/api/auth/callback/google`을 등록합니다. 운영 환경에서는 운영 도메인의 HTTPS 콜백을 등록하세요. 비밀 값은 커밋하지 않습니다. Google의 인증된 이메일과 계정 ID만 저장합니다.
 
 여행 조회는 `/api/trips/[id]`에서 소유자에게만 허용합니다. 탈퇴는 사용자 행을 삭제하고 외래 키 연쇄 삭제로 여행을 제거합니다. T3에서 추가할 사용자 소유 데이터는 반드시 사용자 또는 여행에 `ON DELETE CASCADE`로 연결해야 합니다. 기존 세션은 매 요청에서 사용자 존재를 확인하므로 탈퇴 후 다시 사용할 수 없습니다.
+
+## 여행 데이터 마이그레이션
+
+기존 데이터베이스에는 `migrations/001_auth.sql` 적용 후 `migrations/002_travel_model.sql`을 순서대로 한 번씩 적용합니다. T2에서 생성한 소유자 전용 여행은 보존되며 새 필드는 비어 있을 수 있습니다. 항공편의 현지 일시는 해당 여행의 IANA 시간대와 함께 해석합니다. 날짜별 설정은 `(trip_id, date)`를 기준으로 저장하며, 값이 없는 항목은 여행 기본값을 사용합니다. 장소는 여행과 분리된 공유 캐시이므로 만료 시각을 확인해야 합니다.
