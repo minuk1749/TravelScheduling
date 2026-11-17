@@ -14,12 +14,13 @@
 - 작업 브랜치: `t{번호}-{설명}`. PR 대상은 `develop`.
 
 ## 반자동 루프 (`.github/workflows/agent-start.yml`, `agent-review.yml`)
-- 역할: **Codex(클라우드) = 구현(gpt)**, **Claude = 리뷰(claude)**. 한 번에 작업 하나만 진행한다.
-- 순서: agent-start가 다음 작업 이슈를 만들고 `@codex`로 요청 → **사람이 Codex 화면에서 PR 생성 버튼 클릭** → agent-review가 테스트·Claude 리뷰 → 승인이면 `develop`에 머지하고 다음 작업 시작, 아니면 PR에 `@codex` 수정 요청(다시 사람 클릭).
+- 역할: **Codex = 구현(gpt)**, **Claude = 리뷰(claude)**. 한 번에 작업 하나만 진행한다.
+- 구현 주체는 저장소 변수 `AGENT_EXECUTOR`로 고른다. `local`(기본): Mac 러너(`scripts/agent/local-runner.sh`)가 Codex CLI로 구현하고 PR을 올린다. `cloud`: `@codex` 요청 후 사람이 Codex 화면에서 PR 생성 버튼을 누른다. 두 방식을 동시에 쓰지 않는다.
+- 순서: agent-start가 다음 작업 이슈 생성 → 구현 주체가 PR 생성 → agent-review가 테스트·Claude 리뷰 → 승인이면 `develop`에 머지하고 다음 작업 시작, 아니면 PR에 피드백 댓글(`<!-- agent-feedback -->`) → 구현 주체가 수정.
 - 작업 PR의 제목은 반드시 `T번호: `로 시작한다(자동 리뷰가 제목으로 작업을 식별).
 - 리뷰 왕복 상한(기본 3라운드)에 도달하면 `needs-human` 라벨을 붙이고 작업을 `보류`로 바꾼 뒤 다음 작업으로 넘어간다.
 - Claude 실행이 실패하면(구독 한도 소진 포함) `agent-paused` 이슈를 열고 멈춘다.
-- `.github/**`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/tasks.md`를 수정한 PR은 자동 머지하지 않고 사람 검토로 넘긴다. 이 파일들은 사람(또는 사람이 지시한 대화형 세션)만 수정한다.
+- `.github/**`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/tasks.md`, `scripts/agent/**`를 수정한 PR은 자동 머지하지 않고 사람 검토로 넘긴다. 이 파일들은 사람(또는 사람이 지시한 대화형 세션)만 수정한다.
 
 ## 작업 방식 (사람이 지시한 대화형 작업 포함)
 1. 작업 시작 전에 `docs/tasks.md`에서 해당 작업을 `진행중`으로 바꾸고 담당과 브랜치를 기록한다.

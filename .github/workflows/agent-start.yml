@@ -1,7 +1,9 @@
-# 반자동 루프 1단계: 다음 작업을 골라 이슈를 만들고 Codex 클라우드에 요청한다.
+# 루프 1단계: 다음 작업을 골라 작업 이슈를 만든다.
 #
 # 실행 시점: agent-review가 PR을 머지하거나 보류한 직후(자동), 또는 Actions 화면에서 수동 실행.
-# 이후 사람이 Codex 작업 화면에서 PR 생성 버튼을 누르면 agent-review가 이어서 처리한다.
+# 구현 주체는 저장소 변수 AGENT_EXECUTOR로 고른다.
+#   local(기본): Mac 러너가 이슈를 읽어 Codex CLI로 구현하고 PR을 올린다.
+#   cloud: 이슈에 @codex를 요청하고, 사람이 Codex 화면에서 PR 생성 버튼을 누른다.
 name: agent-start
 
 on:
@@ -28,11 +30,12 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           USER_PAT: ${{ secrets.USER_PAT }}
+          EXECUTOR: ${{ vars.AGENT_EXECUTOR || 'local' }}
         run: |
           set -euo pipefail
           T="node .github/agent/tasks.mjs"
 
-          if [ -z "$USER_PAT" ]; then echo "::error::USER_PAT 시크릿이 없음"; exit 1; fi
+          if [ "$EXECUTOR" = cloud ] && [ -z "$USER_PAT" ]; then echo "::error::USER_PAT 시크릿이 없음"; exit 1; fi
           if [ "$(gh issue list --label agent-paused --state open --json number --jq length)" != 0 ]; then
             echo "::notice::일시중단 상태(agent-paused 이슈가 열려 있음)"; exit 0
           fi
@@ -59,6 +62,10 @@ jobs:
           git commit -q -m "$id 시작 (이슈 #$num)"
           git push -q origin develop
 
-          # Codex는 저장소에 연결된 사용자의 댓글에만 반응하므로 사용자 토큰으로 요청한다
-          GH_TOKEN="$USER_PAT" gh issue comment "$num" --body "@codex 이 이슈 본문의 지시대로 $id 를 구현하고 develop 브랜치 대상 PR을 준비해 줘. PR 제목은 반드시 \`$id: \`로 시작해야 해."
-          echo "::notice::$id 시작: 이슈 #$num. Codex 완료 후 Codex 화면에서 PR 생성 버튼을 눌러 주세요."
+          if [ "$EXECUTOR" = cloud ]; then
+            # Codex 클라우드는 저장소에 연결된 사용자의 댓글에만 반응하므로 사용자 토큰으로 요청한다
+            GH_TOKEN="$USER_PAT" gh issue comment "$num" --body "@codex 이 이슈 본문의 지시대로 $id 를 구현하고 develop 브랜치 대상 PR을 준비해 줘. PR 제목은 반드시 \`$id: \`로 시작해야 해."
+            echo "::notice::$id 시작: 이슈 #$num. Codex 완료 후 Codex 화면에서 PR 생성 버튼을 눌러 주세요."
+          else
+            echo "::notice::$id 시작: 이슈 #$num. Mac 러너(scripts/agent/local-runner.sh)가 다음 실행 때 구현한다."
+          fi
