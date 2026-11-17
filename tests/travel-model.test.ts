@@ -44,3 +44,29 @@ test('travel migration preserves existing trips and supports trip settings and c
     await pool.end();
   }
 });
+
+test('city profile migration stores night hours and fare provenance', async () => {
+  const pool = createDatabasePool();
+  const client = await pool.connect();
+  const schema = `test_city_${randomUUID().replaceAll('-', '')}`;
+  try {
+    await client.query(`CREATE SCHEMA ${schema}`);
+    await client.query(`SET search_path TO ${schema}`);
+    for (const migration of ['001_auth.sql', '002_travel_model.sql', '003_city_profile_night_hours.sql']) {
+      await client.query(await readFile(`migrations/${migration}`, 'utf8'));
+    }
+    await client.query(`INSERT INTO city_profiles
+      (city_code, country, currency, taxi_base_fare, taxi_fare_per_km, taxi_fare_per_minute,
+       night_surcharge, night_start, night_end, source, updated_at)
+      VALUES ('TEST', 'Test', 'TST', 100, 20, 2, 0.2, '22:00', '05:00', 'https://example.test/fares', '2026-11-18T00:00:00Z')`);
+    const result = await client.query('SELECT night_start, night_end, source, updated_at FROM city_profiles WHERE city_code = $1', ['TEST']);
+    assert.deepEqual(result.rows[0], {
+      night_start: '22:00:00', night_end: '05:00:00', source: 'https://example.test/fares', updated_at: new Date('2026-11-18T00:00:00Z'),
+    });
+  } finally {
+    await client.query('RESET search_path');
+    await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    client.release();
+    await pool.end();
+  }
+});
