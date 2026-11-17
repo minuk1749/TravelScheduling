@@ -1,8 +1,8 @@
 # 아키텍처
 
-기준: 2026-11-18, T7A 감사와 T8A 시작 시 `develop`의 `c2baedc`를 바탕으로 갱신.
+기준: 2026-11-18, T9 시작 시 `develop`의 `50f0110`를 바탕으로 갱신.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
-**현재**는 T1–T8A에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
+**현재**는 T1–T9에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
 디렉터리·서비스·HTTP 응답은 아직 존재하지 않는다. 구조나 계약 변경 시 이 문서와
 [결정 기록](decisions/0001-pure-core-and-service-boundaries.md)을 같은 PR에서 갱신한다.
 
@@ -27,7 +27,7 @@ src/
     capacity.ts                현재: 실제 배치 기반 수용량·추천 검증
   fare/index.ts                현재: 도시 프로필 타입, 순수 택시 요금 계산
   places/                      현재 T8: 장소 포트·좌표 캐시·Google 어댑터·HTTP 처리
-  travel-time/                 후속 T9: 이동시간 포트·캐시·Google 어댑터
+  travel-time/                 현재 T9: 이동시간 포트·선택적 캐시·Google 어댑터·서버 팩터리
   repositories/                후속 T10/T12: 여행·장소 ID·프로필·일정 SQL 경계
   services/itinerary.ts         후속 T12: 입력 조립, 재조회 루프, 결과 저장
 migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비
@@ -157,30 +157,19 @@ export const fareProvider: FareProvider = { estimateTaxiFare };
 
 ## 4. 후속 제공자와 저장소 계약
 
-장소 포트는 **T8 구현**을 직접 참조하며 이동시간/저장소는 **T9/T10/T12 구현 방향**이다.
+장소와 이동시간 포트는 **T8/T9 구현**을 직접 참조하며 저장소는 **T10/T12 구현 방향**이다.
 외부 SDK 타입, `pg` 행, Next.js `Request`를 이 경계 너머로 넘기지 않는다.
 
 ```typescript
-type Money = { amount: number; currency: string };
-type Location = { id: string; coordinates: Visit['coordinates'] };
 // T8: 구현과 문서가 같은 계약을 사용한다. location은 캐시 가능한 좌표 조회다.
 export type {
   PlaceProvider, PlaceSearchRequest, PlaceDetailsRequest, PlaceSummary, PlaceDetails, PlaceLocation,
 } from '../src/places';
 
-type ProviderMode = 'TRANSIT' | 'WALK' | 'DRIVE';
-type TravelEstimate = { durationSeconds: number; distanceMeters: number; fare: Money | null };
-type TravelAlternatives = Partial<Record<ProviderMode, TravelEstimate>>;
-type TravelRequest = {
-  departure: string; // 오프셋 있는 instant (ISO 8601)
-  timeZone: string;
-  modes: readonly ProviderMode[];
-};
-export interface TravelTimeProvider {
-  matrix(input: TravelRequest & { locations: readonly Location[] }):
-    Promise<ReadonlyMap<string, ReadonlyMap<string, TravelAlternatives>>>;
-  route(input: TravelRequest & { from: Location; to: Location }): Promise<TravelAlternatives>;
-}
+export type {
+  Money, Location, ProviderMode, TravelEstimate, TravelAlternatives,
+  TravelRequest, MatrixRequest, RouteRequest, TravelMatrix, TravelTimeProvider,
+} from '../src/travel-time';
 ```
 
 장소 검색은 한국어 요청이며 이름의 한국어 표기가 없는 경우를 허용한다. 내부 `Location.id`는
@@ -202,8 +191,29 @@ API는 `GET /api/places?query=도쿄&regionCode=JP`,
 응답은 `{places, attribution}` 또는 `{place, attribution}`이며 공급자 attribution도 전달한다.
 세부 통합과 UI 표시 책임은 [T8 인계](t8-handoff.md)를 따른다.
 
-이동시간 캐시는 T9에서 출발 instant/모드/방향/좌표 등 결과를 바꾸는 모든 입력을 키에 반영하고,
-최신 약관을 별도로 확인해야 한다. 장소 좌표 캐시 정책을 다른 필드나 서비스에 확대하지 않는다.
+T9 [이동시간 제공자](../src/travel-time/index.ts)는 기존 matrix/route 계약을 구현한다.
+`matrix`는 고유 장소 ID(최대 100개)의 방향성 행렬이며 대각선도 Google 응답을 따른다.
+`GoogleTravelTimeProvider`는 `computeRouteMatrix`를 TRANSIT 10×10, WALK/DRIVE 25×25로
+분할하고 응답 인덱스로 복원한다. 수단별 경로 없음은 해당 키 생략, 요금 없음은 null이다.
+TRANSIT 요금의 units/nanos를 통화와 함께 숫자로 변환하고 WALK/DRIVE 요금은 null이다.
+`route`는 행렬 응답 대신 `computeRoutes`를 사용한다. TRANSIT에 정확한 출발 instant를 전달하며
+실시간 교통 제외 요구에 따라 DRIVE는 `TRAFFIC_UNAWARE`를 사용한다. WALK/DRIVE 외부 요청에는
+출발 시각을 보내지 않는다. 서비스 요청에는 항상 IANA 시간대와 오프셋 있는 instant가 필요하다.
+주행시간에 택시 호출 대기를 추가하지 않는다. 초→분, 미터→km 및 DRIVE→TAXI 변환은 T12 책임이다.
+
+[캐시](../src/travel-time/cache.ts)는 인스턴스별로 요청 종류/정규화한 instant/시간대/모드/방향/ID/좌표를
+키에 담고, 명시적으로 TTL을 설정했을 때만 완료 응답을 보관한다(최대 24시간, 기본 32개 요청).
+행렬 장소와 모드 순서만 정규화하며 시각·좌표를 반올림하지 않는다. 만료 타이머·용량 초과로
+삭제하고 오류는 보관하지 않는다. 동시 요청은 합치되 반환 결과는 복제하며 dispose 후 재사용할 수 없다.
+행렬과 구간 캐시는 서로 재사용하지 않아 재조회 의미를 보존한다.
+
+Google 기본 [서버 팩터리](../src/travel-time/server.ts)는 `GOOGLE_ROUTES_API_KEY`를 호출 시 읽고
+완료 응답 캐시를 끈다. Google의 시간·거리·요금 보관 허용을 확인하지 못했기 때문이다.
+같은 진행 중 요청만 합치고 완료 후 순차 반복에는 외부 호출이 있다. 따라서 T9의 반복 호출 0회
+기준은 캐시 허용 제공자에 대해서만 자동 검증되며 Google 기본 연결에서는 **미충족/사람 확인 필요**다.
+근거와 대안은 [ADR 0005](decisions/0005-travel-time-provider-and-cache.md), 통합 책임과 테스트는
+[T9 인계](t9-handoff.md)에 기록했다. 장소 좌표 캐시 정책을 Routes 응답에 확대하지 않는다.
+새 공개 HTTP 엔드포인트는 없으며 T12가 인증·소유권 검증 뒤 제공자를 생성한다.
 
 ```typescript
 // 저장소가 SQL의 nullable/JSONB/시간 표현을 검증·변환한 입력 스냅샷.
@@ -334,12 +344,14 @@ day_plans → stops/legs`의 FK cascade로 실행한다. 공유 장소 캐시와
 | `unplaced.TIME_WINDOW/UNREACHABLE/FIXED_ORDER` | 방문 ID에 연결된 실패 원인. `WISH`는 오류가 아닌 의도적 미배치 | 원래 실패와 추천에서 제외된 목록을 구분 |
 | `issues.MEAL_UNAVAILABLE/UNREACHABLE/TIME_WINDOW` | 식사 슬롯/연결 실패/일일 경로의 시간창 실패. 마지막 것은 T7A 추가 | 날짜별 진단으로 표시. 방문 없는 숙소 이동 초과도 `CONFLICT` |
 | 요금 없음 | null 또는 `TaxiFareEstimate.UNAVAILABLE` | 이동 가능 여부와 분리하고 정보 없음 표시 |
-| 외부 API 장애·쿼터/DB 장애 | T8: 제공자 실패 503, 잘못된 외부 응답 502, 내부 실패 500 | 502/503 또는 내부 오류 500으로 구분, 비밀 값·SQL·공급자 원문을 응답에 노출하지 않음 |
+| 외부 API 장애·쿼터/DB 장애 | T8: 제공자 실패 503, 잘못된 외부 응답 502, 내부 실패 500. T9: TravelProviderError의 UNAVAILABLE/INVALID_RESPONSE | T12는 각각 503/502로 변환, 내부 오류는 500. 비밀 값·SQL·공급자 원문을 응답에 노출하지 않음 |
 
 가용 시간도 없고 시작/종료가 같은 빈 날은 이동이 필요 없어 빈 일정이 가능하다.
 시작/종료가 다르면 이동을 생략해 성공으로 처리할 수 없다. 진단은 해당 휴리스틱 시도의
-실패이며 최소 충돌 집합을 보장하지 않는다. T12에서 추가할 공급자 오류 타입은 위 의미를
-보존하며, 캐시 만료/네트워크 실패를 영업 종료나 이동 불가와 섞지 않는다.
+실패이며 최소 충돌 집합을 보장하지 않는다. T9의 TravelInputError는 입력 오류이며
+TravelProviderError는 외부 장애다. 누락·중복 행렬 요소, 잘못된 단위/요금은 INVALID_RESPONSE,
+HTTP/네트워크/행렬 요소의 nonzero status는 UNAVAILABLE로 실패한다. 부분 성공을 반환하지 않는다.
+T12는 캐시 만료/네트워크 실패를 영업 종료나 이동 불가와 섞지 않는다.
 
 ## 7. T1–T7 코드와 문서 차이 점검
 
