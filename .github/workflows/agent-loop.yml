@@ -1,0 +1,499 @@
+# Codex(구현) ↔ Claude(리뷰) 자동 루프
+#
+# 한 번 실행 = 한 라운드: plan → codex → publish → test → review → decide
+# decide가 다음 라운드를 workflow_dispatch로 다시 실행한다.
+# (GITHUB_TOKEN으로 만든 push/PR은 다른 워크플로를 실행하지 않으므로, 테스트와 리뷰를 이 워크플로 안에서 처리한다)
+#
+# 멈추는 조건
+#   - 열린 이슈에 `agent-paused` 라벨이 있음 (에이전트 실행 실패 시 자동 생성. 닫으면 재개)
+#   - 이번 체인의 예산(AGENT_NIGHT_BUDGET 라운드) 소진
+#   - 자동으로 진행할 수 있는 작업이 없음
+name: agent-loop
+
+on:
+  schedule:
+    - cron: "17 14 * * *" # 매일 23:17 KST
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "implement: 다음 작업 시작 / fix: 열린 PR 수정"
+        type: choice
+        options: [implement, fix]
+        default: implement
+      pr:
+        description: "fix 모드의 PR 번호"
+        type: string
+        default: ""
+      round:
+        description: "fix 모드의 라운드 번호"
+        type: string
+        default: "1"
+      budget:
+        description: "남은 라운드 수 (비우면 AGENT_NIGHT_BUDGET 변수, 기본 12)"
+        type: string
+        default: ""
+
+concurrency:
+  group: agent-loop
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BASE: develop
+  MAX_ROUNDS: ${{ vars.AGENT_MAX_ROUNDS || '3' }}
+  NODE_VERSION: "24"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.p.outputs.go }}
+      mode: ${{ steps.p.outputs.mode }}
+      task: ${{ steps.p.outputs.task }}
+      title: ${{ steps.p.outputs.title }}
+      branch: ${{ steps.p.outputs.branch }}
+      pr: ${{ steps.p.outputs.pr }}
+      round: ${{ steps.p.outputs.round }}
+      budget: ${{ steps.p.outputs.budget }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.BASE }}
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: .ctl
+          persist-credentials: false
+      - id: p
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode || 'implement' }}
+          IN_PR: ${{ inputs.pr }}
+          IN_ROUND: ${{ inputs.round || '1' }}
+          IN_BUDGET: ${{ inputs.budget }}
+          NIGHT_BUDGET: ${{ vars.AGENT_NIGHT_BUDGET || '12' }}
+        run: |
+          set -euo pipefail
+          out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+          T="node .ctl/.github/agent/tasks.mjs"
+
+          paused=$(gh issue list --label agent-paused --state open --json number --jq length)
+          if [ "$paused" != "0" ]; then echo "::notice::일시중단 상태(agent-paused 이슈가 열려 있음)"; out go false; exit 0; fi
+
+          budget="${IN_BUDGET:-$NIGHT_BUDGET}"
+          if [ "$budget" -le 0 ]; then echo "::notice::이번 체인의 라운드 예산 소진"; out go false; exit 0; fi
+          out budget "$budget"
+
+          # implement 모드라도 진행 중인 에이전트 PR이 있으면 그것부터 마무리한다(중단 후 재개 대비)
+          if [ "$MODE" = implement ]; then
+            open=$(gh pr list --base "$BASE" --label agent --state open --json number,labels \
+              --jq '[.[] | select([.labels[].name] | index("needs-human") | not)] | first | .number // empty' || true)
+            if [ -n "$open" ]; then
+              MODE=fix; IN_PR="$open"
+              n=$(gh pr view "$open" --json comments --jq '[.comments[] | select(.body | contains("<!-- agent-review -->"))] | length')
+              IN_ROUND=$((n + 1))
+              echo "::notice::진행 중인 PR #$open 을 라운드 $IN_ROUND 로 재개"
+            fi
+          fi
+          out mode "$MODE"
+
+          if [ "$MODE" = implement ]; then
+            json=$($T next)
+            if [ "$json" = "{}" ]; then echo "::notice::자동으로 진행할 수 있는 작업이 없음"; out go false; exit 0; fi
+            id=$(jq -r .id <<<"$json")
+            out task "$id"
+            out title "$(jq -r .title <<<"$json")"
+            out branch "$(tr 'A-Z' 'a-z' <<<"$id")-agent"
+            out round 1
+            out pr ""
+          else
+            info=$(gh pr view "$IN_PR" --json headRefName,title,state)
+            if [ "$(jq -r .state <<<"$info")" != OPEN ]; then echo "::notice::PR #$IN_PR 이 열려 있지 않음"; out go false; exit 0; fi
+            if [ "$IN_ROUND" -gt "$MAX_ROUNDS" ]; then echo "::notice::라운드 상한 초과"; out go false; exit 0; fi
+            id=$(jq -r .title <<<"$info" | grep -oE '^T[0-9]+[A-Z]?')
+            out task "$id"
+            out title "$($T title "$id")"
+            out branch "$(jq -r .headRefName <<<"$info")"
+            out round "$IN_ROUND"
+            out pr "$IN_PR"
+          fi
+          out go true
+
+  codex:
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      message: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.mode == 'fix' && needs.plan.outputs.branch || env.BASE }}
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: .ctl
+          persist-credentials: false
+      - run: printf '.ctl/\n.agent-prompt.md\n' >> .git/info/exclude
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Codex 샌드박스에는 네트워크가 없으므로 의존성은 미리 설치한다
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi
+      - name: Fetch latest feedback
+        if: needs.plan.outputs.mode == 'fix'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.plan.outputs.pr }}
+        run: |
+          gh pr view "$PR" --json comments \
+            --jq '[.comments[] | select(.body | contains("<!-- agent-review -->"))] | last | .body // ""' \
+            > "$RUNNER_TEMP/feedback.md"
+      - name: Build prompt
+        env:
+          MODE: ${{ needs.plan.outputs.mode }}
+          TASK: ${{ needs.plan.outputs.task }}
+          TITLE: ${{ needs.plan.outputs.title }}
+          ROUND: ${{ needs.plan.outputs.round }}
+        run: node .ctl/.github/agent/prompt.mjs "$MODE" "$TASK" "$TITLE" "$ROUND" "$RUNNER_TEMP/feedback.md" > .agent-prompt.md
+      - id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .agent-prompt.md
+          permission-profile: ":workspace"
+          model: ${{ vars.CODEX_MODEL }}
+          effort: ${{ vars.CODEX_EFFORT }}
+      - name: Save changes as patch
+        run: |
+          git add -A
+          git diff --cached --binary > "$RUNNER_TEMP/changes.patch"
+          echo "patch bytes: $(wc -c < "$RUNNER_TEMP/changes.patch")"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: changes
+          path: ${{ runner.temp }}/changes.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [plan, codex]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      changed: ${{ steps.apply.outputs.changed }}
+      pr: ${{ steps.apply.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.mode == 'fix' && needs.plan.outputs.branch || env.BASE }}
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: .ctl
+          persist-credentials: false
+      - run: printf '.ctl/\n' >> .git/info/exclude
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: changes
+          path: ${{ runner.temp }}
+      - id: apply
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.plan.outputs.mode }}
+          TASK: ${{ needs.plan.outputs.task }}
+          TITLE: ${{ needs.plan.outputs.title }}
+          BRANCH: ${{ needs.plan.outputs.branch }}
+          ROUND: ${{ needs.plan.outputs.round }}
+          PR: ${{ needs.plan.outputs.pr }}
+          CODEX_MESSAGE: ${{ needs.codex.outputs.message }}
+        run: |
+          set -euo pipefail
+          out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          patch="$RUNNER_TEMP/changes.patch"
+          out pr "$PR"
+
+          if [ "$MODE" = implement ]; then git switch -C "$BRANCH"; fi
+          if [ -s "$patch" ]; then git apply --index "$patch"; fi
+
+          # 보호 경로는 되돌린다
+          reverted=""
+          for f in $(git diff --cached --name-only | grep -E '^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$)' || true); do
+            if git cat-file -e "HEAD:$f" 2>/dev/null; then git restore --staged --worktree --source=HEAD -- "$f"; else git rm -q --cached -f -- "$f"; fi
+            reverted="$reverted $f"
+          done
+
+          # Codex는 네트워크가 없으므로 lockfile은 여기서 갱신한다
+          if git diff --cached --name-only | grep -qx package.json || { [ -f package.json ] && [ ! -f package-lock.json ]; }; then
+            npm install --package-lock-only --ignore-scripts
+            git add package-lock.json
+          fi
+
+          if git diff --cached --quiet; then
+            echo "::warning::Codex가 반영할 변경을 만들지 못함"
+            out changed false
+            exit 0
+          fi
+          out changed true
+
+          if [ "$MODE" = implement ]; then
+            node .ctl/.github/agent/tasks.mjs set "$TASK" "상태=리뷰" "담당=gpt" "브랜치=$BRANCH"
+            git add docs/tasks.md
+          fi
+          git commit -q -m "$TASK: $TITLE (round $ROUND)" -m "Codex 구현, agent-loop 자동 커밋"
+          git push -q --force-with-lease -u origin "$BRANCH"
+
+          note=""
+          [ -n "$reverted" ] && note=$'\n\n> 보호 경로라서 되돌린 변경:'"$reverted"
+          if [ "$MODE" = implement ]; then
+            gh label create agent --color 5319e7 --description "agent-loop가 만든 PR" --force >/dev/null
+            gh label create needs-human --color d93f0b --description "사람 확인 필요" --force >/dev/null
+            printf '%s\n\n---\n작업: `%s` · 라운드 1 · 구현: Codex · 리뷰: Claude%s\n' "$CODEX_MESSAGE" "$TASK" "$note" > "$RUNNER_TEMP/body.md"
+            url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TASK $TITLE" --label agent --body-file "$RUNNER_TEMP/body.md")
+            out pr "${url##*/}"
+          else
+            printf '<!-- agent-fix -->\n**Codex 수정 (라운드 %s)**\n\n%s%s\n' "$ROUND" "$CODEX_MESSAGE" "$note" > "$RUNNER_TEMP/body.md"
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+  test:
+    needs: [plan, publish]
+    if: needs.publish.outputs.changed == 'true' || (needs.publish.result == 'success' && needs.plan.outputs.mode == 'fix')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app
+    outputs:
+      passed: ${{ steps.t.outputs.passed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - id: t
+        run: |
+          set +e
+          {
+            if [ ! -f package.json ]; then echo "package.json 없음"; exit 1; fi
+            npm ci || exit 1
+            npm run --if-present lint || exit 1
+            npm run --if-present typecheck || exit 1
+            npm run --if-present build || exit 1
+            npm run --if-present test || exit 1
+            if node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
+              npx playwright install --with-deps chromium && npm run test:e2e -- --trace off || exit 1
+            fi
+          } > test.log 2>&1
+          code=$?
+          tail -n 200 test.log
+          if [ $code -eq 0 ]; then echo "passed=true" >> "$GITHUB_OUTPUT"; else echo "passed=false" >> "$GITHUB_OUTPUT"; fi
+          tail -n 150 test.log > test-tail.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-log
+          path: test-tail.log
+          retention-days: 7
+
+  review:
+    needs: [plan, publish, test]
+    if: needs.test.outputs.passed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.plan.outputs.branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: .ctl
+          persist-credentials: false
+      - id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          prompt: |
+            저장소 ${{ github.repository }}, PR #${{ needs.publish.outputs.pr }}, 작업 ${{ needs.plan.outputs.task }} ${{ needs.plan.outputs.title }}, 라운드 ${{ needs.plan.outputs.round }}.
+            기준 브랜치는 origin/develop 이다. `.ctl/.github/agent/prompts/review.md`를 읽고 그 지시를 따르라.
+          claude_args: >-
+            --max-turns 40
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+            --disallowedTools "Edit,Write,NotebookEdit"
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"}},"required":["verdict","summary","issues"]}'
+            ${{ vars.CLAUDE_MODEL && format('--model {0}', vars.CLAUDE_MODEL) || '' }}
+
+  decide:
+    needs: [plan, codex, publish, test, review]
+    if: always() && needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.BASE }}
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: .ctl
+          persist-credentials: false
+      - run: printf '.ctl/\n' >> .git/info/exclude
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-log
+          path: ${{ runner.temp }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          MODE: ${{ needs.plan.outputs.mode }}
+          TASK: ${{ needs.plan.outputs.task }}
+          BRANCH: ${{ needs.plan.outputs.branch }}
+          ROUND: ${{ needs.plan.outputs.round }}
+          BUDGET: ${{ needs.plan.outputs.budget }}
+          PR: ${{ needs.publish.outputs.pr }}
+          CHANGED: ${{ needs.publish.outputs.changed }}
+          R_CODEX: ${{ needs.codex.result }}
+          R_PUBLISH: ${{ needs.publish.result }}
+          R_TEST: ${{ needs.test.result }}
+          R_REVIEW: ${{ needs.review.result }}
+          PASSED: ${{ needs.test.outputs.passed }}
+          REVIEW_JSON: ${{ needs.review.outputs.result }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          T="node .ctl/.github/agent/tasks.mjs"
+          next_budget=$((BUDGET - 1))
+
+          dispatch() { # mode [pr] [round]
+            if [ "$next_budget" -le 0 ]; then echo "::notice::라운드 예산 소진, 체인 종료"; return; fi
+            gh workflow run agent-loop.yml --ref "$WORKFLOW_REF" -f mode="$1" -f pr="${2:-}" -f round="${3:-1}" -f budget="$next_budget"
+          }
+          pause() {
+            gh label create agent-paused --color b60205 --description "agent-loop 일시중단" --force >/dev/null
+            printf '%s\n\n- 작업: `%s` (모드 %s, 라운드 %s)\n- 실행 기록: %s\n- 작업 결과: codex=%s, publish=%s, test=%s, review=%s\n\nAPI 사용량 한도 초과, 키 오류, 일시적 장애일 수 있습니다. 원인을 해결한 뒤 이 이슈를 닫으면 다음 예약 실행부터 재개됩니다(바로 재개하려면 agent-loop를 수동 실행).\n' \
+              "$1" "$TASK" "$MODE" "$ROUND" "$RUN_URL" "$R_CODEX" "$R_PUBLISH" "$R_TEST" "$R_REVIEW" > "$RUNNER_TEMP/issue.md"
+            gh issue create --title "agent-loop 일시중단: $TASK" --label agent-paused --body-file "$RUNNER_TEMP/issue.md"
+          }
+          hold_on_develop() { # reason
+            $T set "$TASK" "상태=보류" "PR=${PR:+#$PR}"
+            git add docs/tasks.md
+            git commit -q -m "$TASK 보류: $1" && git push -q origin "$BASE"
+          }
+
+          # 1) 에이전트 실행 자체가 실패 → 일시중단 (사용량 한도 소진 포함)
+          if [ "$R_CODEX" != success ] || [ "$R_PUBLISH" != success ] || [ "$R_REVIEW" = failure ] || [ "$R_TEST" = failure ]; then
+            pause "에이전트 또는 파이프라인 단계가 실패해 루프를 멈췄습니다."
+            exit 0
+          fi
+
+          # 2) 처음 구현에서 변경이 없음 → 보류하고 다음 작업
+          if [ "$MODE" = implement ] && [ "$CHANGED" != true ]; then
+            hold_on_develop "Codex가 변경을 만들지 못함"
+            dispatch implement
+            exit 0
+          fi
+
+          verdict=$(printf '%s' "${REVIEW_JSON:-}" | jq -r '.verdict // empty' 2>/dev/null || true)
+          if [ "$PASSED" = true ] && [ -z "$verdict" ]; then
+            pause "Claude 리뷰가 판정을 반환하지 않았습니다(턴 한도 도달 또는 출력 오류)."
+            exit 0
+          fi
+
+          # 3) 테스트 통과 + 승인 → develop에 머지
+          if [ "$PASSED" = true ] && [ "$verdict" = approve ]; then
+            jq -r '"<!-- agent-approve -->\n**Claude 승인 (라운드 '"$ROUND"')**\n\n" + .summary + (if (.notes // "") != "" then "\n\n참고: " + .notes else "" end)' <<<"$REVIEW_JSON" > "$RUNNER_TEMP/c.md"
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+            git fetch -q origin "$BRANCH"
+            git switch -q -c "$BRANCH" "origin/$BRANCH"
+            $T set "$TASK" "상태=완료" "PR=#$PR"
+            git add docs/tasks.md
+            git commit -q -m "$TASK 완료 처리"
+            git push -q origin "$BRANCH"
+            gh pr merge "$PR" --squash --delete-branch
+            dispatch implement
+            exit 0
+          fi
+
+          # 4) 수정 필요 → 피드백 댓글 후 다음 라운드 또는 사람에게 넘김
+          {
+            echo "<!-- agent-review -->"
+            echo "**자동 피드백 (라운드 $ROUND)**"
+            echo
+            if [ "$PASSED" != true ]; then
+              echo "### 테스트 실패 (lint / typecheck / build / test 중 하나)"
+              echo '```'
+              cat "$RUNNER_TEMP/test-tail.log" 2>/dev/null || echo "(로그 없음)"
+              echo '```'
+            else
+              echo "### Claude 리뷰: 수정 요청"
+              jq -r '.summary + "\n" + ([.issues[] | "\n- **" + .file + "**: " + .problem + "\n  - 수정 방향: " + .fix] | join(""))' <<<"$REVIEW_JSON"
+            fi
+          } > "$RUNNER_TEMP/c.md"
+          gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+
+          if [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
+            gh pr edit "$PR" --add-label needs-human
+            gh pr comment "$PR" --body "라운드 상한($MAX_ROUNDS)에 도달해 사람 확인으로 넘깁니다. 이 작업에 의존하는 작업은 건너뜁니다."
+            hold_on_develop "라운드 상한 도달 (PR #$PR)"
+            dispatch implement
+          else
+            dispatch fix "$PR" "$((ROUND + 1))"
+          fi

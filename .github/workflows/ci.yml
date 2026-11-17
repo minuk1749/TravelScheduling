@@ -1,0 +1,38 @@
+# 사람이 만든 PR과 main/develop 푸시용 CI
+# (agent-loop가 만든 커밋은 GITHUB_TOKEN 제약으로 이 워크플로를 실행하지 않으며, agent-loop 안에서 같은 검사를 한다)
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Check
+        run: |
+          if [ ! -f package.json ]; then echo "package.json 없음(T1 전), 건너뜀"; exit 0; fi
+          npm ci
+          npm run --if-present lint
+          npm run --if-present typecheck
+          npm run --if-present build
+          npm run --if-present test
