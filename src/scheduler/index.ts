@@ -88,3 +88,4 @@ export function calculateDayWindow(input: DayWindowInput): DayWindowResult {
 
 export { scheduleVisits, type ScheduleInput, type ScheduleResult, type SchedulingDay, type Visit } from './placement';
 export { selectTravelMode, type RouteEstimate, type RouteOptions, type TaxiPolicy, type TravelMode } from './transport';
+export { checkCapacity, type CapacityResult, type CapacityRecommendation, type CapacityTimeSummary } from './capacity';
