@@ -1,0 +1,292 @@
+# 반자동 루프 2단계: Codex가 만든 작업 PR을 테스트하고 Claude가 리뷰한다.
+#
+#  - 승인 + 테스트 통과 → develop에 머지, 작업 완료 처리, agent-start로 다음 작업 시작
+#  - 수정 필요 → PR에 사용자 토큰으로 "@codex 피드백 반영" 요청 (사람이 다시 Codex 화면에서 PR 버튼 클릭)
+#  - 리뷰 왕복 상한 도달 → needs-human, 작업 보류, 다음 작업 시작
+#  - Claude 실행 실패(구독 한도 소진 포함) → agent-paused 이슈를 열고 멈춤
+#
+# pull_request_target을 쓰는 이유: 워크플로 정의를 PR이 아닌 기준 브랜치에서 가져오기 위해서다.
+# PR 코드를 실행하는 test 잡에는 비밀 값을 넘기지 않고 읽기 권한만 준다.
+name: agent-review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MAX_ROUNDS: ${{ vars.AGENT_MAX_ROUNDS || '3' }}
+  PR: ${{ github.event.pull_request.number }}
+
+jobs:
+  gate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    outputs:
+      go: ${{ steps.g.outputs.go }}
+      task: ${{ steps.g.outputs.task }}
+      issue: ${{ steps.g.outputs.issue }}
+      round: ${{ steps.g.outputs.round }}
+    steps:
+      - id: g
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: ${{ github.event.pull_request.title }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          ALLOWED: ${{ vars.AGENT_PR_AUTHORS || format('chatgpt-codex-connector[bot],{0}', github.repository_owner) }}
+        run: |
+          set -euo pipefail
+          out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+          R="repos/$GITHUB_REPOSITORY"
+
+          task=$(grep -oE '^T[0-9]+[A-Z]?' <<<"$TITLE" || true)
+          if [ -z "$task" ]; then echo "::notice::작업 PR이 아님(제목이 T번호로 시작하지 않음)"; out go false; exit 0; fi
+          if ! tr ',' '\n' <<<"$ALLOWED" | grep -qxF "$AUTHOR"; then echo "::notice::허용되지 않은 작성자: $AUTHOR"; out go false; exit 0; fi
+
+          # 후속 PR이 이전 PR 브랜치를 대상으로 만들어졌으면 develop으로 돌린다
+          if [ "$BASE_REF" != develop ]; then
+            gh api -X PATCH "$R/pulls/$PR" -f base=develop >/dev/null
+            echo "::notice::대상 브랜치를 $BASE_REF → develop 으로 변경"
+          fi
+          # 같은 작업의 이전 PR은 이 PR로 대체되었으므로 닫는다
+          for old in $(gh pr list --state open --json number,title --jq ".[] | select(.number != $PR) | select(.title | test(\"^$task[: ]\")) | .number"); do
+            gh pr comment "$old" --body "#$PR 로 대체되어 닫습니다."
+            gh pr close "$old" >/dev/null
+          done
+
+          issue=$(gh issue list --state open --label agent-task --json number,title --jq "[.[] | select(.title | startswith(\"$task:\"))] | first | .number // empty")
+          out task "$task"; out issue "$issue"
+
+          # 보호 경로를 건드리면 자동 처리하지 않는다
+          blocked=$(gh api --paginate "$R/pulls/$PR/files" --jq '.[].filename' | grep -E '^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$)' || true)
+          if [ -n "$blocked" ]; then
+            gh pr edit "$PR" --add-label needs-human
+            printf '보호된 파일을 수정해서 자동 리뷰·머지를 하지 않습니다. 사람이 확인해 주세요.\n\n```\n%s\n```\n' "$blocked" > "$RUNNER_TEMP/c.md"
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+            out go false; exit 0
+          fi
+
+          n=0
+          if [ -n "$issue" ]; then
+            n=$(gh api --paginate "$R/issues/$issue/comments" --jq '.[].body' | grep -c '<!-- agent-review -->' || true)
+          fi
+          out round "$((n + 1))"
+          out go true
+
+  test:
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app
+    outputs:
+      passed: ${{ steps.t.outputs.passed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - id: t
+        run: |
+          set +e
+          {
+            if [ ! -f package.json ]; then echo "package.json 없음"; exit 1; fi
+            npm ci || exit 1
+            npm run --if-present lint || exit 1
+            npm run --if-present typecheck || exit 1
+            npm run --if-present build || exit 1
+            npm run --if-present test || exit 1
+            if node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
+              npx playwright install --with-deps chromium && npm run test:e2e -- --trace off || exit 1
+            fi
+          } > test.log 2>&1
+          code=$?
+          tail -n 200 test.log
+          tail -n 150 test.log > test-tail.log
+          if [ $code -eq 0 ]; then echo "passed=true" >> "$GITHUB_OUTPUT"; else echo "passed=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-log
+          path: test-tail.log
+          retention-days: 7
+
+  review:
+    needs: [gate, test]
+    if: needs.test.outputs.passed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: develop
+          path: .ctl
+          persist-credentials: false
+      - env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          git fetch -q origin develop:refs/remotes/origin/develop || true
+          printf '%s\n' "$BODY" > .ctl-pr-body.md
+          printf '.ctl/\n.ctl-pr-body.md\n' >> .git/info/exclude
+      - id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: |
+            저장소 ${{ github.repository }}, PR #${{ github.event.pull_request.number }}, 작업 ${{ needs.gate.outputs.task }}, 라운드 ${{ needs.gate.outputs.round }}.
+            기준 브랜치는 origin/develop 이다. `.ctl/.github/agent/prompts/review.md`를 읽고 그 지시를 따르라.
+          claude_args: >-
+            --max-turns 40
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+            --disallowedTools "Edit,Write,NotebookEdit"
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"}},"required":["verdict","summary","issues"]}'
+            ${{ vars.CLAUDE_MODEL && format('--model {0}', vars.CLAUDE_MODEL) || '' }}
+
+  decide:
+    needs: [gate, test, review]
+    if: always() && needs.gate.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: develop
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-log
+          path: ${{ runner.temp }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          USER_PAT: ${{ secrets.USER_PAT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TASK: ${{ needs.gate.outputs.task }}
+          ISSUE: ${{ needs.gate.outputs.issue }}
+          ROUND: ${{ needs.gate.outputs.round }}
+          R_TEST: ${{ needs.test.result }}
+          R_REVIEW: ${{ needs.review.result }}
+          PASSED: ${{ needs.test.outputs.passed }}
+          REVIEW_JSON: ${{ needs.review.outputs.result }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          T="node .github/agent/tasks.mjs"
+
+          pause() {
+            printf '%s\n\n- 작업: `%s`, PR #%s, 라운드 %s\n- 실행 기록: %s\n- 결과: test=%s, review=%s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. 해결한 뒤 이 이슈를 닫고, PR #%s 에서 Actions의 agent-review를 다시 실행(Re-run)해 주세요.\n' \
+              "$1" "$TASK" "$PR" "$ROUND" "$RUN_URL" "$R_TEST" "$R_REVIEW" "$PR" > "$RUNNER_TEMP/i.md"
+            gh issue create --title "자동 루프 일시중단: $TASK (PR #$PR)" --label agent-paused --body-file "$RUNNER_TEMP/i.md"
+          }
+          update_tasks() { # 상태 메시지
+            $T set "$TASK" "상태=$1" "PR=#$PR"
+            git add docs/tasks.md
+            git commit -q -m "$TASK $1 (PR #$PR)" && git push -q origin develop
+          }
+          next_task() { gh workflow run agent-start.yml --ref develop; }
+
+          if [ "$R_TEST" != success ] || [ "$R_REVIEW" = failure ] || [ "$R_REVIEW" = cancelled ]; then
+            pause "테스트 또는 리뷰 단계가 실패해 자동 루프를 멈췄습니다."; exit 0
+          fi
+          verdict=$(printf '%s' "${REVIEW_JSON:-}" | jq -r '.verdict // empty' 2>/dev/null || true)
+          if [ "$PASSED" = true ] && [ -z "$verdict" ]; then
+            pause "Claude 리뷰가 판정을 반환하지 않았습니다(턴 한도 도달 또는 출력 오류)."; exit 0
+          fi
+
+          # 승인 + 테스트 통과 → 머지
+          if [ "$PASSED" = true ] && [ "$verdict" = approve ]; then
+            jq -r '"**Claude 승인 (라운드 '"$ROUND"')**\n\n" + .summary + (if (.notes // "") != "" then "\n\n참고: " + .notes else "" end)' <<<"$REVIEW_JSON" > "$RUNNER_TEMP/c.md"
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+            gh pr merge "$PR" --squash --delete-branch
+            git pull -q --rebase origin develop
+            update_tasks 완료
+            if [ -n "$ISSUE" ]; then gh issue close "$ISSUE" --comment "PR #$PR 머지로 완료"; fi
+            next_task
+            exit 0
+          fi
+
+          # 수정 필요 → 피드백 정리
+          {
+            if [ "$PASSED" != true ]; then
+              echo "### 테스트 실패 (npm ci / lint / typecheck / build / test 중 하나)"
+              echo '```'
+              cat "$RUNNER_TEMP/test-tail.log" 2>/dev/null || echo "(로그 없음)"
+              echo '```'
+            else
+              echo "### Claude 리뷰: 수정 요청"
+              jq -r '.summary + "\n" + ([.issues[] | "\n- **" + .file + "**: " + .problem + "\n  - 수정 방향: " + .fix] | join(""))' <<<"$REVIEW_JSON"
+            fi
+          } > "$RUNNER_TEMP/fb.md"
+
+          # 라운드 기록(작업 이슈에 남겨 PR이 바뀌어도 이어서 센다)
+          if [ -n "$ISSUE" ]; then
+            printf '<!-- agent-review -->\nPR #%s 라운드 %s: 수정 요청\n' "$PR" "$ROUND" | gh issue comment "$ISSUE" --body-file -
+          fi
+
+          if [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
+            { echo "**자동 피드백 (라운드 $ROUND, 상한 도달)**"; echo; cat "$RUNNER_TEMP/fb.md"; echo; echo "라운드 상한에 도달해 사람 확인으로 넘깁니다. 이 작업에 의존하는 작업은 건너뜁니다."; } > "$RUNNER_TEMP/c.md"
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+            gh pr edit "$PR" --add-label needs-human
+            if [ -n "$ISSUE" ]; then gh issue edit "$ISSUE" --remove-label agent-task --add-label needs-human; fi
+            update_tasks 보류
+            next_task
+            exit 0
+          fi
+
+          # Codex에 수정 요청 (사용자 토큰: Codex는 연결된 사용자의 댓글에만 반응)
+          {
+            echo "@codex 아래 피드백을 반영해서 이 PR($TASK)을 수정해 줘. 이 PR 브랜치를 기준으로 작업하고, 결과 PR 제목은 반드시 \`$TASK: \`로 시작해야 해. 피드백이 타당하지 않다고 판단하면 고치지 말고 PR 설명의 '남은 이슈'에 근거를 적어 줘."
+            echo
+            echo "**자동 피드백 (라운드 $ROUND / 최대 $MAX_ROUNDS)**"
+            echo
+            cat "$RUNNER_TEMP/fb.md"
+          } > "$RUNNER_TEMP/c.md"
+          GH_TOKEN="$USER_PAT" gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+          echo "::notice::Codex에 수정 요청함. Codex 완료 후 Codex 화면에서 PR 버튼을 눌러 주세요."
