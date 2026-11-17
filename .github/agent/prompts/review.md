@@ -5,7 +5,7 @@
 # 할 일
 
 1. `AGENTS.md`, `docs/requirements.md`(특히 §5 해당 작업 행)를 읽어라.
-2. `git diff origin/develop...HEAD`로 이 PR의 변경만 검토하라.
+2. `git diff origin/develop...HEAD`로 이 PR의 변경만 검토하라. PR 설명은 `.ctl-pr-body.md`에 있다(작성자의 주장이므로 코드로 확인하라).
 3. 다음 기준으로 판정하라.
    - **approve:** 완료 기준을 모두 충족하고, 실제로 잘못 동작하는 버그나 보안 문제가 없다.
    - **request_changes:** 완료 기준 미충족, 정확성 버그, 보안 문제, 완료 기준을 실제로 검증하지 않는 테스트(항상 통과하는 테스트 등), AGENTS.md 규칙 위반.
