@@ -27,6 +27,7 @@ main() {
   log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
   # 동시 실행 방지
+  mkdir -p "$(dirname "$WORKDIR")"
   # 비정상 종료로 남은 잠금(3시간 초과)은 지운다
   if [ -d "$LOCK" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
     log "오래된 잠금을 지움: $LOCK"; rmdir "$LOCK" 2>/dev/null || true
@@ -35,7 +36,10 @@ main() {
     log "이전 실행이 아직 진행 중이라 건너뜀 ($LOCK)"
     return 0
   fi
-  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+  # 임시 파일은 정규화된 경로의 임시 폴더에 둔다 (codex는 '..'이 들어간 경로를 거부함)
+  TMPD=$(mktemp -d "${TMPDIR:-/tmp}/travelscheduling-agent.XXXXXX")
+  TMPD=$(cd "$TMPD" && pwd -P)
+  trap 'rm -rf "$TMPD"; rmdir "$LOCK" 2>/dev/null || true' EXIT
 
   local c
   for c in git gh node npm codex; do
@@ -81,7 +85,7 @@ main() {
 
     git checkout -q -B "$branch" "origin/$branch"
     install_deps
-    local prompt="$WORKDIR/../.agent-prompt-$$.md"
+    local prompt="$TMPD/prompt.md"
     {
       echo "# 수정 지시: PR #$pr ($task)"
       echo
@@ -99,7 +103,7 @@ main() {
       gh pr view "$pr" -R "$REPO" --json comments --jq '[.comments[] | select(.body | contains("<!-- agent-feedback"))] | last | .body'
     } > "$prompt"
 
-    local msg="$WORKDIR/../.agent-msg-$$.md"
+    local msg="$TMPD/msg.md"
     run_codex "$prompt" "$msg" || { rm -f "$prompt"; return 1; }
     rm -f "$prompt"
     if ! commit_changes "$task: 리뷰 피드백 반영"; then
@@ -128,7 +132,7 @@ main() {
 
   git checkout -q -B "$ibranch" origin/develop
   install_deps
-  local iprompt="$WORKDIR/../.agent-prompt-$$.md"
+  local iprompt="$TMPD/prompt.md"
   {
     echo "# 실행 환경 안내 (Mac 러너)"
     echo "- 현재 브랜치는 develop에서 새로 만든 $ibranch 이다."
@@ -141,7 +145,7 @@ main() {
     gh issue view "$issue" -R "$REPO" --json body --jq .body
   } > "$iprompt"
 
-  local imsg="$WORKDIR/../.agent-msg-$$.md"
+  local imsg="$TMPD/msg.md"
   run_codex "$iprompt" "$imsg" || { rm -f "$iprompt"; return 1; }
   rm -f "$iprompt"
   if ! commit_changes "$ititle"; then
