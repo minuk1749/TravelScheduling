@@ -35,3 +35,9 @@ npm test
 DB 접근은 `src/lib/db.ts`의 명시적 연결 풀 팩터리에서 시작합니다. 호출자는 풀을 재사용하고 종료 시 `pool.end()`를 호출합니다. 스키마 및 마이그레이션은 T3 범위입니다. 인증은 T2 범위이며 현재 홈은 정적 안내 화면입니다. 배포 대상 결정과 실제 브라우저의 홈 화면 설치 확인은 사람이 진행합니다.
 
 PWA 구성 참고: [Next.js 공식 PWA 안내](https://nextjs.org/docs/app/guides/progressive-web-apps).
+
+## 인증 설정과 데이터베이스
+
+`migrations/001_auth.sql`을 PostgreSQL에 적용한 뒤 `.env.local`에 `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 설정합니다. Google OAuth 웹 클라이언트의 승인된 리디렉션 URI에 `http://localhost:3000/api/auth/callback/google`을 등록합니다. 운영 환경에서는 운영 도메인의 HTTPS 콜백을 등록하세요. 비밀 값은 커밋하지 않습니다. Google의 인증된 이메일과 계정 ID만 저장합니다.
+
+여행 조회는 `/api/trips/[id]`에서 소유자에게만 허용합니다. 탈퇴는 사용자 행을 삭제하고 외래 키 연쇄 삭제로 여행을 제거합니다. T3에서 추가할 사용자 소유 데이터는 반드시 사용자 또는 여행에 `ON DELETE CASCADE`로 연결해야 합니다. 기존 세션은 매 요청에서 사용자 존재를 확인하므로 탈퇴 후 다시 사용할 수 없습니다.
