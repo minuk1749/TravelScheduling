@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "build": "next build && node scripts/verify-pwa.mjs",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@js-temporal/polyfill": "^0.5.1",

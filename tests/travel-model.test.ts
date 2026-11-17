@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { createDatabasePool } from '../src/lib/db';
+import { migrate, readMigrations } from '../src/lib/migrations';
 
 test('travel migration preserves existing trips and supports trip settings and cascading deletion', async () => {
   const pool = createDatabasePool();
@@ -11,11 +11,11 @@ test('travel migration preserves existing trips and supports trip settings and c
   try {
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema}`);
-    await client.query(await readFile('migrations/001_auth.sql', 'utf8'));
+    await migrate(client, (await readMigrations()).slice(0, 1));
     const user = randomUUID(), trip = randomUUID(), legacy = randomUUID();
     await client.query('INSERT INTO users (id, google_id, email) VALUES ($1, $2, $3)', [user, 'google', 'user@example.test']);
     await client.query('INSERT INTO trips (id, owner_id) VALUES ($1, $2)', [legacy, user]);
-    await client.query(await readFile('migrations/002_travel_model.sql', 'utf8'));
+    await migrate(client);
     assert.equal((await client.query('SELECT id FROM trips WHERE id = $1', [legacy])).rowCount, 1);
     await client.query(`INSERT INTO trips (id, owner_id, city_code, time_zone, start_date, end_date,
       default_departure_time, default_return_time, default_meal_slots, meal_windows, taxi_policy)
@@ -63,9 +63,7 @@ test('city profile migration stores night hours and fare provenance', async () =
   try {
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema}`);
-    for (const migration of ['001_auth.sql', '002_travel_model.sql', '003_city_profile_night_hours.sql']) {
-      await client.query(await readFile(`migrations/${migration}`, 'utf8'));
-    }
+    await migrate(client);
     await client.query(`INSERT INTO city_profiles
       (city_code, country, currency, taxi_base_fare, taxi_fare_per_km, taxi_fare_per_minute,
        night_surcharge, night_start, night_end, source, updated_at)

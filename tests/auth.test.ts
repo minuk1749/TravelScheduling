@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { createDatabasePool } from '../src/lib/db';
+import { migrate } from '../src/lib/migrations';
 import { googleIdentity, validUserId } from '../src/lib/auth/callbacks';
 import { authorizeTrip } from '../src/lib/auth/authorization';
 
@@ -36,7 +36,7 @@ test('withdrawal deletes only the user and their trips in PostgreSQL', async () 
   try {
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema}`);
-    await client.query(await readFile('migrations/001_auth.sql', 'utf8'));
+    await migrate(client);
     const first = randomUUID(), second = randomUUID();
     await client.query('INSERT INTO users (id, google_id, email) VALUES ($1, $2, $3), ($4, $5, $6)', [first, 'g1', 'a@example.test', second, 'g2', 'b@example.test']);
     await client.query('INSERT INTO trips (id, owner_id) VALUES ($1, $2), ($3, $4)', [randomUUID(), first, randomUUID(), second]);

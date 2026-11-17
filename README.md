@@ -9,10 +9,12 @@ Node.js 24 (`nvm use`)와 PostgreSQL 16을 사용합니다.
 ```sh
 npm ci
 cp .env.example .env.local
+# 아래 설명대로 DATABASE_URL을 환경 변수로 설정한 뒤 실행합니다.
+npm run migrate
 npm run dev
 ```
 
-Next.js는 `.env.local`을 읽습니다. 테스트는 의도적으로 프로세스 환경 변수 `DATABASE_URL`을 사용합니다. 실제 비밀번호는 커밋하지 마세요.
+Next.js는 `.env.local`을 읽습니다. 마이그레이션과 테스트는 의도적으로 프로세스 환경 변수 `DATABASE_URL`을 사용하며 `.env.local`을 자동으로 읽지 않습니다. 실제 비밀번호는 커밋하지 마세요.
 
 ```sh
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/app
@@ -28,7 +30,7 @@ npm test
 
 `src/app/manifest.ts`가 manifest를 생성합니다. `public/sw.js`는 프로덕션에서 등록되며 오프라인 캐시를 만들지 않습니다. 빌드는 manifest와 PNG 아이콘, 서비스워커 구문을 검사합니다. HTTP 테스트는 실제 `next start`에서 HTML의 manifest 링크, manifest·아이콘·서비스워커 응답과 캐시 헤더를 검사합니다. 서비스워커는 Next.js의 public 자산으로 배포되므로 `.next`와 함께 `public`을 배포해야 합니다. 서비스워커에는 HTTPS가 필요합니다(localhost 제외).
 
-기존 `.github/workflows/agent-review.yml`이 Node 24 / PostgreSQL 16에서 `npm ci`, lint, typecheck, build, test를 실행합니다. 이 작업에서는 보호된 워크플로를 변경하지 않습니다.
+기존 CI와 `agent-review`가 Node 24 / PostgreSQL 16에서 `npm ci`, lint, typecheck, build, test를 실행합니다. DB 테스트는 격리 스키마에서 새 마이그레이션 실행기로 스키마를 준비하고, 실행기 통합 테스트는 `npm run migrate`도 직접 호출합니다. 따라서 보호된 워크플로 변경 없이 CI에서도 같은 실행 경로를 검증합니다.
 
 ## 다음 작업
 
@@ -38,10 +40,23 @@ PWA 구성 참고: [Next.js 공식 PWA 안내](https://nextjs.org/docs/app/guide
 
 ## 인증 설정과 데이터베이스
 
-`migrations/001_auth.sql`을 PostgreSQL에 적용한 뒤 `.env.local`에 `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 설정합니다. Google OAuth 웹 클라이언트의 승인된 리디렉션 URI에 `http://localhost:3000/api/auth/callback/google`을 등록합니다. 운영 환경에서는 운영 도메인의 HTTPS 콜백을 등록하세요. 비밀 값은 커밋하지 않습니다. Google의 인증된 이메일과 계정 ID만 저장합니다.
+`npm run migrate`로 PostgreSQL 스키마를 준비한 뒤 `.env.local`에 `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 설정합니다. Google OAuth 웹 클라이언트의 승인된 리디렉션 URI에 `http://localhost:3000/api/auth/callback/google`을 등록합니다. 운영 환경에서는 운영 도메인의 HTTPS 콜백을 등록하세요. 비밀 값은 커밋하지 않습니다. Google의 인증된 이메일과 계정 ID만 저장합니다.
 
 여행 조회는 `/api/trips/[id]`에서 소유자에게만 허용하며 현재 응답은 `{ id }`입니다. 탈퇴는 사용자 행을 삭제하고 외래 키 연쇄 삭제로 여행과 하위 데이터를 제거합니다. 새 사용자 소유 데이터도 사용자 또는 여행의 삭제 연쇄에 연결해야 합니다. 기존 세션은 매 요청에서 사용자 존재를 확인하므로 탈퇴 후 다시 사용할 수 없습니다.
 
 ## 여행 데이터 마이그레이션
 
-데이터베이스에는 `migrations/001_auth.sql`, `migrations/002_travel_model.sql`, `migrations/003_city_profile_night_hours.sql`을 순서대로 한 번씩 적용합니다. T2에서 생성한 소유자 전용 여행은 보존되며 새 필드는 비어 있을 수 있습니다. 항공편의 현지 일시는 해당 여행의 IANA 시간대와 함께 해석합니다. 날짜별 설정은 `(trip_id, date)`를 기준으로 저장하며, 값이 없는 항목은 여행 기본값을 사용합니다. 장소는 여행과 분리된 공유 캐시이므로 후속 장소 서비스가 만료 시각을 확인해야 합니다.
+```sh
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/app
+npm run migrate
+```
+
+실행기는 `migrations/NNN_name.sql`을 번호순으로 적용하고 `schema_migrations`에 파일명, SHA-256, 적용 시각, 적용/기존 이력 등록 여부를 남깁니다. 이미 적용한 파일은 실행하지 않으며 재실행 결과는 `{"applied":[],"baselined":[]}`입니다. 파일을 수정·삭제하거나 번호를 빠뜨리면 실패합니다. 새 변경은 다음 번호의 SQL 파일로 추가하세요. 기존 001–003 파일은 변경하지 않습니다.
+
+이력이 없는 기존 DB는 001만, 001–002, 001–003이 온전히 적용된 스키마인지 열·기본값·제약조건을 검증한 뒤 해당 이력을 등록하고 남은 파일만 실행합니다. 검증용 임시 스키마를 생성했다가 롤백하므로 최초 이관 계정에는 DB의 `CREATE` 권한이 필요합니다. 알 수 없는/부분 적용 스키마는 자동 보정하지 않고 실패하므로 원래 마이그레이션과 대조해 복구한 뒤 다시 실행하세요. 원래 데이터는 삭제하지 않습니다.
+
+한 번의 실행 전체가 트랜잭션이며 실패하면 이번 실행의 DDL·데이터 변경·이력이 모두 롤백됩니다. 같은 DB/스키마의 동시 실행은 잠금으로 직렬화됩니다. 대상은 연결의 `current_schema()`(기본 `public`)이며, 다른 스키마는 연결 옵션의 `search_path`로 선택합니다. 실행 SQL에는 `BEGIN/COMMIT`, `CREATE INDEX CONCURRENTLY` 등 별도 트랜잭션 제어/트랜잭션 밖 명령을 넣지 마세요. 운영 실행은 해당 테이블을 변경할 권한이 있는 계정으로 하고, 기존 무이력 DB 이관 중에는 앱 쓰기를 멈추세요.
+
+004는 FK 인덱스와 사용자 소유 행의 생성·수정 시각을 추가합니다. 수정 시각은 DB 트리거로 자동 갱신하며 도시 요금표의 `updated_at`은 기존 출처 갱신일 의미를 유지합니다. 여행별 최신 일정은 `WHERE trip_id = $1 ORDER BY generation DESC LIMIT 1`로 읽습니다. 기존 일정의 과거 생성 순서는 복구할 수 없으며 이관 번호는 그 순서를 보장하지 않습니다. 상세 결정과 후속 저장소 주의점은 [ADR 0004](docs/decisions/0004-database-migrations-and-timestamps.md), [T8A 인계](docs/t8a-handoff.md)를 참고하세요.
+
+T2에서 생성한 소유자 전용 여행은 보존되며 새 여행 입력 필드는 비어 있을 수 있습니다. 항공편의 현지 일시는 해당 여행의 IANA 시간대와 함께 해석합니다. 날짜별 설정은 `(trip_id, date)`를 기준으로 저장하며, 값이 없는 항목은 여행 기본값을 사용합니다. 장소는 여행과 분리된 공유 캐시이므로 후속 장소 서비스가 만료 시각을 확인해야 합니다.
