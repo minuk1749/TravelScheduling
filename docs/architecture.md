@@ -1,8 +1,8 @@
 # 아키텍처
 
-기준: 2026-11-18, T7A 감사와 T8 시작 시 `develop`의 `8314457`을 바탕으로 갱신.
+기준: 2026-11-18, T7A 감사와 T8A 시작 시 `develop`의 `c2baedc`를 바탕으로 갱신.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
-**현재**는 T1–T8에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
+**현재**는 T1–T8A에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
 디렉터리·서비스·HTTP 응답은 아직 존재하지 않는다. 구조나 계약 변경 시 이 문서와
 [결정 기록](decisions/0001-pure-core-and-service-boundaries.md)을 같은 PR에서 갱신한다.
 
@@ -18,6 +18,7 @@ src/
   auth.ts                      현재: Google 공급자, JWT/세션 콜백 구성
   lib/
     db.ts                      현재: 명시적 PostgreSQL Pool 팩터리
+    migrations.ts              현재 T8A: 적용 이력·기존 DB 검증·트랜잭션 실행기
     auth/                      현재: 인증 포트/콜백, 권한, SQL 저장소
   scheduler/
     index.ts                   현재: 시간창·식사 슬롯, 공개 export
@@ -29,10 +30,11 @@ src/
   travel-time/                 후속 T9: 이동시간 포트·캐시·Google 어댑터
   repositories/                후속 T10/T12: 여행·장소 ID·프로필·일정 SQL 경계
   services/itinerary.ts         후속 T12: 입력 조립, 재조회 루프, 결과 저장
-migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대
+migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비
 public/                        현재: 온라인 전용 sw.js, 아이콘
 tests/                         현재: node:test + tsx, SQL/HTTP/순수 함수 검사
 scripts/verify-pwa.mjs          현재: 빌드 산출물 검사
+scripts/migrate.ts              현재 T8A: npm run migrate 진입점
 docs/decisions/                설계 결정과 대안
 ```
 
@@ -257,17 +259,41 @@ export interface CityProfileRepository {
 
 위 저장소 계약은 서버 내부에서만 사용한다.
 `saveInputs` 전에 서비스가 세션 소유권을 확인하고 요청의 소유자 대신 서버에서 읽은 소유자를 사용한다.
-여행 수정과 일정/하위 행 교체는 각각 트랜잭션으로 처리한다. `saveItinerary`는 계산 중 입력이
+여행 수정과 새 일정/하위 행 저장은 각각 트랜잭션으로 처리한다. `saveItinerary`는 계산 중 입력이
 바뀌었으면 `STALE`을 반환한다. 현재 스키마에 버전 열은 없으므로 T12에서 입력 해시 재검증과
 잠금/버전 저장 방식을 구현할 때 결정 기록을 보완한다. JSONB를 타입 단언만으로 읽지 않는다.
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10에서 연결한다.
 
 ## 5. 저장 형식·시간대 변환
 
-결정 근거: [ADR 0002](decisions/0002-time-storage-and-error-contracts.md).
+결정 근거: [ADR 0002](decisions/0002-time-storage-and-error-contracts.md),
+[ADR 0004](decisions/0004-database-migrations-and-timestamps.md).
 스키마 원본은 [001](../migrations/001_auth.sql), [002](../migrations/002_travel_model.sql),
-[003](../migrations/003_city_profile_night_hours.sql) 순서다. 새 DB도 셋 모두 순서대로 적용한다.
-자동 마이그레이션 실행기는 아직 없고 002/003은 반복 실행용이 아니다.
+[003](../migrations/003_city_profile_night_hours.sql), [004](../migrations/004_database_foundations.sql) 순서다.
+`DATABASE_URL`을 설정하고 `npm run migrate`로 준비한다. [실행기](../src/lib/migrations.ts)는
+`schema_migrations(version, checksum, applied_at, origin)`과 SQL 파일의 SHA-256을 대조하여
+미적용 파일만 순서대로 실행한다. 이력 없는 기존 DB는 001/001–002/001–003 중 어느 스키마인지
+검증용 임시 스키마의 열·타입·기본값·제약조건과 비교해 기존 이력을 등록한다. 임시 스키마는
+롤백하고 사용자 데이터는 그대로 둔다. 부분 적용·불일치 상태는 실패시키며 이력을 추측하지 않는다.
+이관 시 DB `CREATE` 권한과 앱 쓰기 중지가 필요하다. 정상 이력 이후에는 임시 스키마가 필요 없다.
+현재 스키마에 대한 트랜잭션 advisory lock으로 동시 실행을 직렬화하고, 한 실행의 모든 SQL과
+이력을 함께 커밋하거나 롤백한다. SQL 파일 자체에 트랜잭션 제어를 넣지 않는다.
+테스트와 CI는 동일 실행기로 격리 스키마를 준비하며 [통합 테스트](../tests/migrations.test.ts)는 CLI도 실행한다.
+
+모든 사용자 소유 테이블(`users`, `trips`, `day_settings`, `flights`, `lodgings`, `trip_places`,
+`itineraries`, `day_plans`, `stops`, `legs`)에 `created_at/updated_at timestamptz NOT NULL DEFAULT now()`가 있다.
+사용자의 기존 생성 시각은 유지하고, 과거 시각이 없는 행은 이관 시각으로 채운다. 사용자 소유 테이블과
+공유 `places`의 `updated_at`은 `BEFORE UPDATE` 트리거가 `statement_timestamp()`로 갱신한다.
+동일 값 UPDATE와 UPSERT도 갱신하며 자식 수정이 부모 시각을 바꾸지는 않는다. 따라서 `trips.updated_at`만으로
+입력 버전이나 stale 여부를 판단하지 않는다. `city_profiles.updated_at`은 요금 출처의 갱신일로 계속 호출자가 관리한다.
+모든 FK 열은 기존 PK/UNIQUE 또는 새 인덱스의 첫 열로 포함되며 [카탈로그 검사](../tests/database-foundations.test.ts)가 검증한다.
+
+최신 일정은 `itineraries.generation bigint GENERATED ALWAYS AS IDENTITY`의 가장 큰 값이다.
+`SELECT ... FROM itineraries WHERE trip_id = $1 ORDER BY generation DESC LIMIT 1`을 사용하며
+`(trip_id, generation DESC)` 고유 인덱스로 지원한다. 생성 시각이 같아도 INSERT 순서를 구별하고
+과거 결과·하위 행을 지우지 않는다. 기존 행의 번호는 과거 생성 순서 복원이 아니며, 새 결과부터 순서가 보장된다.
+이는 INSERT 순서이지 트랜잭션 커밋 순서가 아니다. T12는 같은 여행의 저장을 잠금으로 직렬화하고
+입력 해시 재검증을 함께 구현해야 한다. 생성 번호는 입력 버전이나 일정의 정상 상태를 뜻하지 않는다.
 
 | DB/외부 표현 | 코어 입력으로 변환하는 책임 |
 |---|---|
