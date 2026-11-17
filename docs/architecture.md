@@ -1,8 +1,8 @@
 # 아키텍처
 
-기준: 2026-11-18, T7A 시작 시 `develop`의 `4697318` 및 이 작업의 결함 수정.
+기준: 2026-11-18, T7A 감사와 T8 시작 시 `develop`의 `8314457`을 바탕으로 갱신.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
-**현재**는 T1–T7에 있는 코드, **후속 계약**은 T8 이후 구현할 경계다. 후속 계약에 적힌
+**현재**는 T1–T8에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
 디렉터리·서비스·HTTP 응답은 아직 존재하지 않는다. 구조나 계약 변경 시 이 문서와
 [결정 기록](decisions/0001-pure-core-and-service-boundaries.md)을 같은 PR에서 갱신한다.
 
@@ -13,6 +13,7 @@ src/
   app/                         현재: App Router, 홈/manifest, 서버 액션
     api/auth/[...nextauth]/     현재: Auth.js HTTP 진입점
     api/trips/[id]/             현재: 소유권 확인 후 { id }만 반환
+    api/places/                 현재 T8: 인증된 한국어 검색·상세·좌표 조회
   components/service-worker.tsx  현재: 프로덕션 서비스워커 등록
   auth.ts                      현재: Google 공급자, JWT/세션 콜백 구성
   lib/
@@ -24,9 +25,9 @@ src/
     transport.ts               현재: 정책·수동 지정에 따른 이동수단 선택
     capacity.ts                현재: 실제 배치 기반 수용량·추천 검증
   fare/index.ts                현재: 도시 프로필 타입, 순수 택시 요금 계산
-  places/                      후속 T8: 장소 포트·캐시 서비스·Google 어댑터
+  places/                      현재 T8: 장소 포트·좌표 캐시·Google 어댑터·HTTP 처리
   travel-time/                 후속 T9: 이동시간 포트·캐시·Google 어댑터
-  repositories/                후속 T8/T10/T12: 여행·장소·프로필·일정 SQL 경계
+  repositories/                후속 T10/T12: 여행·장소 ID·프로필·일정 SQL 경계
   services/itinerary.ts         후속 T12: 입력 조립, 재조회 루프, 결과 저장
 migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대
 public/                        현재: 온라인 전용 sw.js, 아이콘
@@ -56,8 +57,9 @@ type import한다. 런타임에는 `index → capacity → placement → transpo
 
 ## 2. 데이터 흐름
 
-현재 연결된 실행 흐름은 `홈/서버 액션 → Auth.js → 인증 저장소 → PostgreSQL`과
-`GET /api/trips/[id] → auth → authorizeTrip → tripOwner → { id }`다.
+현재 연결된 실행 흐름은 `홈/서버 액션 → Auth.js → 인증 저장소 → PostgreSQL`,
+`GET /api/trips/[id] → auth → authorizeTrip → tripOwner → { id }`,
+`GET /api/places → auth → PlaceProvider → Google/좌표 캐시`다.
 스케줄러·요금 함수는 테스트에서 호출하며 아직 API/화면과 연결되지 않았다.
 
 다음은 T8–T13에서 연결할 흐름이다. 화살표는 데이터 이동이며 호출 주체는 API의 서비스다.
@@ -153,26 +155,16 @@ export const fareProvider: FareProvider = { estimateTaxiFare };
 
 ## 4. 후속 제공자와 저장소 계약
 
-아래 인터페이스는 **T8/T9/T10/T12 구현 방향**이며 런타임 구현을 추가하지 않았다.
+장소 포트는 **T8 구현**을 직접 참조하며 이동시간/저장소는 **T9/T10/T12 구현 방향**이다.
 외부 SDK 타입, `pg` 행, Next.js `Request`를 이 경계 너머로 넘기지 않는다.
 
 ```typescript
 type Money = { amount: number; currency: string };
 type Location = { id: string; coordinates: Visit['coordinates'] };
-type PlaceSummary = { googlePlaceId: string; name: string };
-type PlaceDetailsRequest = {
-  googlePlaceId: string; language: 'ko'; dates: readonly string[]; timeZone: string;
-};
-type PlaceDetails = PlaceSummary & {
-  coordinates: Visit['coordinates'];
-  openingHours?: Visit['openingHours']; // 요청한 날짜들에 대한 instant 창
-  types: readonly string[];
-  cacheExpiresAt: string;
-};
-export interface PlaceProvider {
-  search(input: { query: string; language: 'ko'; regionCode?: string }): Promise<readonly PlaceSummary[]>;
-  details(input: PlaceDetailsRequest): Promise<PlaceDetails | null>;
-}
+// T8: 구현과 문서가 같은 계약을 사용한다. location은 캐시 가능한 좌표 조회다.
+export type {
+  PlaceProvider, PlaceSearchRequest, PlaceDetailsRequest, PlaceSummary, PlaceDetails, PlaceLocation,
+} from '../src/places';
 
 type ProviderMode = 'TRANSIT' | 'WALK' | 'DRIVE';
 type TravelEstimate = { durationSeconds: number; distanceMeters: number; fare: Money | null };
@@ -195,11 +187,21 @@ export interface TravelTimeProvider {
 외부 장애/쿼터 초과를 null 또는 빈 경로로 숨기지 않는다. DRIVE 요금은 null이며 택시 추정은
 FareProvider가 맡는다. 대중교통 요금이 없으면 null을 유지한다.
 
-캐시 서비스는 같은 정규화 요청이 유효 기간 내 반복되면 외부 호출을 하지 않는다.
-장소는 언어·요청 필드와 원본 상세 데이터, 이동시간은 출발 instant/모드/방향/좌표 등 결과를
-바꾸는 모든 입력을 키에 반영한다. 장소 원본을 보관하고 날짜별 영업창으로 변환하는 경우도
-변환 입력을 구분한다. TTL과 저장 허용 필드는 T8/T9에서 최신 약관 확인 후 결정하며
-이 문서는 임의 보관 기간을 정하지 않는다. place ID와 만료된 상세 데이터의 수명을 분리한다.
+T8 장소 캐시는 `google:v1:{googlePlaceId}:id,location` 키로 좌표만 기본 24시간 보관한다.
+같은 프로세스의 유효 좌표 재조회는 외부 호출이 없고, 동시 요청도 한 번으로 합친다.
+이름·유형·영업시간·검색 결과는 저장하지 않으며 상세 응답은 즉시 만료다. 따라서 전체 상세
+반복 조회는 외부 호출이 발생한다. 최신 약관 근거, T8 완료 기준 해석의 차이와 저장소 계약
+조정은 [ADR 0003](decisions/0003-places-cache-policy.md)에 기록했다. 장소 ID와 Google 상세의
+수명을 분리하며 기존 places의 상세 열을 이 프록시에서 채우지 않는다.
+
+API는 `GET /api/places?query=도쿄&regionCode=JP`,
+`GET /api/places/{id}?timeZone=Asia/Tokyo&date=2026-11-23`(date 반복 가능),
+`GET /api/places/{id}?fields=location`이다. 한국어만 요청하며 인증 전에는 제공자를 만들지 않는다.
+응답은 `{places, attribution}` 또는 `{place, attribution}`이며 공급자 attribution도 전달한다.
+세부 통합과 UI 표시 책임은 [T8 인계](t8-handoff.md)를 따른다.
+
+이동시간 캐시는 T9에서 출발 instant/모드/방향/좌표 등 결과를 바꾸는 모든 입력을 키에 반영하고,
+최신 약관을 별도로 확인해야 한다. 장소 좌표 캐시 정책을 다른 필드나 서비스에 확대하지 않는다.
 
 ```typescript
 // 저장소가 SQL의 nullable/JSONB/시간 표현을 검증·변환한 입력 스냅샷.
@@ -248,10 +250,6 @@ export interface TripRepository {
   saveInputs(input: TripInputs): Promise<void>;
   saveItinerary(tripId: string, inputHash: string, result: ItinerarySnapshot): Promise<'SAVED' | 'STALE'>;
 }
-export interface PlaceRepository {
-  findDetails(input: PlaceDetailsRequest): Promise<PlaceDetails | null>;
-  saveDetails(input: PlaceDetailsRequest, details: PlaceDetails): Promise<void>;
-}
 export interface CityProfileRepository {
   findByCityCode(cityCode: string): Promise<CityProfile | null>;
 }
@@ -262,7 +260,7 @@ export interface CityProfileRepository {
 여행 수정과 일정/하위 행 교체는 각각 트랜잭션으로 처리한다. `saveItinerary`는 계산 중 입력이
 바뀌었으면 `STALE`을 반환한다. 현재 스키마에 버전 열은 없으므로 T12에서 입력 해시 재검증과
 잠금/버전 저장 방식을 구현할 때 결정 기록을 보완한다. JSONB를 타입 단언만으로 읽지 않는다.
-장소 포트의 언어/필드별 캐시를 구현할 때 현재 places의 단일 상세 행으로 충분한지도 T8에서 검증한다.
+T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10에서 연결한다.
 
 ## 5. 저장 형식·시간대 변환
 
@@ -310,7 +308,7 @@ day_plans → stops/legs`의 FK cascade로 실행한다. 공유 장소 캐시와
 | `unplaced.TIME_WINDOW/UNREACHABLE/FIXED_ORDER` | 방문 ID에 연결된 실패 원인. `WISH`는 오류가 아닌 의도적 미배치 | 원래 실패와 추천에서 제외된 목록을 구분 |
 | `issues.MEAL_UNAVAILABLE/UNREACHABLE/TIME_WINDOW` | 식사 슬롯/연결 실패/일일 경로의 시간창 실패. 마지막 것은 T7A 추가 | 날짜별 진단으로 표시. 방문 없는 숙소 이동 초과도 `CONFLICT` |
 | 요금 없음 | null 또는 `TaxiFareEstimate.UNAVAILABLE` | 이동 가능 여부와 분리하고 정보 없음 표시 |
-| 외부 API 장애·쿼터/DB 장애 | 해당 서비스 미구현/기본 예외 | 502/503 또는 내부 오류 500으로 구분, 비밀 값·SQL·공급자 원문을 응답에 노출하지 않음 |
+| 외부 API 장애·쿼터/DB 장애 | T8: 제공자 실패 503, 잘못된 외부 응답 502, 내부 실패 500 | 502/503 또는 내부 오류 500으로 구분, 비밀 값·SQL·공급자 원문을 응답에 노출하지 않음 |
 
 가용 시간도 없고 시작/종료가 같은 빈 날은 이동이 필요 없어 빈 일정이 가능하다.
 시작/종료가 다르면 이동을 생략해 성공으로 처리할 수 없다. 진단은 해당 휴리스틱 시도의
