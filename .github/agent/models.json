@@ -1,0 +1,18 @@
+{
+  "_설명": "작업별 모델 배정. codex는 Mac 러너(구현·수정), claude는 agent-review(리뷰)가 읽는다. tasks에 없는 작업은 default를 쓴다. 바꾸면 다음 실행부터 적용된다.",
+  "codex": {
+    "default": { "model": "gpt-6-astra", "effort": "high" },
+    "tasks": {
+      "T7A": { "effort": "xhigh" },
+      "T12": { "effort": "xhigh" }
+    }
+  },
+  "claude": {
+    "default": "claude-sonnet-5-5",
+    "tasks": {
+      "T7A": "claude-opus-5-5",
+      "T12": "claude-opus-5-5",
+      "T14": "claude-opus-5-5"
+    }
+  }
+}

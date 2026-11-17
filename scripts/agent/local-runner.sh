@@ -11,7 +11,7 @@
 # 환경 변수
 #   AGENT_WORKDIR  러너 전용 클론 위치 (기본: ~/agent-work/TravelScheduling). 이 폴더에서 직접 작업하지 말 것.
 #   AGENT_REPO     기본: minuk1749/TravelScheduling
-#   CODEX_MODEL    비우면 Codex 기본 모델
+#   CODEX_MODEL    지정하면 .github/agent/models.json보다 우선 (보통 비워 둔다)
 #
 # macOS 기본 bash(3.2)에서 동작하도록 작성했다. 스크립트가 실행 중에 git pull로 바뀌어도
 # 안전하도록 전체를 main 함수 안에 두고 마지막에 호출한다.
@@ -104,7 +104,7 @@ main() {
     } > "$prompt"
 
     local msg="$TMPD/msg.md"
-    run_codex "$prompt" "$msg" || { rm -f "$prompt"; return 1; }
+    run_codex "$prompt" "$msg" "$task" || { rm -f "$prompt"; return 1; }
     rm -f "$prompt"
     if ! commit_changes "$task: 리뷰 피드백 반영"; then
       log "변경 없음. Codex 메시지를 PR에 남김"
@@ -146,7 +146,7 @@ main() {
   } > "$iprompt"
 
   local imsg="$TMPD/msg.md"
-  run_codex "$iprompt" "$imsg" || { rm -f "$iprompt"; return 1; }
+  run_codex "$iprompt" "$imsg" "$itask" || { rm -f "$iprompt"; return 1; }
   rm -f "$iprompt"
   if ! commit_changes "$ititle"; then
     log "Codex가 변경을 만들지 못함"
@@ -173,11 +173,20 @@ install_deps() {
   fi
 }
 
-run_codex() { # prompt_file msg_file
+run_codex() { # prompt_file msg_file task
   # codex-cli 0.169 기준: 승인 없이 실행, 작업 폴더 쓰기 허용, 샌드박스 안 네트워크 허용(npm 설치용)
   local args=(exec -s workspace-write -c 'approval_policy="never"' -c sandbox_workspace_write.network_access=true --output-last-message "$2")
-  if [ -n "${CODEX_MODEL:-}" ]; then args+=(--model "$CODEX_MODEL"); fi
-  log "Codex 실행 시작"
+  # 작업별 모델: develop의 .github/agent/models.json (CODEX_MODEL 환경 변수가 있으면 모델은 그것 우선)
+  local cfg="$TMPD/models.json" picked model effort
+  git show origin/develop:.github/agent/models.json > "$cfg" 2>/dev/null || true
+  git show origin/develop:.github/agent/model-for.mjs > "$TMPD/model-for.mjs" 2>/dev/null || true
+  picked=$(node "$TMPD/model-for.mjs" codex "${3:-}" "$cfg" 2>/dev/null || printf '\t\n')
+  model=$(printf '%s' "$picked" | cut -f1)
+  effort=$(printf '%s' "$picked" | cut -f2)
+  if [ -n "${CODEX_MODEL:-}" ]; then model="$CODEX_MODEL"; fi
+  if [ -n "$model" ]; then args+=(--model "$model"); fi
+  if [ -n "$effort" ]; then args+=(-c "model_reasoning_effort=\"$effort\""); fi
+  log "Codex 실행 시작 (작업 ${3:-?}, 모델 ${model:-기본값}, 추론 ${effort:-기본값})"
   if ! codex "${args[@]}" "$(cat "$1")" < /dev/null; then
     log "Codex 실행 실패 (사용 한도 소진, 로그인 만료, 네트워크 문제일 수 있음). 다음 실행에서 다시 시도"
     return 1

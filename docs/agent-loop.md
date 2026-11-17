@@ -61,7 +61,13 @@ bash scripts/agent/install-launchd.sh
 | `AGENT_EXECUTOR` | `local` | 구현 주체: `local`(Mac 러너) 또는 `cloud`(Codex 클라우드) |
 | `AGENT_MAX_ROUNDS` | 3 | 작업 하나당 리뷰 왕복 상한 |
 | `AGENT_PR_AUTHORS` | `chatgpt-codex-connector[bot],저장소 소유자` | 자동 리뷰 대상 PR 작성자(쉼표 구분) |
-| `CLAUDE_MODEL` | (액션 기본값) | Claude 리뷰 모델 |
+| `CLAUDE_MODEL` | (비움) | 지정하면 모든 리뷰를 이 모델로. 보통 비워 두고 `.github/agent/models.json`의 작업별 배정을 쓴다 |
+
+## 작업별 모델 (`.github/agent/models.json`)
+
+- `codex`: Mac 러너가 작업 번호로 모델과 추론 강도를 골라 Codex CLI에 넘긴다. 로그의 "Codex 실행 시작 (작업 …, 모델 …, 추론 …)"으로 확인.
+- `claude`: agent-review가 작업 번호로 리뷰 모델을 고른다. Actions 실행 화면의 "리뷰 모델" 알림으로 확인.
+- 이 파일은 보호 파일이라 사람(또는 사람이 지시한 대화형 세션)만 바꾼다.
 
 ## 알려진 제약
 

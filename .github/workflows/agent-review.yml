@@ -167,6 +167,15 @@ jobs:
           git fetch -q origin develop:refs/remotes/origin/develop || true
           printf '%s\n' "$BODY" > .ctl-pr-body.md
           printf '.ctl/\n.ctl-pr-body.md\n' >> .git/info/exclude
+      - id: pick
+        env:
+          TASK: ${{ needs.gate.outputs.task }}
+          OVERRIDE: ${{ vars.CLAUDE_MODEL }}
+        run: |
+          m="$OVERRIDE"
+          if [ -z "$m" ]; then m=$(node .ctl/.github/agent/model-for.mjs claude "$TASK" .ctl/.github/agent/models.json || true); fi
+          echo "model=$m" >> "$GITHUB_OUTPUT"
+          echo "::notice::리뷰 모델: ${m:-액션 기본값} (작업 $TASK)"
       - id: claude
         uses: anthropics/claude-code-action@v1
         with:
@@ -180,7 +189,7 @@ jobs:
             --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
             --disallowedTools "Edit,Write,NotebookEdit"
             --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"}},"required":["verdict","summary","issues"]}'
-            ${{ vars.CLAUDE_MODEL && format('--model {0}', vars.CLAUDE_MODEL) || '' }}
+            ${{ steps.pick.outputs.model && format('--model {0}', steps.pick.outputs.model) || '' }}
 
   decide:
     needs: [gate, test, review]
