@@ -1,6 +1,7 @@
 // 작업별 모델 조회: node model-for.mjs <codex|claude> <TASK> [models.json 경로]
 //   codex  → "모델<TAB>추론강도" 출력 (값이 없으면 빈 칸)
 //   claude → "모델" 출력
+//   claude-exec → 실행 리뷰 대상이면 "true", 아니면 "false"
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,10 @@ if (kind === "codex") {
 } else if (kind === "claude") {
   const c = cfg.claude || {};
   process.stdout.write(`${(c.tasks || {})[task] || c.default || ""}\n`);
+} else if (kind === "claude-exec") {
+  const list = (cfg.claude || {}).exec_review || [];
+  process.stdout.write(list.includes(task) ? "true\n" : "false\n");
 } else {
-  console.error("사용법: model-for.mjs <codex|claude> <TASK> [models.json]");
+  console.error("사용법: model-for.mjs <codex|claude|claude-exec> <TASK> [models.json]");
   process.exit(2);
 }
