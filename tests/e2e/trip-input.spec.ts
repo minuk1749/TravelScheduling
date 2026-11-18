@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { cityProfile } from '../fixtures/trip-input';
+import { mockPlaces, pick } from '../helpers/e2e-places';
 import { parseTripDraft, type TripDraft } from '../../src/trips/input';
 
 async function fits(page: Page) {
@@ -7,20 +8,6 @@ async function fits(page: Page) {
   for (const box of await page.locator('input, select, button').evaluateAll(nodes => nodes.filter(node => (node as HTMLElement).offsetParent !== null).map(node => {
     const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, height: rect.height };
   }))) { expect(box.left).toBeGreaterThanOrEqual(0); expect(box.right).toBeLessThanOrEqual(375); expect(box.height).toBeGreaterThanOrEqual(44); }
-}
-async function pick(page: Page, label: string, name: string) {
-  const picker = page.locator('.place-picker').filter({ has: page.getByLabel(label, { exact: true }) });
-  await picker.getByRole('textbox').fill(name);
-  await picker.getByRole('button', { name: '검색', exact: true }).click();
-  await picker.getByRole('button', { name, exact: true }).click();
-  await expect(picker.getByText(`선택: ${name}`, { exact: false })).toBeVisible();
-}
-async function mockPlaces(page: Page) {
-  await page.route('**/api/places?*', async route => {
-    const name = new URL(route.request().url()).searchParams.get('query')!;
-    await route.fulfill({ json: { places: [{ googlePlaceId: `place-${encodeURIComponent(name).replaceAll('%', '')}`, name,
-      attributions: [{ provider: '테스트 제공자', providerUri: 'https://example.test/source' }, { provider: '안전하지 않은 링크', providerUri: 'javascript:alert(1)' }] }], attribution: 'Google Maps' } });
-  });
 }
 test('375px: flows 2–5, city profile, invalid inputs, multiple lodgings, retry and durable create payload', async ({ page }, testInfo) => {
   let saved: TripDraft | undefined, writes = 0;
