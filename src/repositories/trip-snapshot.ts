@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { MealSlot, MealWindows, TimeWindow } from '../scheduler';
+import { parseLegModes } from '../results/input';
+import { TripInputError } from '../trips/input';
 import type { TripInputs, TripLoad } from '../services/itinerary/types';
 
 type Db = Pick<Pool | PoolClient, 'query'>;
@@ -66,7 +68,7 @@ export function inputHash(input: TripInputs): string {
 export async function loadTripInputs(db: Db, tripId: string): Promise<TripLoad | null> {
   const trip = (await db.query(`SELECT id, city_code, time_zone, start_date::text AS start_date, end_date::text AS end_date,
     default_departure_time::text AS departure_time, default_return_time::text AS return_time,
-    default_meal_slots, meal_windows, luggage_option, arrival_buffer_minutes, departure_buffer_minutes, taxi_policy
+    default_meal_slots, meal_windows, luggage_option, arrival_buffer_minutes, departure_buffer_minutes, taxi_policy, leg_modes
     FROM trips WHERE id = $1`, [tripId])).rows[0];
   if (!trip) return null;
   // Sequential: a single client runs one query at a time.
@@ -128,5 +130,12 @@ export async function loadTripInputs(db: Db, tripId: string): Promise<TripLoad |
   };
   if (read.missing.length) return { status: 'INCOMPLETE', fields: read.missing };
   const ready = input as TripInputs;
+  try {
+    const modes = parseLegModes(trip.leg_modes ?? [], ready);
+    if (modes.length) ready.legModes = modes;
+  } catch (error) {
+    if (!(error instanceof TripInputError)) throw error;
+    return { status: 'INCOMPLETE', fields: ['constraints'] };
+  }
   return { status: 'READY', input: ready, inputHash: inputHash(ready) };
 }

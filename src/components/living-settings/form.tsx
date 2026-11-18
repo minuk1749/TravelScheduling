@@ -5,6 +5,7 @@ import { parseSettings } from '../../settings/input';
 import type { SettingsView } from '../../settings/model';
 import { TripInputError } from '../../trips/input';
 import { SettingsFields } from './fields';
+import { SettingsItineraryPreview } from './itinerary-preview';
 import { SettingsPreview } from './preview';
 
 export function LivingSettingsForm({ tripId, initial, reload }: { tripId: string; initial: SettingsView; reload(): void }) {
@@ -39,6 +40,7 @@ export function LivingSettingsForm({ tripId, initial, reload }: { tripId: string
       <div className="form-navigation"><button type="button" className="secondary" disabled={saving} onClick={() => { setDraft(snapshot.settings); setError(''); setSaved(false); }}>변경 취소</button><button type="submit" disabled={saving || !preview.calculation || !dirty}>설정 저장</button></div>
     </form>
     <p><button type="button" className="secondary" disabled={saving} onClick={reload}>저장된 설정 다시 불러오기</button></p>
+    {saved && <SettingsItineraryPreview key={snapshot.revision} tripId={tripId} />}
     {preview.calculation && <SettingsPreview calculation={preview.calculation} snapshot={snapshot} />}
   </>;
 }
