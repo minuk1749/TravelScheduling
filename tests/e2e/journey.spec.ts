@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { cityProfile } from '../fixtures/trip-input';
 import { createDatabasePool } from '../../src/lib/db';
+import { migrate } from '../../src/lib/migrations';
 import { clickMarker, expectMarkers, installMapsDouble } from '../helpers/e2e-maps';
 import { pick } from '../helpers/e2e-places';
 
@@ -19,6 +20,9 @@ const REQUIRED_STATES = { 'Senso-ji Temple': 'unplaced', 'Tokyo Skytree': 'unpla
 const pool = createDatabasePool();
 const removeTestUser = () => pool.query('DELETE FROM users WHERE google_id = $1', [GOOGLE_ID]);
 test.beforeAll(async () => {
+  // CI may run e2e on a database that unit tests left empty; apply the (idempotent) schema first.
+  const client = await pool.connect();
+  try { await migrate(client); } finally { client.release(); }
   await removeTestUser();
   await pool.query(`INSERT INTO city_profiles (city_code, country, currency, transit_coverage, transit_hours, taxi_base_fare, taxi_fare_per_km,
       taxi_fare_per_minute, night_surcharge, night_start, night_end, call_buffer_minutes, efficiency_threshold, ride_hailing_apps, source, updated_at)
