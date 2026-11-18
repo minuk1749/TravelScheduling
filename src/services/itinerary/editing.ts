@@ -2,6 +2,7 @@ import type { ItineraryPlaces, TripLoad } from './types';
 import type { Constraints, ResultSnapshot, ResultView } from '../../results/model';
 import { parseConstraints } from '../../results/input';
 import { TripInputError } from '../../trips/input';
+import { displayPlaces } from './display-places';
 
 export interface ConstraintRepository {
   loadInputs(tripId: string): Promise<TripLoad | null>;
@@ -13,13 +14,8 @@ export class ResultEditService {
     const loaded = await this.repository.loadInputs(tripId);
     if (loaded?.status !== 'READY') throw new ResultUnavailableError();
     const { input, inputHash: revision } = loaded;
-    const refs = new Map([...input.visits.map(v => v.place), ...input.flights.map(f => f.airport), ...input.lodgings.map(l => l.place)].map(p => [p.id, p]));
-    // Fresh display metadata only: names and attributions never enter the database.
-    const entries = await Promise.all([...refs.values()].map(async ref => {
-      const place = await this.places.details({ googlePlaceId: ref.googlePlaceId, language: 'ko', timeZone: input.timeZone, dates: [input.startDate] });
-      return [ref.id, place && { googlePlaceId: place.googlePlaceId, name: place.name, coordinates: place.coordinates, attributions: place.attributions }] as const;
-    }));
-    return { input, revision, places: Object.fromEntries(entries) };
+    const refs = [...input.visits.map(v => v.place), ...input.flights.map(f => f.airport), ...input.lodgings.map(l => l.place)];
+    return { input, revision, places: await displayPlaces(this.places, refs, input.timeZone, input.startDate) };
   }
   async save(tripId: string, ownerId: string, body: unknown): Promise<ResultSnapshot> {
     const loaded = await this.repository.loadInputs(tripId);

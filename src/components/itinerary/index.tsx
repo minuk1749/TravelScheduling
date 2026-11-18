@@ -9,6 +9,7 @@ import { ItineraryMap } from './map';
 import { VisitEditor } from './visit-editor';
 import { Diagnostics } from './diagnostics';
 import { Efficiency, Timeline } from './timeline';
+import { ShareControls } from './share-controls';
 
 export function ItineraryResults({ tripId }: { tripId: string }) {
   const [view, setView] = useState<ResultView | null>(null), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
@@ -69,6 +70,7 @@ function ResultEditor({ initial, tripId, reload }: { initial: ResultView; tripId
   }
   return <>
     <p>{view.input.startDate} – {view.input.endDate} · 현지 시각 ({view.input.timeZone})</p>
+    <ShareControls tripId={tripId} />
     <p role="status">{message}</p>{error && <p role="alert" className="form-errors">{error}</p>}
     {errors.length > 0 && <p role="alert" className="form-errors">{errors.join(' ')}</p>}
     <div className="result-actions"><button disabled={busy || errors.length > 0} onClick={generate}>{busy ? '계산 중…' : '저장하고 동선 재검증'}</button><button className="secondary" disabled={busy} onClick={reload}>저장된 설정 다시 불러오기</button></div>

@@ -84,3 +84,15 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - `tests/architecture-layers.test.ts`는 전체 소스 런타임 순환, 클라이언트의 전이 서버 의존,
   서비스/저장소 경계와 소스 300줄 상한을 검사한다. `fare-matrix.test.ts`는 행렬별 준비 횟수와 동등성을 검사한다.
 - 전체 목록·전후 성능·후속 범위: [T13A 점검](t13a-audit.md), [결정](decisions/T13A-audit-and-fare-preparation.md).
+
+## T14 읽기 전용 공유 연결
+
+- `src/sharing/`: 공유 DTO·저장소 포트, 소유자 토큰 재발급/비로그인 조회 HTTP, 서버 조립.
+- `src/services/sharing.ts`: 토큰 생성·해시·조회 후 유효성 재검사. 저장소·장소 포트에 의존하며 SQL·HTTP·동선 생성에 의존하지 않는다.
+- `src/repositories/sharing.ts`, `shared-itinerary.ts`: 해시 원자적 교체, 일관된 입력·최신 저장 결과 조회와 정규화 일정 복원. 외부 API·스케줄러 실행은 금지한다.
+- 결과 화면의 `share-controls.tsx` → 소유자 POST `/api/trips/[id]/share` → SharingService → PostgresShareRepository.
+- 공개 `/share/[token]`의 `shared.tsx` → GET `/api/share/[token]` → 저장 결과 조회 → 장소 표시 정보 조회.
+- 기존 `trips.share_token`에 SHA-256 해시를 저장한다. 재발급으로 이전 링크를 무효화한다.
+- 표시 컴포넌트는 `ResultDisplayView`를 사용하고 편집 콜백이 없으면 수정 UI를 노출하지 않는다.
+- `services/itinerary/display-places.ts`는 편집·공유 조회의 실시간 표시 정보 조회를 공유한다.
+- 계약과 검증: [T14 결정](decisions/T14-read-only-sharing.md), [아키텍처 §11](architecture.md#11-t14-읽기-전용-공유).
