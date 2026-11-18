@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
-import { JSDOM } from 'jsdom';
+import { installDom } from './helpers/dom';
 import { cityProfile } from './fixtures/trip-input';
 import { parseTripDraft, type TripDraft } from '../src/trips/input';
 
 // Browser-independent interaction regression. Actual 375px layout is tested separately by Playwright.
 test('T10 UI flows 2–5: profile, validation, multiple lodgings, edit/remove, back navigation and save retry', async () => {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/trips/new' });
-  const names = ['self', 'window', 'document', 'navigator', 'HTMLElement', 'Element', 'MutationObserver'] as const;
-  const previous = names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
-  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] });
+  const dom = installDom('http://localhost/trips/new');
   const previousFetch = globalThis.fetch;
   let saved: TripDraft | undefined, writes = 0;
   globalThis.fetch = async (input, options) => {
@@ -88,7 +85,6 @@ test('T10 UI flows 2–5: profile, validation, multiple lodgings, edit/remove, b
 
   } finally {
     cleanup(); globalThis.fetch = previousFetch;
-    for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
-    dom.window.close();
+    await dom.restore();
   }
 });

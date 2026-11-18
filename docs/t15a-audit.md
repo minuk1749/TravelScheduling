@@ -18,6 +18,7 @@ T13A가 남긴 후속 항목도 다시 확인했다. 보호 파일(`.github/**`,
 | 순환·경계 위반 의존 | 런타임 순환·클라이언트의 서버 전이 의존 없음. 저장소는 스케줄러·제공자를 호출하지 않음 | 변경 없음. `architecture-layers.test.ts`가 새 파일(`itinerary-details.ts`)까지 포함해 검사 |
 | 변경 시 여러 곳 수정 | 위 ②: details에 필드를 추가하면 쓰기·읽기 타입과 레거시 판정 3곳을 함께 고쳐야 했음. ③: 쓰기 경계 정책 변경 시 두 처리기 수정 | 위 조치로 한 파일씩. 다른 3개 쓰기 경계(`trips`·`itineraries`·`results`)의 `Sec-Fetch-Site` 미적용은 동작 변경이라 [질문](questions.md)으로 넘김 |
 | 불필요한 추상화·미사용 코드 | `places`의 이름·좌표·영업시간·유형·만료 SQL 열(과거 스키마, 항상 NULL), `details.schedule` 값(앱에서 읽는 곳 없음) | 데이터 형식 변경이므로 유지하고 사람 결정 항목으로 기록. 새 계층·포트 추가 없음 |
+| 테스트 안정성(라운드 2) | jsdom 전역 설치·해제가 UI 테스트 4곳(`trip-input-ui`·`living-settings-ui`·`result-ui`·`sharing-ui`)에 복사됨. 해제가 동기식이라 React Scheduler가 `setImmediate`로 미뤄 둔 passive effect 처리(`window.event` 읽음)가 부하가 큰 CI에서 전역 제거 뒤 실행되어 `ReferenceError: window is not defined`로 실패 | `tests/helpers/dom.installDom`으로 통합하고 `restore()`가 대기 중인 `setImmediate` 작업을 먼저 흘려보낸 뒤 전역을 복원. `dom-helper.test.ts`가 양보·재게시하는 스케줄러 작업이 모두 `window`를 보고 전역이 원래대로 돌아오는지 검사. 소스 변경 없음 |
 | 성능 | T13A 후속: 여행 최초 생성이 항공·숙소·방문 행마다 INSERT(방문 100개면 100회) | 자식 행을 테이블당 1회 집합 INSERT. 장소 upsert는 동시 생성의 잠금 순서를 위해 정렬된 행별 실행 유지. `trip-input-db`가 문장 수(방문 30개에도 3회)와 저장 값 동등성을 검사 |
 
 같아 보이지만 합치지 않은 부분:
@@ -38,7 +39,7 @@ T13A가 남긴 후속 항목도 다시 확인했다. 보호 파일(`.github/**`,
 | places·travel-time | 포트·어댑터·캐시 | 변경 없음 |
 | auth·lib·migrations | 세션·소유권, 공통 HTTP 정책, 001–006 | `isCrossSiteRequest` 추가. 스키마 변경 없음 |
 | server.ts 조립 6곳 | 모듈마다 지연 생성 `pg` 풀(최대 5) | 프로세스당 최대 30연결. 풀 공유는 연결 수 정책 변경이라 [질문](questions.md)으로 넘김 |
-| tests·e2e | 단위·SQL·HTTP·구조 검사, Playwright 375px 흐름 | DB 테스트 변환 도우미 통합. e2e는 300줄 이내 |
+| tests·e2e | 단위·SQL·HTTP·구조 검사, Playwright 375px 흐름 | DB 테스트 변환 도우미·UI 테스트 DOM 설치/해제 도우미 통합. e2e는 300줄 이내 |
 | 보호 자동화 | 러너·워크플로 | 아래 300줄 목록. 수정 금지 |
 
 ## 300줄 초과 파일 목록
@@ -71,8 +72,9 @@ T13A 기록의 결과 해시 5개(정상 `40e164f5…`, 초과 `7d852b43…`, �
 ### 실행 결과
 
 Node 24.22.2, PostgreSQL 16(`DATABASE_URL`). 패키지·lockfile 변경 없음.
-`npm run lint`·`npm run typecheck`·`npm run build` 통과, `npm test` 155 통과/0 실패/0 건너뜀,
-`npm run test:e2e` 7 통과(Chromium 헤드리스, Google은 기존 대역). 벤치마크 해시 5개 일치. 기존 실패·새 실패 없음.
+`npm run lint`·`npm run typecheck`·`npm run build` 통과, `npm test` 156 통과/0 실패/0 건너뜀(라운드 2, 2회 연속),
+`npm run test:e2e` 7 통과(라운드 1, Chromium 헤드리스, Google은 기존 대역). 벤치마크 해시 5개 일치(라운드 1).
+라운드 1 CI의 `living-settings-ui` 실패는 기존 테스트 해제 순서의 경쟁 조건이었고 위 "테스트 안정성" 행으로 해결했다.
 
 ## 남은 문제
 
