@@ -14,7 +14,7 @@ test('T11 DB round trip, atomic rollback, ownership, stale update and fixed cons
   await withDatabase(async (client, schema) => {
     await migrate(client);
     const owner = randomUUID();
-    await client.query('INSERT INTO users (id,google_id,email) VALUES ($1,$1,$2)', [owner, 'settings@example.test']);
+    await client.query('INSERT INTO users (id,google_id,email) VALUES ($1,$2,$3)', [owner, owner, 'settings@example.test']);
     const id = await insertTrip(client, owner, tripDraft);
     await client.query(`UPDATE trip_places SET fixed_date='2026-12-02', fixed_time='10:00', fixed_order=0 WHERE trip_id=$1 AND kind='ATTRACTION'`, [id]);
     const fixedBefore = (await client.query('SELECT * FROM trip_places WHERE trip_id=$1 ORDER BY id', [id])).rows;
