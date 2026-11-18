@@ -113,7 +113,7 @@ main() {
       echo "- git commit/push는 하지 마라. 스크립트가 한다."
       echo "- 수정 후 npm run lint, npm run typecheck, npm run build, npm test 를 실행해 확인하라."
       echo "- 보호 파일(.github/**, AGENTS.md, CLAUDE.md, docs/requirements.md, docs/tasks.md, scripts/agent/**)은 수정하지 마라."
-      echo "- AGENTS.md의 \"작업 원칙\"을 따르고, 최종 메시지는 \"PR 설명(완료 보고) 형식\"으로 무엇을 고쳤는지·검증 결과·남은 문제를 짧게 정리하라."
+      echo "- AGENTS.md의 \"작업 원칙\"을 따르고, 최종 메시지는 \"PR 설명(완료 보고) 형식\"으로 PR 전체에 대한 최신 보고를 작성하라(PR 설명을 이 메시지로 교체한다)."
       echo
       echo "## 자동 피드백"
       echo
@@ -130,6 +130,8 @@ main() {
     fi
     git push -q origin "HEAD:$branch"
     { echo "**Mac 러너: 피드백 반영 후 푸시**"; echo; cat "$msg" 2>/dev/null; } | gh pr comment "$pr" -R "$REPO" --body-file -
+    # PR 설명도 최신 보고로 바꾼다(리뷰어가 PR 설명을 작성자의 주장으로 읽기 때문)
+    if [ -s "$msg" ]; then gh pr edit "$pr" -R "$REPO" --body-file "$msg" >/dev/null || true; fi
     rm -f "$msg"
     log "PR #$pr 에 수정 푸시 완료"
     return 0
