@@ -112,7 +112,12 @@ if [ "$ROUND" -ge "$MAX_ROUNDS" ]; then
   { echo "**자동 피드백 (라운드 $ROUND, 상한 도달)**"; echo; cat "$RUNNER_TEMP/fb.md"; echo; echo "라운드 상한에 도달해 사람 확인으로 넘깁니다. 이 작업에 의존하는 작업은 건너뜁니다."; } > "$RUNNER_TEMP/c.md"
   gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
   gh pr edit "$PR" --add-label needs-human
-  if [ -n "$ISSUE" ]; then gh issue edit "$ISSUE" --remove-label agent-task --remove-label refactor-task --add-label needs-human; fi
+  if [ -n "$ISSUE" ]; then
+    # 없는 라벨을 지우려 하면 gh가 실패하므로 하나씩, 실패를 무시하고 지운다
+    gh issue edit "$ISSUE" --add-label needs-human
+    gh issue edit "$ISSUE" --remove-label agent-task >/dev/null 2>&1 || true
+    gh issue edit "$ISSUE" --remove-label refactor-task >/dev/null 2>&1 || true
+  fi
   update_tasks 보류
   next_task
   exit 0
