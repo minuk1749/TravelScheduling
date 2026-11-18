@@ -125,6 +125,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # 이 워크플로는 agent-start·판정 단계(GitHub Actions 봇)가 실행한다. 사람이 아니어도 실행하도록 이 봇만 허용
+          allowed_bots: "github-actions[bot]"
           prompt: |
             저장소 ${{ github.repository }}의 작업 ${{ steps.info.outputs.id }} 이다. `.claude-task.md`를 읽고 그 지시를 따르라.
           claude_args: >-
