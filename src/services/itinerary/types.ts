@@ -29,6 +29,7 @@ export interface TripInputs {
   }[];
   flights: readonly { direction: 'ARRIVAL' | 'DEPARTURE'; airport: PlaceRef; localDateTime: string }[];
   lodgings: readonly { place: PlaceRef; checkIn: string; checkOut: string }[];
+  legModes?: readonly { date: string; from: string; to: string; mode: TravelMode }[];
   visits: readonly {
     id: string; place: PlaceRef; kind: 'RESTAURANT' | 'ATTRACTION';
     minutes: number; priority: Visit['priority'];
@@ -116,7 +117,7 @@ export type GenerateOutcome =
   | { status: 'NOT_FOUND' }
   | { status: 'INCOMPLETE'; fields: readonly string[] }
   | { status: 'STALE' }
-  | { status: 'SAVED'; itineraryId: string; result: ItineraryResult };
+  | { status: 'SAVED'; itineraryId: string; inputHash: string; result: ItineraryResult };
 
 /** The stored trip cannot be scheduled until the listed fields are corrected. */
 export class ItineraryInputError extends Error {

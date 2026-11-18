@@ -14,6 +14,7 @@ test('T11 UI edits recalculate immediately, show fixed conflicts, preserve draft
   const previousFetch = globalThis.fetch;
   let current = structuredClone(settingsSnapshot), writes = 0, loads = 0;
   globalThis.fetch = async (input, options) => {
+    if (String(input).endsWith('/itinerary')) return Response.json({ status: 'CONFLICT', capacity: { unplaced: [{ visitId: 'fixed-museum', reason: 'TIME_WINDOW', fixed: true }] } });
     assert.equal(String(input), '/api/trips/trip/settings');
     if (options?.method === 'PUT') {
       writes++;
@@ -47,6 +48,7 @@ test('T11 UI edits recalculate immediately, show fixed conflicts, preserve draft
     fireEvent.click(view.getByRole('button', { name: '설정 저장' })); await view.findByText('일시적인 저장 실패');
     assert.equal((view.getByLabelText('택시 정책') as HTMLSelectElement).value, 'PREFER');
     fireEvent.click(view.getByRole('button', { name: '설정 저장' })); await view.findByText('생활 설정을 저장하고 시간창을 재계산했습니다.');
+    await view.findByText('고정 항목 또는 이동 조건 충돌: 고정 내용을 유지했습니다. 결과 화면에서 조정해 주세요.');
     assert.equal(writes, 2); assert.deepEqual(current.fixedVisits, settingsSnapshot.fixedVisits);
     assert.deepEqual(current.settings.days[0].mealSlots, []);
     fireEvent.click(view.getByRole('button', { name: '저장된 설정 다시 불러오기' }));

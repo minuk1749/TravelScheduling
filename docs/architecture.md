@@ -272,8 +272,8 @@ PUT은 `{ revision, settings }`, 응답은 `{ snapshot, calculation }`이다.
 
 `calculation.scope = TIME_WINDOWS`: 활동/식사창과 항공 버퍼, 고정 시각·체류시간의
 시간창 충돌만 검사한다. 공항 이동은 0분으로 두며 실제 이동·영업시간·고정 순서·수단·식사
-배치와 택시 정책별 경로 재선택은 T12/T13 연결 필요다. **전체 동선 재계산은 미구현이며
-T11 완료 기준의 전체 동선 의미는 미충족이다.** 화면에도 범위를 알린다.
+배치와 택시 정책별 경로 재선택은 이 미리보기에 포함되지 않는다. T13에서는 저장 후
+T12 생성 API를 호출해 전체 동선도 검증하며, 화면에서 두 검증의 범위를 구분한다(§9).
 서버 저장 실패 시 UI는 초안을 보존하고 재시도한다. 변경된 입력은 409로 거부하며 사용자가
 명시적으로 다시 불러온다. 전체 itinerary input_hash는 이 설정 revision과 별도로 계산해야 한다.
 검증/후속 연결은 [T11 인계](t11-handoff.md)에 기록한다.
@@ -393,3 +393,20 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
 `DATABASE_URL`로 받는다. DB 테스트는 연결이 없어도 skip하지 않는다. 실제 API 키 없이
 목/픽스처로 테스트하며 외부 연동 확인과 실제 도시 데이터 검토는 사람이 수행한다.
 실행 결과·환경 한계·다음 작업 체크포인트는 [T7A 인계](t7a-handoff.md)에 남긴다.
+
+## 9. T13 결과 UI와 제약 저장
+
+이 절은 T11/T12에서 후속 연결로 남겼던 결과 화면·전체 재계산·구간 수동 지정의 현재 구현을 보완한다.
+
+- `/trips/[id]/result`와 [결과 컴포넌트](../src/components/itinerary/index.tsx)가 지도/타임라인/비교/초과 선택을 연결한다.
+- [공유 DTO](../src/results/model.ts), [검증](../src/results/input.ts), [표시 변환](../src/results/presentation.ts)은 브라우저/서버 공용이며 DB·네트워크에 의존하지 않는다.
+- [결과 서비스](../src/services/itinerary/editing.ts)는 ConstraintRepository와 장소 제공자 포트만 사용한다. [HTTP](../src/results/http.ts)가 인증·소유권·동일 출처·오류를 처리하고 server.ts가 구체 구현을 조립한다.
+- [저장소](../src/repositories/itinerary-constraints.ts)는 여행 행 잠금 아래 소유권과 전체 입력 해시를 재검사하고 방문/수단 제약을 원자적으로 저장한다.
+- GET `/api/trips/[id]/constraints`는 `{ input, revision, places }`, PUT은 `{ revision, constraints: { visits, legModes } }`를 받고 `{ input, revision }`을 반환한다. revision은 동선 입력 해시다. 누락/중복/다른 여행 ID·기간 밖 날짜·DST 모호 시각을 거부한다.
+- 방문 제약은 기존 trip_places에, 구간 제약은 [006](../migrations/006_itinerary_constraints.sql)의 trips.leg_modes에 저장한다. 후자는 날짜·출발/도착 장소 ID·수동 수단 배열이다. 장소 이름/귀속 정보는 실시간 응답에만 포함한다.
+- [일상 구간 적용](../src/services/itinerary/constraints.ts)은 기존 짐 속성을 유지하고, 공항 이동은 기존 transfer 선택에 fixedMode를 전달한다. 입력 해시에 수단 제약도 포함된다.
+- PUT 성공 뒤 기존 POST `/api/trips/[id]/itinerary`로 재검증한다. POST 응답에 inputHash를 추가해 다른 입력으로 생성된 결과 표시를 막는다. 생성 실패 시 저장한 제약은 유지된다. 화면 재접속은 입력을 복원하고 버튼으로 재생성한다.
+- 생활 설정 저장 뒤 [전체 검증](../src/components/living-settings/itinerary-preview.tsx)도 기존 POST를 호출한다. 입력 중 TIME_WINDOWS 미리보기는 전체 검증과 구분한다.
+- [지도 어댑터](../src/components/itinerary/google-map.ts)는 브라우저 전용 Maps 키/지도 ID로 고급 마커를 표시한다. 지도 로딩 실패에도 장소 목록에서 편집할 수 있다.
+
+이 결정의 이유·대안·검증은 [T13 ADR](decisions/T13-result-ui-and-constraints.md)에 기록한다. T12B의 날짜별 짐 처리 모듈은 변경하지 않는다.

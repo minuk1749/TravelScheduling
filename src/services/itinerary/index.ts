@@ -1,3 +1,4 @@
+import { applyLegModes } from './constraints';
 import type { CityProfile } from '../../fare';
 import type { ScheduleResult } from '../../scheduler';
 import { MEAL_MINUTES, planDays, tripDates } from './day-plan';
@@ -29,7 +30,7 @@ export class ItineraryService {
     if (load.status === 'INCOMPLETE') return { status: 'INCOMPLETE', fields: load.fields };
     const result = await this.compute(load.input);
     const saved = await this.deps.repository.saveItinerary(tripId, load.inputHash, result);
-    return saved.status === 'STALE' ? saved : { status: 'SAVED', itineraryId: saved.itineraryId, result };
+    return saved.status === 'STALE' ? saved : { status: 'SAVED', itineraryId: saved.itineraryId, inputHash: load.inputHash, result };
   }
 
   async compute(input: TripInputs): Promise<ItineraryResult> {
@@ -45,7 +46,7 @@ export class ItineraryService {
     const prepared = await prepareDays(context, plans);
 
     const verified = await scheduleWithActualRoutes({
-      days: prepared.map(day => day.day), visits, mealMinutes: MEAL_MINUTES, taxiPolicy: input.taxiPolicy,
+      days: prepared.map(day => applyLegModes(day.day, input.legModes)), visits, mealMinutes: MEAL_MINUTES, taxiPolicy: input.taxiPolicy,
       ...(profile ? { cityProfile: { callBufferMinutes: profile.callBufferMinutes, efficiencyThreshold: profile.efficiencyThreshold } } : {}),
     }, routes, this.maxAttempts);
 

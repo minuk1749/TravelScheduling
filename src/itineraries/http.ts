@@ -43,7 +43,7 @@ export function itineraryHandlers(deps: Dependencies) {
           case 'NOT_FOUND': return json({ error: ACCESS_ERRORS[404] }, 404);
           case 'INCOMPLETE': return json({ error: INCOMPLETE, fields: outcome.fields }, 409);
           case 'STALE': return json({ error: '계산 중 여행 정보가 바뀌었습니다. 다시 생성해 주세요.' }, 409);
-          case 'SAVED': return json({ itineraryId: outcome.itineraryId, ...outcome.result });
+          case 'SAVED': return json({ itineraryId: outcome.itineraryId, inputHash: outcome.inputHash, ...outcome.result });
         }
       } catch (error) {
         return errorResponse(error);

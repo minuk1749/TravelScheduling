@@ -1,0 +1,19 @@
+.itinerary-page { max-width: 64rem; }
+.result-actions { display: flex; flex-wrap: wrap; gap: .6rem; padding: .75rem 0; }
+.result-map { width: 100%; height: 340px; background: #e4ece7; border-radius: .75rem; }
+.result-marker { display: block; padding: .5rem; max-width: 180px; border: 2px solid; border-radius: .5rem; font-weight: bold; white-space: normal; background: white; }
+.marker-placed { color: #175b4b; border-color: #175b4b; }
+.marker-wish { color: #713c8d; border-color: #713c8d; border-style: dashed; }
+.marker-unplaced { color: #8d3b13; border-color: #8d3b13; }
+.result-editor { min-width: 0; border: 0; margin: 0; padding: 0; }
+.result-editor > legend { margin-top: 1.5rem; font-weight: bold; }
+.result-day, .result-visit { margin: 1rem 0; padding: 1rem; border: 1px solid #c7d8cf; border-radius: .8rem; background: white; overflow-wrap: anywhere; }
+.result-visit.is-selected { border: 3px solid #713c8d; }
+.result-visit h3 { margin: 0; }
+.result-leg { padding: .75rem; background: #f1f5f2; border-radius: .5rem; margin: .7rem 0; }
+.result-leg h4 { margin: 0; }
+.result-stop { border-left: 3px solid #175b4b; padding-left: 1rem; }
+.result-comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; font-size: .9rem; }
+.trip-input .result-checkbox { display: flex; align-items: center; gap: .5rem; }
+.trip-input .result-checkbox input { width: 22px; min-height: 22px; flex-shrink: 0; margin: 0; }
+@media (max-width: 420px) { .result-comparison { grid-template-columns: 1fr; } }

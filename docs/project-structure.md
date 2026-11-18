@@ -39,7 +39,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `src/repositories/` | 여행 생성, 도시 프로필 읽기, 생활 설정 읽기/원자적 수정 | pg, 설정 검증·타입 | 스케줄러 실행·외부 API |
 | `tests/` | 순수 함수·SQL·HTTP·구조 검사. `fixtures/`(가짜 외부 응답), `helpers/database.ts` | 모든 모듈 | 실제 Google 키 |
 
-**아직 없는 모듈(예정):** 결과 화면(T13).
+결과 화면(T13)은 아래 T13 연결 절을 따른다.
 
 ## 연결 방식
 
@@ -48,7 +48,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - **조립 지점:** 구체 구현을 고르는 곳은 각 모듈의 `server.ts` 하나다. 모듈 import 시점에는 연결·네트워크 작업을 하지 않고, 처음 쓸 때 만든다. 테스트는 같은 인터페이스에 가짜 구현을 넣는다.
 - **오류:** 입력 오류(`*InputError`)와 제공자 장애(`*ProviderError`)를 구분한다. 장애를 빈 결과나 null로 숨기지 않는다.
 - **시간:** 모든 시각은 IANA 시간대와 함께 다룬다. 현지 날짜·시각 문자열과 오프셋이 있는 instant를 구분한다.
-- **생활 설정:** `/trips/[id]/settings` → GET/PUT `/api/trips/[id]/settings` → LivingSettingsService → LivingSettingsRepository. 여행 생성 성공 화면에서 진입한다. 설정 변경 즉시 scheduler의 시간창을 다시 계산하며 고정 시각 충돌을 표시한다. 전체 동선 재계산은 T12/T13 연결 필요이며 현재 결과는 TIME_WINDOWS다.
+- **생활 설정:** `/trips/[id]/settings` → GET/PUT `/api/trips/[id]/settings` → LivingSettingsService → LivingSettingsRepository. 여행 생성 성공 화면에서 진입한다. 설정 변경 즉시 scheduler의 시간창을 다시 계산하며 고정 시각 충돌을 표시한다. 입력 중 결과는 TIME_WINDOWS이며 저장 후 T12 POST로 전체 동선을 재계산한다.
 
 ## 중요한 설계 이유
 
@@ -63,3 +63,13 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | 동선 생성 재조회 루프·저장 | 실제 출발 시각 재조회 후 순수 스케줄러 재실행으로 검사 규칙을 한 곳에 두고, 트립 잠금 + 입력 해시로 계산 중 변경을 감지 | [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md) |
 
 `tests/architecture.test.ts`가 코어의 I/O 금지, 아키텍처 문서의 타입 계약과 실제 export 일치, 문서 링크 유효성을 검사한다.
+
+## T13 결과 UI 연결
+
+- 기준: 작업 시작 원격 `develop` fed5c6f. `/trips/[id]/result`와 `src/components/itinerary/`가 지도·타임라인·구간 비교·전체 효율·장소 제약 편집을 제공한다.
+- `src/results/`: 공유 DTO·검증·표시 변환과 HTTP/서버 조립. 공유 코드는 DB·네트워크에 의존하지 않는다.
+- `src/services/itinerary/editing.ts`: 저장소·장소 포트를 통한 조회/제약 저장. `constraints.ts`: 기존 짐 설정을 유지하면서 구간 수단 고정을 적용한다.
+- `src/repositories/itinerary-constraints.ts`: 여행 행 잠금·소유권·입력 해시 검사와 원자적 제약 저장. 006은 `trips.leg_modes`를 추가한다.
+- GET/PUT `/api/trips/[id]/constraints` → ResultEditService → ConstraintRepository. 저장 뒤 기존 POST `/api/trips/[id]/itinerary`로 재검증하며 생성 응답의 inputHash를 확인한다. 이름·귀속 정보는 DB에 보관하지 않는다.
+- 생활 설정 저장 후에도 T12 POST로 전체 동선을 재계산한다. 입력 중 미리보기는 TIME_WINDOWS로 유지한다.
+- 지도는 브라우저 Google Maps 어댑터를 통해 접근한다. 서버 Places/Routes 키를 전달하지 않는다. 상세: [T13 결정](decisions/T13-result-ui-and-constraints.md).

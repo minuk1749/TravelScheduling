@@ -13,6 +13,7 @@ test('T11 375px: settings, live recalculation, fixed conflict, save/reload and r
     }
     await route.fulfill({ json: { snapshot, calculation: calculateSettings(snapshot, snapshot.settings) } });
   });
+  await page.route('**/api/trips/test/itinerary', route => route.fulfill({ json: { status: 'CONFLICT', capacity: { unplaced: [] } } }));
   await page.goto('/trips/test/settings');
   await expect(page.getByText(/현지 시각 \(Asia\/Tokyo\)/)).toBeVisible();
   await page.getByLabel('2026-12-02 나가는 시각', { exact: true }).fill('11:00');
