@@ -5,6 +5,7 @@
 먼저 `AGENTS.md`(특히 "작업 원칙"), `docs/project-structure.md`, `docs/requirements.md`, `docs/tasks.md`, `docs/architecture.md`를 읽어라. 작업 범위와 완료 기준은 `docs/requirements.md` §5의 {{TASK}} 행이다.
 
 ## 반드시 지킬 것
+- 저장소 전체를 탐색하지 마라. 작업에 필요한 코드와 그 호출 지점·의존 코드만 확인한다(`AGENTS.md` "검토 범위"). 단, 완료 기준이 **전체 점검**인 작업(T13A, T15A 등)은 예외로 저장소 전체를 점검한다. 구조는 `docs/project-structure.md`로 파악한다.
 - **PR 제목은 반드시 `{{TASK}}: `로 시작한다.** (예: `{{TASK}}: {{TITLE}}`) 자동 리뷰가 제목으로 작업을 식별한다.
 - PR 대상(base) 브랜치는 `develop`이다.
 - 완료 기준의 각 항목을 자동 테스트로 검증하라. `npm run lint`, `npm run typecheck`, `npm run build`, `npm test`가 통과해야 한다.
