@@ -185,6 +185,8 @@ jobs:
             gh pr create --base develop --head "$BRANCH" --title "$ID: $TITLE" --label owner-claude --body-file "$RUNNER_TEMP/body.md"
           else
             { echo "**Claude 수정 (라운드 $ROUND)**"; echo; cat "$RUNNER_TEMP/body.md"; } | gh pr comment "$PR" --body-file -
+            # PR 설명도 최신 보고로 바꾼다. 리뷰어는 PR 설명을 작성자의 주장으로 읽기 때문에 처음 설명이 남아 있으면 실제와 어긋난다
+            gh pr edit "$PR" --body-file "$RUNNER_TEMP/body.md" >/dev/null
           fi
 
       - name: Show Claude failure reason
