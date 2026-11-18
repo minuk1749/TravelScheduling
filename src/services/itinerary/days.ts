@@ -107,11 +107,10 @@ function skipUnusableMeals(context: DayContext, date: string, window: DayWindowR
   return { window: { ...window, meals }, skipped };
 }
 
-/** Luggage-carrying daily legs: every leg on a day trip without lodging, or the legs into a direct-to-airport end. */
+/** On a luggage day (day trip without lodging, direct-to-airport last day) every directed leg carries luggage. */
 function luggageLegs(plan: DayPlan, ids: readonly string[]): SchedulingDay['legSettings'] {
   if (!plan.luggage) return undefined;
-  const targets = plan.luggage === 'ALL_LEGS' ? ids : [plan.end.id];
-  return new Map(ids.map(id => [id, new Map(targets.map(target => [target, { luggage: true }]))]));
+  return new Map(ids.map(id => [id, new Map(ids.map(target => [target, { luggage: true }]))]));
 }
 
 async function finishDay(context: DayContext, draft: Draft, occupied: readonly Occupied[], conflicts: readonly TripConflict[]): Promise<PreparedDay> {
