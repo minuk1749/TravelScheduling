@@ -173,7 +173,10 @@ jobs:
           fi
           printf '%s\n\n---\n작업 이슈: #%s · 구현: Claude · 리뷰: Codex\n' "${msg:-(최종 메시지 없음)}" "$ISSUE" > "$RUNNER_TEMP/body.md"
 
-          git push -q --force-with-lease "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "HEAD:refs/heads/$BRANCH"
+          # URL로 푸시하면 원격 추적 브랜치가 없어 --force-with-lease가 항상 실패(stale info)한다.
+          # 수정 라운드는 PR 브랜치 위에 쌓았으므로 일반 푸시, 새 작업은 에이전트 전용 브랜치라 강제 푸시
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+          if [ -n "$PR" ]; then git push -q "$remote" "HEAD:refs/heads/$BRANCH"; else git push -q --force "$remote" "HEAD:refs/heads/$BRANCH"; fi
           if [ -z "$PR" ]; then
             gh label create owner-claude --color fbca04 --description "Claude가 구현한 PR (Codex가 리뷰)" --force >/dev/null
             gh pr create --base develop --head "$BRANCH" --title "$ID: $TITLE" --label owner-claude --body-file "$RUNNER_TEMP/body.md"
