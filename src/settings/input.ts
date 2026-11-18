@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { mealSlotsForCount, type MealSlot, type MealWindows } from '../scheduler';
+import { mealCountForSlots, mealSlotsForCount, type MealSlot, type MealWindows } from '../scheduler';
 import { TripInputError } from '../trips/input';
 import type { LivingSettings, MealCount } from './model';
 
@@ -7,13 +7,9 @@ const object = (value: unknown): Record<string, unknown> => value !== null && ty
 export const mealLabels = { BREAKFAST: '아침', LUNCH: '점심', DINNER: '저녁' } as const;
 export const mealCounts: readonly MealCount[] = [0, 1, 2, 3];
 export function countForSlots(value: unknown): MealCount {
-  if (Array.isArray(value) && new Set(value).size === value.length) {
-    for (const count of mealCounts) {
-      const expected = mealSlotsForCount(count);
-      if (value.length === expected.length && expected.every(slot => value.includes(slot))) return count;
-    }
-  }
-  throw new RangeError('지원하지 않는 식사 슬롯 조합입니다.');
+  const count = Array.isArray(value) ? mealCountForSlots(value) : null;
+  if (count === null) throw new RangeError('지원하지 않는 식사 슬롯 조합입니다.');
+  return count;
 }
 export function tripDates(start: string, end: string): string[] {
   const first = Temporal.PlainDate.from(start), last = Temporal.PlainDate.from(end);

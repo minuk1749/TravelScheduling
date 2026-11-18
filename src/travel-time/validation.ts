@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { TravelInputError, type Location, type MatrixRequest, type ProviderMode, type RouteRequest, type TravelRequest } from './index';
+import { MAX_MATRIX_LOCATIONS, TravelInputError, type Location, type MatrixRequest, type ProviderMode, type RouteRequest, type TravelRequest } from './index';
 
 const MODES: readonly ProviderMode[] = ['TRANSIT', 'WALK', 'DRIVE'];
 
@@ -30,8 +30,8 @@ function location(value: Location): Location {
 
 export function matrixRequest(input: MatrixRequest): MatrixRequest {
   const normalized = request(input);
-  if (!Array.isArray(input.locations) || input.locations.length > 100) {
-    throw new TravelInputError('행렬은 최대 100개 장소를 지원합니다.');
+  if (!Array.isArray(input.locations) || input.locations.length > MAX_MATRIX_LOCATIONS) {
+    throw new TravelInputError(`행렬은 최대 ${MAX_MATRIX_LOCATIONS}개 장소를 지원합니다.`);
   }
   const locations = input.locations.map(location);
   if (new Set(locations.map(value => value.id)).size !== locations.length) {

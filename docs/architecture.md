@@ -1,6 +1,6 @@
 # 아키텍처
 
-기준: 2026-11-18, T11 시작 시 원격 `develop`의 `6e1d5cc`를 바탕으로 갱신.
+기준: 2026-11-18, T11 시작 시 원격 `develop`의 `6e1d5cc`를 바탕으로 갱신. T12(동선 생성 API)에서 일정 서비스·저장 부분 갱신.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
 **현재**는 T1–T11에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
 디렉터리·서비스·HTTP 응답은 아직 존재하지 않는다. 구조나 계약 변경 시 이 문서와
@@ -13,6 +13,7 @@ src/
   app/                         현재: App Router, 홈/manifest, 서버 액션
     api/auth/[...nextauth]/     현재: Auth.js HTTP 진입점
     api/trips/[id]/             현재: 소유권 확인 후 { id }만 반환
+    api/trips/[id]/itinerary/   현재 T12: 인증·소유권 확인 후 동선 생성 POST
     trips/[id]/settings/        현재 T11: 생활 설정·시간창/고정 시각 충돌 미리보기
     api/trips/[id]/settings/    현재 T11: 소유자 설정 GET/PUT
     trips/new/                  현재 T10: 여행·항공·숙소·장소 입력
@@ -34,11 +35,12 @@ src/
   places/                      현재 T8: 장소 포트·좌표 캐시·Google 어댑터·HTTP 처리
   travel-time/                 현재 T9: 이동시간 포트·선택적 캐시·Google 어댑터·서버 팩터리
   trips/                       현재 T10: 공유 입력 검증·HTTP 처리·서버 팩터리
-  repositories/                현재 T10/T11: 여행 생성·장소 ID 저장·프로필 조회·생활 설정 수정. 일정은 후속 T12
-  services/itinerary.ts         후속 T12: 입력 조립, 재조회 루프, 결과 저장
+  repositories/                현재 T10/T11: 여행 생성·장소 ID 저장·프로필 조회·생활 설정 수정. T12: 입력 스냅샷(trip-snapshot.ts), 일정 저장(itineraries.ts)
+  services/itinerary/           현재 T12: 날짜별 앵커·시간창 조립, 장소·이동시간 조회, 재조회 루프, 비교·효율 요약
+  itineraries/                 현재 T12: 동선 생성 HTTP 처리(http.ts)와 조립(server.ts)
   settings/                    현재 T11: 설정 검증·계산·서비스·HTTP·조립
   repositories/living-settings.ts 현재 T11: 설정 읽기·잠금/revision/원자적 수정
-migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비
+migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비 → 005 일정 저장 필드
 public/                        현재: 온라인 전용 sw.js, 아이콘
 tests/                         현재: node:test + tsx, SQL/HTTP/순수 함수 검사
 scripts/verify-pwa.mjs          현재: 빌드 산출물 검사
@@ -52,8 +54,8 @@ docs/decisions/                설계 결정과 대안
 | 인증 코어 | [AuthStore](../src/lib/auth/callbacks.ts)와 `authorizeTrip` 콜백에만 의존 | Google/SQL 구현을 콜백에 직접 결합 |
 | `src/scheduler` | 호출자가 제공한 시간창·행렬만 계산. 런타임 의존성은 내부 모듈과 Temporal | DB, fetch, 공급자 호출, 환경 변수, 현재 시각·난수 읽기 |
 | `src/fare` | 프로필·거리·주행시간·출발 instant·시간대에서 추정 요금 산출 | 요금표 조사, DB 조회, 환율 조회 |
-| 후속 서비스 | 저장소/제공자 주입, 좌표·영업시간 갱신, 순수 함수 호출 순서, 재검증 | HTTP 객체를 코어에 전달, 고정 제약의 임의 해제 |
-| 후속 제공자 | 외부 응답/단위 정규화, 캐시, 네트워크 실패 구분 | 정책에 맞는 이동수단 선택, 사용자 입력 변경 |
+| 일정 서비스 (T12) | 저장소/제공자 포트 주입, 좌표·영업시간 조회, 순수 함수 호출 순서, 재검증 | HTTP 객체를 코어에 전달, 고정 제약의 임의 해제, SQL |
+| 제공자 | 외부 응답/단위 정규화, 캐시, 네트워크 실패 구분 | 정책에 맞는 이동수단 선택, 사용자 입력 변경 |
 | 저장소 | SQL, 트랜잭션, 행→도메인 변환, 소유 데이터 연쇄 삭제 | 스케줄러 실행, 외부 API 호출 |
 
 현재 `placement.ts`는 `CityProfile`의 두 필드만 **type import**하고, `index.ts`의 타입도
@@ -71,10 +73,11 @@ type import한다. 런타임에는 `index → capacity → placement → transpo
 `GET /api/trips/[id] → auth → authorizeTrip → tripOwner → { id }`,
 `GET /api/places → auth → PlaceProvider → Google/좌표 캐시`,
 `/trips/new → POST /api/trips → auth → parseTripDraft → tripInputRepository → PostgreSQL`,
-`GET /api/city-profiles → auth → cityProfileRepository`다.
-T11 생활 설정은 `/trips/[id]/settings → GET/PUT /api/trips/[id]/settings → LivingSettingsService → LivingSettingsRepository`로 연결한다. 공용 계산은 기존 calculateDayWindow를 호출한다. 전체 경로 생성·요금 연결은 후속 T12다.
+`GET /api/city-profiles → auth → cityProfileRepository`,
+`POST /api/trips/[id]/itinerary → auth → authorizeTrip → ItineraryService → 저장소·장소·이동시간 포트 → 스케줄러·요금 → 저장`이다.
+T11 생활 설정은 `/trips/[id]/settings → GET/PUT /api/trips/[id]/settings → LivingSettingsService → LivingSettingsRepository`로 연결한다. 공용 계산은 기존 calculateDayWindow를 호출한다. 설정 저장 뒤 전체 동선은 T12 생성 API를 다시 호출해 계산하며, 화면 연결은 T13이다.
 
-다음은 T8–T13에서 연결할 흐름이다. 화살표는 데이터 이동이며 호출 주체는 API의 서비스다.
+아래는 T8–T13의 전체 흐름이다(화면 부분은 T13). 화살표는 데이터 이동이며 호출 주체는 API의 서비스다.
 
 ```mermaid
 flowchart TD
@@ -99,17 +102,20 @@ flowchart TD
 1. 서버가 사용자와 여행 소유자를 확인한다. 클라이언트의 `ownerId`, 비용, 계산 결과는 신뢰하지 않는다.
 2. 여행 기본값과 날짜별 덮어쓰기를 조합하고 장소 캐시의 유효성을 확인한다. 미완성 T2 여행은
    누락 필드를 알려 입력 완료를 요청한다. 임의 도시·시간대를 넣지 않는다.
-3. 날짜별 대표 출발 instant로 방향성 이동 행렬을 조회한다. 공항↔숙소 경유·짐 처리 시간을
-   합산해 `calculateDayWindow`에 전달한다. 공항 이동은 일일 행렬 경로와 중복 차감하지 않는다.
+3. 날짜별 대표 출발 instant로 방향성 이동 행렬을 조회한다(제공자 한도 100개를 넘으면 나눠 요청해 병합).
+   공항↔숙소 경유·짐 처리 시간을 합산해 `calculateDayWindow`에 전달한다. 공항 이동은 일일 행렬 경로와
+   중복 차감하지 않는다. 출국 이동이 체크인 마감 준수로 확인되지 않거나(`transferIssues`), 같은 날
+   입국 완료가 출국 이동 시작 마감보다 늦으면(`flightConflicts`) 방문 유무와 무관하게 `CONFLICT`다.
 4. DRIVE의 거리와 **주행시간**으로 택시 요금을 계산한 뒤 `RouteOptions.TAXI`로 바꾼다.
    호출 대기 버퍼는 `selectTravelMode`가 시간에 한 번 더한다. 모든 비교 비용은 같은 현지 통화다.
 5. `checkCapacity`가 내부에서 `scheduleVisits`를 반복 실행한다. 단계 3의 판정은 단계 4–6의
    실제 배치 성공에 근거한다. 희망 장소는 고정한 경우에만 배치한다.
 6. T12 서비스가 선택된 구간을 실제 출발 instant로 재조회하고 요금·영업시간·시간창을 다시 검사한다.
-   위반 시 고정 제약을 유지한 입력으로 재배치한다. 시도 상한과 동일 입력 해시 탐지로 종료하며,
-   상한은 T12에서 픽스처/실행시간 근거와 함께 결정한다. 실패한 일정을 `OK`로 저장하지 않는다.
+   위반 시 고정 제약을 유지한 입력으로 재배치한다. 시도 상한(`MAX_ROUTE_ATTEMPTS` = 8)과 같은
+   미검증 구간 집합의 반복 탐지로 종료한다. 상한 근거와 루프 설계는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md)에 있다.
+   검증되지 않은 일정은 `CONFLICT`로 보고하며 `OK`로 저장하지 않는다.
 7. 대중교통 기준과 정책 적용 결과의 이동시간·요금을 집계한다. 미상 요금은 0으로 합산하지 않는다.
-   마지막 검증에 사용한 입력/행렬 버전과 결과를 함께 저장하고 API에서 JSON으로 직렬화한다.
+   입력 해시와 결과를 함께 저장하고 API에서 JSON으로 직렬화한다.
 8. 초과 시 원래 요청의 실패 진단, 검증된 추천 조합, 희망 장소를 구분해서 표시한다.
    선택 변경은 `REQUIRED`/`WISH` 및 고정 제약을 다시 저장하고 같은 파이프라인을 실행한다.
 
@@ -226,62 +232,21 @@ Google 기본 [서버 팩터리](../src/travel-time/server.ts)는 `GOOGLE_ROUTES
 새 공개 HTTP 엔드포인트는 없으며 T12가 인증·소유권 검증 뒤 제공자를 생성한다.
 
 ```typescript
-// 저장소가 SQL의 nullable/JSONB/시간 표현을 검증·변환한 입력 스냅샷.
-export interface TripInputs {
-  id: string;
-  ownerId: string;
-  cityCode: string;
-  timeZone: string;
-  startDate: string;
-  endDate: string;
-  activity: TimeWindow;
-  mealSlots: readonly MealSlot[];
-  mealWindows: MealWindows;
-  taxiPolicy: TaxiPolicy;
-  luggageOption: 'VIA_LODGING' | 'DIRECT_TO_AIRPORT'; // 마지막 날 숙소 경유/직접 공항 이동
-  arrivalBufferMinutes: number;
-  departureBufferMinutes: number;
-  daySettings: readonly {
-    date: string; departureTime: string | null; returnTime: string | null;
-    mealSlots: readonly MealSlot[] | null;
-  }[];
-  flights: readonly {
-    direction: 'ARRIVAL' | 'DEPARTURE'; airportLocationId: string; localDateTime: string;
-  }[];
-  lodgings: readonly { locationId: string; checkIn: string; checkOut: string }[];
-  visits: readonly {
-    id: string; locationId: string; kind: 'RESTAURANT' | 'ATTRACTION';
-    minutes: number; priority: Visit['priority'];
-    fixedDate?: string; fixedTime?: string; fixedOrder?: number;
-  }[];
-}
-export type TripLoad =
-  | { status: 'READY'; input: TripInputs; inputHash: string }
-  | { status: 'INCOMPLETE'; fields: readonly string[] };
-export interface ItinerarySnapshot {
-  capacity: CapacityResult;
-  comparisons: readonly { date: string; from: string; to: string; options: RouteOptions }[];
-  efficiency: {
-    currency: string; transitMinutes: number | null; selectedMinutes: number;
-    transitFare: number | null; selectedFare: number | null;
-  } | null;
-}
-export interface TripRepository {
-  findOwner(tripId: string): Promise<string | null>;
-  loadInputs(tripId: string): Promise<TripLoad | null>;
-  saveInputs(input: TripInputs): Promise<void>;
-  saveItinerary(tripId: string, inputHash: string, result: ItinerarySnapshot): Promise<'SAVED' | 'STALE'>;
-}
-export interface CityProfileRepository {
-  findByCityCode(cityCode: string): Promise<CityProfile | null>;
-}
+// T12: 일정 서비스의 포트와 데이터 계약. 구현과 문서가 같은 export를 사용한다.
+export type {
+  PlaceRef, TripInputs, TripLoad, ItineraryResult, LegComparison, EfficiencySummary, RouteAlternatives,
+  ItineraryRepository, CityProfileSource, ItineraryPlaces, ItineraryDependencies, GenerateOutcome, SaveOutcome,
+} from '../src/services/itinerary';
+export { ItineraryService, ItineraryInputError, MAX_ROUTE_ATTEMPTS, MEAL_MINUTES } from '../src/services/itinerary';
 ```
 
-위 저장소 계약은 서버 내부에서만 사용한다.
-`saveInputs` 전에 서비스가 세션 소유권을 확인하고 요청의 소유자 대신 서버에서 읽은 소유자를 사용한다.
-여행 수정과 새 일정/하위 행 저장은 각각 트랜잭션으로 처리한다. `saveItinerary`는 계산 중 입력이
-바뀌었으면 `STALE`을 반환한다. 현재 스키마에 버전 열은 없으므로 T12에서 입력 해시 재검증과
-잠금/버전 저장 방식을 구현할 때 결정 기록을 보완한다. JSONB를 타입 단언만으로 읽지 않는다.
+위 저장소 계약은 서버 내부에서만 사용한다. [입력 스냅샷](../src/repositories/trip-snapshot.ts)은
+SQL time·JSONB·`WISHLIST`를 검증·변환하고 누락 필드를 `INCOMPLETE`로 돌려준다(초가 0이 아닌 시각도 포함).
+행 순서를 고정해 같은 입력은 같은 SHA-256 `inputHash`를 갖는다. `TripInputs`의 장소는 `places.id`와
+Google ID를 함께 갖는 `PlaceRef`이며 ownerId는 담지 않는다(소유권은 HTTP 처리기가 먼저 확인한다).
+[일정 저장](../src/repositories/itineraries.ts)은 `trips` 행을 `FOR UPDATE`로 잠근 뒤 같은 트랜잭션에서
+입력 해시를 다시 계산하고, 다르면 아무것도 쓰지 않고 `STALE`을 반환한다. T11 [생활 설정 저장소](../src/repositories/living-settings.ts)도
+같은 `trips` 행을 `FOR UPDATE`로 잠그므로 설정 수정과 일정 저장이 직렬화된다. 상세는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md).
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.
 
 T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisions/0006-trip-input-creation.md)에 기록한다.
@@ -289,7 +254,7 @@ T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisio
 [HTTP 처리기](../src/trips/http.ts)는 인증·JSON·동일 출처·필드 오류를 확인한다.
 [여행 생성 저장소](../src/repositories/trip-inputs.ts)는 세션 ownerId만 받아 트랜잭션으로 저장한다.
 [프로필 저장소](../src/repositories/city-profiles.ts)는 SQL numeric/time/JSONB를 정규화한다.
-이 생성 계약은 위 후속 loadInputs/saveInputs/saveItinerary의 완성 구현을 뜻하지 않는다.
+이 생성 계약과 별개로 loadInputs/saveItinerary는 T12 저장소가 구현하며, 기존 여행 수정(saveInputs)은 T11 범위다.
 UI는 Google Maps와 제공자 attribution을 표시하며 외부 링크는 http/https만 허용한다.
 입력 이름과 검색 결과는 화면 메모리에만 존재한다. 새로고침 시 미저장 입력 복구는 제공하지 않는다.
 
@@ -354,8 +319,8 @@ T11 완료 기준의 전체 동선 의미는 미충족이다.** 화면에도 범
 | `fixed_date` + `fixed_time` | 여행 시간대에서 `fixedStart` instant로 변환. 날짜 없이 시각만 저장된 행은 입력 보완 필요 |
 | 날짜별 null 설정 | 여행 기본값 상속. `meal_slots: []`는 끼니 없음이며 null과 다름 |
 | `meal_slots`, `meal_windows` JSONB | 슬롯 집합과 `{start,end}` 검증. 현재 SQL 테스트의 `["11:30","14:00"]` 형태도 변환 필요 |
-| 슬롯 집합 → T5의 `mealCount` | `[]/[LUNCH]/[LUNCH,DINNER]/[BREAKFAST,LUNCH,DINNER]`만 수로 직접 변환 가능. `[DINNER]` 등을 길이만 세어 점심으로 바꾸지 않음. T11은 countForSlots로 이 네 조합만 허용하며 임의 조합은 거부 |
-| `stops`/`legs` SQL | 현재 MEAL 슬롯 종류, leg 시간/양 끝점, 사용자 구간 고정 입력 등 저장 필드가 충분하지 않음. T12/T13에서 마이그레이션을 동반해 보완 |
+| 슬롯 집합 → T5의 `mealCount` | `[]/[LUNCH]/[LUNCH,DINNER]/[BREAKFAST,LUNCH,DINNER]`만 수로 직접 변환 가능. `[DINNER]` 등을 길이만 세어 점심으로 바꾸지 않음. 변환 규칙은 scheduler의 `mealCountForSlots` 하나이며 T11 `countForSlots`(거부 시 RangeError)와 T12 일정 생성(필드 오류)이 함께 쓴다. 임의 조합은 거부 |
+| `stops`/`legs` SQL | T12의 [005](../migrations/005_itinerary_details.sql)가 stop 종류·식사 슬롯, leg 양 끝점·출발/도착 instant·요금, 일정 `details` JSONB를 추가. 사용자 구간 이동수단 고정 입력은 T13에서 보완 |
 
 시간은 여행의 IANA 시간대를 항상 함께 전달한다. 현지 입력은 `Temporal`의
 `disambiguation: 'reject'`로 변환해 DST에서 존재하지 않거나 두 번 나타나는 시각을 거부한다.
@@ -378,12 +343,12 @@ day_plans → stops/legs`의 FK cascade로 실행한다. 공유 장소 캐시와
 |---|---|---|
 | 로그인 없음/타인 소유/여행 없음 | `authorizeTrip`: 401/403/404. 현재 GET은 공통 한국어 오류 메시지 | 같은 상태 유지, 서버 액션도 소유권 확인 |
 | 잘못된 시각·기간·숫자/중복 방문 ID | 순수 함수에서 `RangeError` 등 발생. T10 생성 입력은 공유 검증기로 400 + 필드 오류 반환 | 입력 검증 단계에서 400 + 필드별 오류. 모든 내부 예외를 400으로 일괄 변환하지 않음 |
-| 여행 입력 미완성/계산 중 변경 | 현재 생성만 구현, 수정·계산은 후속 | 409, 누락 필드 또는 재계산 안내 |
+| 여행 입력 미완성/계산 중 변경 | T12: 누락 필드·일정으로 만들 수 없는 입력은 409 + `fields`, 저장 시 입력 변경은 409 재생성 안내 | 같은 상태 유지 |
 | `OK/OVER_CAPACITY/CONFLICT` | 정상적인 도메인 결과. `OVER_CAPACITY`에도 유효 추천 있음 | 계산 요청의 200 응답 본문에 상태를 유지. 고정 충돌을 임의 수정하지 않음 |
 | `unplaced.TIME_WINDOW/UNREACHABLE/FIXED_ORDER` | 방문 ID에 연결된 실패 원인. `WISH`는 오류가 아닌 의도적 미배치 | 원래 실패와 추천에서 제외된 목록을 구분 |
 | `issues.MEAL_UNAVAILABLE/UNREACHABLE/TIME_WINDOW` | 식사 슬롯/연결 실패/일일 경로의 시간창 실패. 마지막 것은 T7A 추가 | 날짜별 진단으로 표시. 방문 없는 숙소 이동 초과도 `CONFLICT` |
 | 요금 없음 | null 또는 `TaxiFareEstimate.UNAVAILABLE` | 이동 가능 여부와 분리하고 정보 없음 표시 |
-| 외부 API 장애·쿼터/DB 장애 | T8: 제공자 실패 503, 잘못된 외부 응답 502, 내부 실패 500. T9: TravelProviderError의 UNAVAILABLE/INVALID_RESPONSE | T12는 각각 503/502로 변환, 내부 오류는 500. 비밀 값·SQL·공급자 원문을 응답에 노출하지 않음 |
+| 외부 API 장애·쿼터/DB 장애 | T8: 제공자 실패 503, 잘못된 외부 응답 502, 내부 실패 500. T9: TravelProviderError의 UNAVAILABLE/INVALID_RESPONSE. T12 동선 생성: 장소·이동시간 장애를 503/502, 입력 오류를 400, 내부 오류를 500으로 변환 | 비밀 값·SQL·공급자 원문을 응답에 노출하지 않음 |
 
 가용 시간도 없고 시작/종료가 같은 빈 날은 이동이 필요 없어 빈 일정이 가능하다.
 시작/종료가 다르면 이동을 생략해 성공으로 처리할 수 없다. 진단은 해당 휴리스틱 시도의
