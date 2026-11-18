@@ -223,6 +223,19 @@ jobs:
             ${{ steps.pick.outputs.args }}
             --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"},"refactor":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"scope":{"type":"string"},"reason":{"type":"string"}},"required":["title","scope","reason"]}}},"required":["verdict","summary","issues"]}'
             ${{ steps.pick.outputs.model && format('--model {0}', steps.pick.outputs.model) || '' }}
+      # 판정을 잡 출력이 아닌 파일로 넘긴다. 잡 출력은 마스킹된 값(예: 테스트 DB 비밀번호와 같은 단어)이
+      # 들어 있으면 GitHub가 통째로 버린다("Skip output ... may contain secret").
+      - name: Save review result
+        if: always()
+        env:
+          RESULT: ${{ steps.claude.outputs.structured_output }}
+        run: printf '%s' "$RESULT" > "$RUNNER_TEMP/review.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-json
+          path: ${{ runner.temp }}/review.json
+          retention-days: 7
 
   decide:
     needs: [gate, test, review]
@@ -245,6 +258,11 @@ jobs:
         with:
           name: test-log
           path: ${{ runner.temp }}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: review-json
+          path: ${{ runner.temp }}/review
       - env:
           GH_TOKEN: ${{ github.token }}
           USER_PAT: ${{ secrets.USER_PAT }}
@@ -257,12 +275,13 @@ jobs:
           R_TEST: ${{ needs.test.result }}
           R_REVIEW: ${{ needs.review.result }}
           PASSED: ${{ needs.test.outputs.passed }}
-          REVIEW_JSON: ${{ needs.review.outputs.result }}
           OWNER: ${{ needs.gate.outputs.owner }}
           REVIEWER: Claude
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          REVIEW_JSON=$(cat "$RUNNER_TEMP/review/review.json" 2>/dev/null || true)
+          export REVIEW_JSON
           # Claude가 만든 PR이 테스트를 통과하면 Codex 리뷰를 요청하고 기다린다 (Mac 러너가 리뷰 후 agent-verdict가 판정)
           if [ "$OWNER" = claude ] && [ "$PASSED" = true ]; then
             gh label create needs-codex-review --color 1d76db --description "Codex 리뷰 대기" --force >/dev/null
