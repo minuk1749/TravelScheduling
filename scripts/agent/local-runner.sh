@@ -94,6 +94,12 @@ main() {
     log "수정 모드: PR #$pr ($task), 브랜치 $branch"
 
     git checkout -q -B "$branch" "origin/$branch"
+    # 동시에 진행된 다른 작업을 반영한다. 충돌이 나면 충돌 표시를 남겨 Codex가 해결한다
+    local merge_note=""
+    if ! git merge -q --no-edit origin/develop >/dev/null 2>&1; then
+      merge_note="develop을 이 브랜치에 병합했고 충돌이 있다. 충돌 표시(<<<<<<<, =======, >>>>>>>)가 있는 파일을 먼저 해결하라(양쪽 변경의 의도를 모두 유지)."
+      log "develop 병합 충돌, Codex가 해결"
+    fi
     install_deps
     local prompt="$TMPD/prompt.md"
     {
@@ -103,6 +109,7 @@ main() {
       echo "AGENTS.md와 docs/requirements.md를 참고해서, 아래 '자동 피드백'(테스트 실패 로그 또는 Claude 리뷰)을 해결하라."
       echo "- 지적이 타당하면 고치고, 타당하지 않다고 판단하면 고치지 말고 최종 메시지에 근거를 적어라."
       echo "- 피드백과 무관한 변경은 하지 마라."
+      if [ -n "$merge_note" ]; then echo "- $merge_note"; fi
       echo "- git commit/push는 하지 마라. 스크립트가 한다."
       echo "- 수정 후 npm run lint, npm run typecheck, npm run build, npm test 를 실행해 확인하라."
       echo "- 보호 파일(.github/**, AGENTS.md, CLAUDE.md, docs/requirements.md, docs/tasks.md, scripts/agent/**)은 수정하지 마라."
@@ -116,7 +123,7 @@ main() {
     local msg="$TMPD/msg.md"
     run_codex "$prompt" "$msg" "$task" || { rm -f "$prompt"; return 1; }
     rm -f "$prompt"
-    if ! commit_changes "$task: 리뷰 피드백 반영"; then
+    if ! commit_changes "$task: 리뷰 피드백 반영" && [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$branch")" ]; then
       log "변경 없음. Codex 메시지를 PR에 남김"
       { echo "**Mac 러너: 변경 없이 종료**"; echo; cat "$msg" 2>/dev/null; } | gh pr comment "$pr" -R "$REPO" --body-file -
       rm -f "$msg"; return 0
@@ -305,8 +312,10 @@ commit_changes() { # message
   local f
   # 보호 경로 되돌리기
   git add -A
+  # 보호 파일은 develop의 내용과 같아야 한다(develop 병합으로 들어온 변경은 유지)
   for f in $(git diff --cached --name-only | grep -E "$PROTECTED" || true); do
-    if git cat-file -e "HEAD:$f" 2>/dev/null; then git checkout -q HEAD -- "$f"; else git rm -q --cached -f -- "$f"; rm -f -- "$f"; fi
+    if git diff --cached --quiet origin/develop -- "$f"; then continue; fi
+    if git cat-file -e "origin/develop:$f" 2>/dev/null; then git checkout -q origin/develop -- "$f"; else git rm -q --cached -f -- "$f"; rm -f -- "$f"; fi
     log "보호 경로 변경을 되돌림: $f"
   done
   # lockfile 일치 보장
@@ -314,7 +323,7 @@ commit_changes() { # message
     npm install --package-lock-only --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
     git add package-lock.json 2>/dev/null || true
   fi
-  git diff --cached --quiet && return 1
+  if git diff --cached --quiet && [ ! -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then return 1; fi
   git commit -q -m "$1" -m "Codex CLI 구현, Mac 러너 자동 커밋"
 }
 

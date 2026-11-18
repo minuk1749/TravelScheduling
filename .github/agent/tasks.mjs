@@ -1,5 +1,5 @@
 // docs/tasks.md 표를 읽고 쓰는 도구 (외부 의존 없음)
-//   node tasks.mjs next  [file]                 → 다음 자동 작업 {"id","title"} 또는 {}
+//   node tasks.mjs next  [file] [--owner o]      → 다음 자동 작업 {"id","title"} 또는 {} (담당 지정 가능)
 //   node tasks.mjs title <ID> [file]            → 작업 제목
 //   node tasks.mjs get <ID> <열> [--file f]       → 해당 칸 값
 //   node tasks.mjs set <ID> 열=값 ... [--file f] → 해당 행 갱신
@@ -24,11 +24,13 @@ function load(file) {
 
 const get = (row, col) => row.cells[COLS.indexOf(col)];
 
-function next(file) {
+// owner를 주면 그 담당의 작업만 고른다. 담당이 비어 있으면 gpt로 본다.
+function next(file, owner) {
   const { rows } = load(file);
   const done = new Set(rows.filter((r) => get(r, "상태") === "완료").map((r) => get(r, "#")));
   const pick = rows.find((r) => {
     if (get(r, "상태") !== "대기" || get(r, "자동") !== "Y") return false;
+    if (owner && (get(r, "담당") || "gpt") !== owner) return false;
     const deps = get(r, "선행").split(",").map((d) => d.trim()).filter((d) => d && d !== "-");
     return deps.every((d) => done.has(d));
   });
@@ -59,7 +61,11 @@ if (fileFlag >= 0) {
 }
 
 if (cmd === "next") {
-  console.log(JSON.stringify(next(args[0] ?? file)));
+  // node tasks.mjs next [file] [--owner gpt|claude]
+  const oi = args.indexOf("--owner");
+  let owner;
+  if (oi >= 0) { owner = args[oi + 1]; args.splice(oi, 2); }
+  console.log(JSON.stringify(next(args[0] ?? file, owner)));
 } else if (cmd === "title") {
   const { rows } = load(args[1] ?? file);
   const row = rows.find((r) => get(r, "#") === args[0]);

@@ -87,6 +87,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+      - name: Merge develop (fix round)
+        id: merge
+        if: inputs.pr != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 동시에 진행된 다른 작업을 반영한다. 충돌이 나면 충돌 표시를 남겨 Claude가 해결한다
+          if git merge -q --no-edit origin/develop; then echo "conflict=false" >> "$GITHUB_OUTPUT"; else echo "conflict=true" >> "$GITHUB_OUTPUT"; fi
       - name: Install dependencies
         run: |
           npm ci --no-audit --no-fund
@@ -98,11 +106,15 @@ jobs:
           TITLE: ${{ steps.info.outputs.title }}
           ROUND: ${{ steps.info.outputs.round }}
           KIND: ${{ steps.info.outputs.kind }}
+          CONFLICT: ${{ steps.merge.outputs.conflict || 'false' }}
         run: |
           set -euo pipefail
           if [ "$KIND" = refactor ]; then tpl=refactor.md; head="리팩터링 항목"; mk=claude-refactor; else tpl=claude-implement.md; head="작업 지시 (이슈 본문)"; mk=claude-implement; fi
           sed -e "s/{{ID}}/$ID/g" -e "s/{{ROUND}}/$ROUND/g" ".ctl/.github/agent/prompts/$tpl" | awk -v t="$TITLE" '{gsub(/\{\{TITLE\}\}/, t)}1' > .claude-task.md
           { echo; echo "## $head"; echo; cat "$RUNNER_TEMP/items.md"; } >> .claude-task.md
+          if [ "$CONFLICT" = true ]; then
+            { echo; echo "## develop 병합 충돌"; echo; echo "develop을 이 브랜치에 병합했고 충돌이 있다. 충돌 표시(<<<<<<<, =======, >>>>>>>)가 있는 파일을 먼저 해결하라(양쪽 변경의 의도를 모두 유지)."; } >> .claude-task.md
+          fi
           if [ -s "$RUNNER_TEMP/feedback.md" ]; then
             { echo; echo "## 직전 리뷰 피드백 (이번 라운드에서 해결할 것)"; echo; cat "$RUNNER_TEMP/feedback.md"; } >> .claude-task.md
           fi
@@ -138,15 +150,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ -z "$PR" ]; then git switch -q -C "$BRANCH"; fi
           git add -A
+          # 보호 파일은 develop의 내용과 같아야 한다(develop 병합으로 들어온 변경은 유지)
           for f in $(git diff --cached --name-only | grep -E '^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)' || true); do
-            if git cat-file -e "HEAD:$f" 2>/dev/null; then git restore --staged --worktree --source=HEAD -- "$f"; else git rm -q --cached -f -- "$f"; fi
+            if git diff --cached --quiet origin/develop -- "$f"; then continue; fi
+            if git cat-file -e "origin/develop:$f" 2>/dev/null; then git restore --staged --worktree --source=origin/develop -- "$f"; else git rm -q --cached -f -- "$f"; fi
           done
-          if git diff --cached --quiet; then
+          if git diff --cached --quiet && [ ! -f .git/MERGE_HEAD ] && { [ -z "$PR" ] || [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ]; }; then
             gh issue comment "$ISSUE" --body "Claude가 변경 없이 종료했습니다(라운드 $ROUND). 사람이 확인해 주세요."
             gh issue edit "$ISSUE" --add-label needs-human
             exit 0
           fi
-          git commit -q -m "$ID: $TITLE (round $ROUND)" -m "Claude 작업, agent-claude 자동 커밋"
+          if ! git diff --cached --quiet || [ -f .git/MERGE_HEAD ]; then
+            git commit -q -m "$ID: $TITLE (round $ROUND)" -m "Claude 작업, agent-claude 자동 커밋"
+          fi
 
           # Claude 최종 메시지 → PR 설명/댓글
           msg=""

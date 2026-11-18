@@ -27,7 +27,16 @@ update_tasks() { # 상태 (리팩터링 작업은 작업표에 없음)
   if [ "$IS_REFACTOR" = true ]; then return 0; fi
   $T set "$TASK" "상태=$1" "PR=#$PR"
   git add docs/tasks.md
-  git commit -q -m "$TASK $1 (PR #$PR)" && git push -q origin develop
+  git commit -q -m "$TASK $1 (PR #$PR)"
+  push_develop
+}
+push_develop() { # 다른 작업이 동시에 develop을 갱신할 수 있으므로 재시도
+  local k
+  for k in 1 2 3 4; do
+    git pull -q --rebase origin develop && git push -q origin develop && return 0
+    sleep $((k * 5))
+  done
+  echo "::error::develop 푸시 실패"; return 1
 }
 next_task() { gh workflow run agent-start.yml --ref develop; }
 gh pr edit "$PR" --remove-label needs-codex-review >/dev/null 2>&1 || true
@@ -44,7 +53,14 @@ fi
 if [ "$PASSED" = true ] && [ "$verdict" = approve ]; then
   jq -r --arg who "$REVIEWER" --arg r "$ROUND" '"**" + $who + " 승인 (라운드 " + $r + ")**\n\n" + .summary + (if (.notes // "") != "" then "\n\n참고: " + .notes else "" end)' <<<"$REVIEW_JSON" > "$RUNNER_TEMP/c.md"
   gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
-  gh pr merge "$PR" --squash --delete-branch
+  if ! gh pr merge "$PR" --squash --delete-branch; then
+    # 동시에 진행한 다른 작업이 먼저 머지되어 충돌한 경우: 작성자에게 develop 반영과 충돌 해결을 요청한다
+    MERGE_CONFLICT=true
+  else
+    MERGE_CONFLICT=false
+  fi
+fi
+if [ "${MERGE_CONFLICT:-}" = false ]; then
   git pull -q --rebase origin develop
   update_tasks 완료
   if [ -n "$ISSUE" ]; then gh issue close "$ISSUE" --comment "PR #$PR 머지로 완료"; fi
@@ -73,7 +89,10 @@ fi
 
 # 수정 필요 → 피드백 정리
 {
-  if [ "$PASSED" != true ]; then
+  if [ "${MERGE_CONFLICT:-}" = true ]; then
+    echo "### 머지 충돌"
+    echo "리뷰는 승인됐지만, 그사이 develop에 다른 작업이 머지되어 이 PR이 충돌합니다. develop을 이 브랜치에 병합하고 충돌을 해결해 주세요(승인된 변경 내용은 유지)."
+  elif [ "$PASSED" != true ]; then
     echo "### 테스트 실패 (npm ci / lint / typecheck / build / test 중 하나)"
     echo '```'
     cat "$RUNNER_TEMP/test-tail.log" 2>/dev/null || echo "(로그 없음)"
