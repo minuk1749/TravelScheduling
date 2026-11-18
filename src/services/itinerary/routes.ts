@@ -1,4 +1,4 @@
-import { estimateTaxiFare, type CityProfile } from '../../fare';
+import { createTaxiFareEstimator, type CityProfile } from '../../fare';
 import type { RouteOptions } from '../../scheduler';
 import {
   MAX_MATRIX_LOCATIONS, type Location, type Money, type ProviderMode, type TravelAlternatives, type TravelMatrix, type TravelTimeProvider,
@@ -23,21 +23,26 @@ export class FareConverter {
   get currency(): string | null { return this.observedCurrency; }
 
   options(alternatives: TravelAlternatives, departure: string): RouteOptions {
+    return this.convert(alternatives, createTaxiFareEstimator(this.profile, new Date(departure), this.timeZone));
+  }
+
+  private convert(alternatives: TravelAlternatives, estimateFare: ReturnType<typeof createTaxiFareEstimator>): RouteOptions {
     const options: RouteOptions = {};
     const { TRANSIT: transit, WALK: walk, DRIVE: drive } = alternatives;
     if (transit) options.TRANSIT = { minutes: transit.durationSeconds / 60, fare: this.transitFare(transit.fare) };
     if (walk) options.WALK = { minutes: walk.durationSeconds / 60, fare: 0 };
     if (drive) {
       const minutes = drive.durationSeconds / 60;
-      const estimate = estimateTaxiFare(this.profile, drive.distanceMeters / 1000, minutes, new Date(departure), this.timeZone);
+      const estimate = estimateFare(drive.distanceMeters / 1000, minutes);
       options.TAXI = { minutes, fare: estimate.status === 'AVAILABLE' ? estimate.amount : null };
     }
     return options;
   }
 
   table(matrix: TravelMatrix, departure: string): RouteTable {
+    const estimateFare = createTaxiFareEstimator(this.profile, new Date(departure), this.timeZone);
     return new Map([...matrix].map(([from, row]) =>
-      [from, new Map([...row].map(([to, alternatives]) => [to, this.options(alternatives, departure)]))]));
+      [from, new Map([...row].map(([to, alternatives]) => [to, this.convert(alternatives, estimateFare)]))]));
   }
 
   private transitFare(fare: Money | null): number | null {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { parseSettings } from '../settings/input';
-import { SettingsError, type LivingSettings, type SettingsContext, type SettingsSnapshot } from '../settings/model';
+import { SettingsError, type LivingSettingsStore, type LivingSettings, type SettingsContext, type SettingsSnapshot } from '../settings/model';
 
 const revision = (context: SettingsContext) => createHash('sha256').update(JSON.stringify(context)).digest('hex');
 const time = (value: string | null): string | null => {
@@ -50,10 +50,7 @@ async function readSnapshot(client: PoolClient, id: string, ownerId: string): Pr
   return { ...result, revision: revision(result) };
 }
 
-export interface LivingSettingsStore {
-  load(id: string, ownerId: string): Promise<SettingsSnapshot>;
-  save(id: string, ownerId: string, expectedRevision: string, settings: LivingSettings): Promise<SettingsSnapshot>;
-}
+export type { LivingSettingsStore } from '../settings/model';
 
 /** All setting updates lock the parent trip, recheck ownership/revision and preserve fixed visits/results. */
 export class LivingSettingsRepository implements LivingSettingsStore {

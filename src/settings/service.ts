@@ -1,4 +1,4 @@
-import type { LivingSettingsStore } from '../repositories/living-settings';
+import type { LivingSettingsStore } from './model';
 import { TripInputError } from '../trips/input';
 import { calculateSettings } from './calculate';
 import { parseSettings } from './input';
