@@ -85,6 +85,11 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
   서비스/저장소 경계와 소스 300줄 상한을 검사한다. `fare-matrix.test.ts`는 행렬별 준비 횟수와 동등성을 검사한다.
 - 전체 목록·전후 성능·후속 범위: [T13A 점검](t13a-audit.md), [결정](decisions/T13A-audit-and-fare-preparation.md).
 
+## T15 종단 간 시나리오
+
+- `tests/e2e/journey.spec.ts`: 375px 한 세션에서 흐름 1–10(여행 생성 → 생활 설정 → 수용량 초과 → 필수 선택 → 재검증 → 결과·수정 → 공유)을 검증한다. 소스 변경 없음.
+- Google 로그인·Places·Routes는 HTTP 경계(`page.route`)에서 픽스처와 실제 서비스(`ItineraryService`, `SharingService`)로 대체한다. 공용 장소 검색 헬퍼: `tests/helpers/e2e-places.ts`.
+
 ## T14 읽기 전용 공유 연결
 
 - `src/sharing/`: 공유 DTO·저장소 포트, 소유자 토큰 재발급/비로그인 조회 HTTP, 서버 조립.
