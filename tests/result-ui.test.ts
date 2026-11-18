@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
-import { JSDOM } from 'jsdom';
+import { installDom } from './helpers/dom';
 import { sampleTrip, okVisits, FixturePlaces } from './fixtures/itinerary';
 import { service } from './helpers/itinerary-service';
 import { applyEdits } from './helpers/result';
@@ -12,10 +12,7 @@ import { GoogleResultMap } from '../src/components/itinerary/google-map';
 import { MARKER_LABELS } from '../src/results/presentation';
 
 test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidation, retry, reload and conflicts', async () => {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/trips/trip/result' });
-  const names = ['self', 'window', 'document', 'navigator', 'HTMLElement', 'Element', 'MutationObserver'] as const;
-  const previous = names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
-  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] });
+  const dom = installDom('http://localhost/trips/trip/result');
   const originalFetch = globalThis.fetch, originalMount = GoogleResultMap.prototype.mount;
   GoogleResultMap.prototype.mount = async function(element, points, select) {
     element.replaceChildren();
@@ -76,7 +73,6 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
     assert.equal((view.getByLabelText('sample-sensoji 시각') as HTMLInputElement).value, '19:00');
   } finally {
     cleanup(); globalThis.fetch = originalFetch; GoogleResultMap.prototype.mount = originalMount;
-    for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
-    dom.window.close();
+    await dom.restore();
   }
 });

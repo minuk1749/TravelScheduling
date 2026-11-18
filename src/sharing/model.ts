@@ -1,10 +1,9 @@
 import type { ItineraryDisplayResult, ResultDisplayView } from '../results/model';
-import type { PlaceRef } from '../services/itinerary/types';
+import type { TripInputs } from '../services/itinerary/types';
 
 export type SharedItinerary = { view: ResultDisplayView; result: ItineraryDisplayResult };
-export type SharedSnapshot = {
-  input: ResultDisplayView['input']; refs: PlaceRef[]; result: ItineraryDisplayResult;
-};
+/** Stored state behind a share link; the service narrows `input` before anything leaves the server. */
+export type SharedSnapshot = { input: TripInputs; result: ItineraryDisplayResult };
 export interface ShareRepository {
   rotate(tripId: string, ownerId: string, tokenHash: string): Promise<boolean>;
   load(tokenHash: string): Promise<SharedSnapshot | 'UNAVAILABLE' | null>;

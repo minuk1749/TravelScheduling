@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
-import { JSDOM } from 'jsdom';
+import { installDom } from './helpers/dom';
 import { GoogleResultMap } from '../src/components/itinerary/google-map';
 import { FixturePlaces } from './fixtures/itinerary';
 import { MemoryShares, sharedSnapshot } from './helpers/sharing';
@@ -9,10 +9,7 @@ import { SharingService } from '../src/services/sharing';
 import { sharingHandlers } from '../src/sharing/http';
 
 test('T14 UI: issue/copy/rotate, anonymous timeline and map without editing, invalid link and retry', async () => {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://app.example.test' });
-  const names = ['self', 'window', 'document', 'navigator', 'HTMLElement', 'Element', 'MutationObserver'] as const;
-  const previous = names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
-  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] });
+  const dom = installDom('https://app.example.test');
   const originalFetch = globalThis.fetch, originalMount = GoogleResultMap.prototype.mount;
   let copied = '', writes = 0, reads = 0;
   Object.defineProperty(dom.window.navigator, 'clipboard', { value: { writeText: async (text: string) => { copied = text; } } });
@@ -66,7 +63,6 @@ test('T14 UI: issue/copy/rotate, anonymous timeline and map without editing, inv
     assert.equal(reads, 4);
   } finally {
     cleanup(); globalThis.fetch = originalFetch; GoogleResultMap.prototype.mount = originalMount;
-    for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
-    dom.window.close();
+    await dom.restore();
   }
 });

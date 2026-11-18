@@ -33,3 +33,34 @@ test('T10 transaction persists flow 2–5, only Google IDs, defaults and WISH ma
     assert.equal((await client.query('SELECT * FROM places')).rowCount, 5);
   });
 });
+
+test('T15A trip creation writes child rows with one statement per table regardless of visit count', async () => {
+  await withDatabase(async client => {
+    await migrate(client);
+    const owner = randomUUID();
+    await client.query("INSERT INTO users (id,google_id,email) VALUES ($1,'t15a','t15a@example.test')", [owner]);
+    const statements: string[] = [];
+    const counting = new Proxy(client, { get(target, key) {
+      if (key !== 'query') return Reflect.get(target, key);
+      return (text: string, values?: unknown[]) => { statements.push(text); return target.query(text, values); };
+    } });
+    // Only the ordered place upsert (lock order across concurrent creations) scales with distinct places.
+    const visits = Array.from({ length: 30 }, (_, i) => ({ googlePlaceId: `visit-${String(i).padStart(2, '0')}`,
+      kind: i % 2 ? 'ATTRACTION' as const : 'RESTAURANT' as const, minutes: 30 + i, priority: i % 3 ? 'REQUIRED' as const : 'WISH' as const }));
+    const tripId = await insertTrip(counting, owner, { ...tripDraft, visits });
+    const children = statements.filter(text => /INSERT INTO (?:flights|lodgings|trip_places)\b/.test(text));
+    assert.equal(children.length, 3);
+    assert.equal(statements.filter(text => /INSERT INTO places\b/.test(text)).length, 3 + visits.length);
+    const rows = (await client.query(`SELECT p.google_place_id, tp.kind, tp.duration_minutes, tp.priority
+      FROM trip_places tp JOIN places p ON p.id = tp.place_id WHERE tp.trip_id = $1 ORDER BY tp.duration_minutes`, [tripId])).rows;
+    assert.deepEqual(rows, visits.map(v => ({ google_place_id: v.googlePlaceId, kind: v.kind, duration_minutes: v.minutes,
+      priority: v.priority === 'WISH' ? 'WISHLIST' : 'REQUIRED' })));
+    const lodgings = (await client.query(`SELECT p.google_place_id, check_in::text, check_out::text FROM lodgings l
+      JOIN places p ON p.id = l.place_id WHERE l.trip_id = $1 ORDER BY check_in`, [tripId])).rows;
+    assert.deepEqual(lodgings, tripDraft.lodgings.map(l => ({ google_place_id: l.googlePlaceId, check_in: l.checkIn, check_out: l.checkOut })));
+    // A day trip has no lodgings: the empty set inserts nothing and does not fail.
+    const dayTrip = await insertTrip(client, owner, { ...tripDraft, endDate: tripDraft.startDate, lodgings: [] });
+    assert.equal((await client.query('SELECT 1 FROM lodgings WHERE trip_id = $1', [dayTrip])).rowCount, 0);
+    assert.equal((await client.query('SELECT 1 FROM trip_places WHERE trip_id = $1', [dayTrip])).rowCount, 2);
+  });
+});

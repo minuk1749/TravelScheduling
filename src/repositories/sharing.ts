@@ -23,15 +23,8 @@ export class PostgresShareRepository implements ShareRepository {
       if (!trip) return null;
       const loaded = await loadTripInputs(client, trip.id);
       if (loaded?.status !== 'READY') return 'UNAVAILABLE';
-      const { input } = loaded;
-      const result = await readSharedResult(client, input, loaded.inputHash);
-      if (!result) return 'UNAVAILABLE';
-      return {
-        input: { startDate: input.startDate, endDate: input.endDate, timeZone: input.timeZone,
-          visits: input.visits.map(({ id, place, priority }) => ({ id, place, priority })) },
-        refs: [...input.visits.map(v => v.place), ...input.flights.map(f => f.airport), ...input.lodgings.map(l => l.place)],
-        result,
-      };
+      const result = await readSharedResult(client, loaded.input, loaded.inputHash);
+      return result ? { input: loaded.input, result } : 'UNAVAILABLE';
     } finally {
       try { await client.query('ROLLBACK'); } finally { client.release(); }
     }

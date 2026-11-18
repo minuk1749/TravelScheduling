@@ -1,7 +1,7 @@
 # 프로젝트 구조 요약
 
 작업 전에 읽는 짧은 지도다. 상세 계약과 데이터 흐름은 [아키텍처](architecture.md), 결정 근거는 [결정 기록](decisions/)에 있다.
-모듈을 추가·이동하거나 연결 방식이 바뀌면 **같은 PR에서 이 문서를 갱신**한다. (기준: T13A 시작 시 원격 `develop` f0b4239)
+모듈을 추가·이동하거나 연결 방식이 바뀌면 **같은 PR에서 이 문서를 갱신**한다. (기준: T13A 시작 시 원격 `develop` f0b4239, T15A 최종 점검 시 ee500de)
 
 ## 기술과 검증 명령
 
@@ -25,9 +25,9 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `src/app/` | 화면, 서버 액션, API 라우트(`api/auth`, `api/places`, `api/trips`, `api/trips/[id]/itinerary`). 세션 확인·입력 검증·응답 변환 | 서비스, 각 모듈의 `server.ts`, `auth` | 스케줄링 알고리즘 직접 구현, 브라우저에서 DB·비밀 키 접근 |
 | `src/services/itinerary/` | **동선 생성 서비스(T12).** 날짜별 앵커·짐 구간(`day-plan.ts`), 시간창·자정을 넘는 공항 이동 반영·행렬(`days.ts`), 공항 이동 조회(`transfers.ts`), 장소 조회(`places.ts`), 단위·요금 변환과 구간 조회(`routes.ts`), 실제 출발 시각 재조회 루프(`verification.ts`), 비교·효율 요약(`efficiency.ts`), 포트·결과 타입(`types.ts`) | `scheduler`, `fare`, `places`·`travel-time`의 포트 타입 | SQL, HTTP 객체, 구체 Google 어댑터, 환경 변수 |
 | `src/itineraries/` | 동선 생성 HTTP 처리(`http.ts`: 인증·소유권·오류 변환)와 구체 구현 조립(`server.ts`) | 서비스, 저장소, 각 모듈 `server.ts` | 스케줄링 계산 |
-| `src/repositories/` | 여행 생성(`trip-inputs.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 일정 저장(`itineraries.ts`), 생활 설정/제약 읽기·원자적 수정 | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
+| `src/repositories/` | 여행 생성(`trip-inputs.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 일정 저장(`itineraries.ts`)과 details 형식(`itinerary-details.ts`), 생활 설정/제약 읽기·원자적 수정 | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
 | `src/auth.ts`, `src/lib/auth/` | Google 로그인, 세션, 여행 소유권 확인(`authorizeTrip`), 인증 SQL(`store.ts`) | `lib/db` | 화면 |
-| `src/lib/http.ts` | 공통 private/no-store JSON 응답과 Origin 비교 | 표준 Request/Response | DB·인증·도메인 오류 정책 |
+| `src/lib/http.ts` | 공통 private/no-store JSON 응답과 Origin 비교, 설정·공유 쓰기용 교차 사이트 검사(`isCrossSiteRequest`) | 표준 Request/Response | DB·인증·도메인 오류 정책 |
 | `src/lib/db.ts` | PostgreSQL 연결 풀 팩터리(명시적 생성) | `pg` | 모듈 import 시 연결 |
 | `src/lib/migrations.ts`, `scripts/migrate.ts`, `migrations/*.sql` | 스키마 적용과 이력(`schema_migrations`) | `pg` | 앱 실행 경로 |
 | `src/scheduler/` | **순수 계산.** 하루 시간창·식사 슬롯(`index.ts`), 방문 배치·순서(`placement.ts`), 배치 계약(`placement-types.ts`), 단일 경로 평가(`route-evaluation.ts`), 이동수단 선택(`transport.ts`), 수용량·추천(`capacity.ts`) | 내부 모듈, `Temporal`, `fare`의 타입 | DB, 네트워크, 환경 변수, 현재 시각·난수 |
@@ -61,6 +61,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | 이동시간 제공자와 캐시 | 행렬 한도 분할, 요금 없음/경로 없음 구분, 약관 범위 안의 캐시 | [ADR 0005](decisions/0005-travel-time-provider-and-cache.md) |
 | 생활 설정 상속·저장·부분 재계산 | null/0끼 구별, 동시 편집 방지, 전체 동선과 시간창 미리보기 구분 | [ADR 0007 생활 설정](decisions/0007-living-settings.md) |
 | 동선 생성 재조회 루프·저장 | 실제 출발 시각 재조회 후 순수 스케줄러 재실행으로 검사 규칙을 한 곳에 두고, 트립 잠금 + 입력 해시로 계산 중 변경을 감지 | [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md) |
+| 저장 형식·표시 정책·쓰기 경계 정책을 한 곳에 | 쓰기/읽기·편집/공유가 같은 규칙을 따로 고치지 않게 하기 위해(최종 점검) | [T15A 결정](decisions/T15A-final-audit.md), [점검 목록](t15a-audit.md) |
 
 `tests/architecture.test.ts`가 코어의 I/O 금지, 아키텍처 문서의 타입 계약과 실제 export 일치, 문서 링크 유효성을 검사한다.
 
@@ -103,5 +104,6 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - 공개 `/share/[token]`의 `shared.tsx` → GET `/api/share/[token]` → 저장 결과 조회 → 장소 표시 정보 조회.
 - 기존 `trips.share_token`에 SHA-256 해시를 저장한다. 재발급으로 이전 링크를 무효화한다.
 - 표시 컴포넌트는 `ResultDisplayView`를 사용하고 편집 콜백이 없으면 수정 UI를 노출하지 않는다.
-- `services/itinerary/display-places.ts`는 편집·공유 조회의 실시간 표시 정보 조회를 공유한다.
+- `services/itinerary/display-places.ts`는 편집·공유 조회의 실시간 표시 정보 조회와 장소 참조 목록(`tripPlaceRefs`)을 공유한다.
+- 공유 저장소는 입력 스냅샷과 결과만 돌려주고, 공개 입력 축소(`results/model.displayInput`)는 SharingService가 한다(T15A).
 - 계약과 검증: [T14 결정](decisions/T14-read-only-sharing.md), [아키텍처 §11](architecture.md#11-t14-읽기-전용-공유).

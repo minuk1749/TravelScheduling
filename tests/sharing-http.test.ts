@@ -30,6 +30,12 @@ test('T14 anonymous read, random hashed tokens, rotation invalidates old link an
   const body = await response.json();
   assert.equal(body.result.status, 'OK');
   assert.equal(body.view.input.timeZone, 'Asia/Tokyo');
+  // T15A: the repository returns full inputs; the service narrows them to the display fields.
+  assert.deepEqual(Object.keys(body.view.input).sort(), ['endDate', 'startDate', 'timeZone', 'visits']);
+  for (const visit of body.view.input.visits) assert.deepEqual(Object.keys(visit).sort(), ['id', 'place', 'priority']);
+  const { input } = await sharedSnapshot();
+  assert.deepEqual(Object.keys(body.view.places).sort(),
+    [...new Set([...input.visits.map(v => v.place.id), ...input.flights.map(f => f.airport.id), ...input.lodgings.map(l => l.place.id)])].sort());
   assert.ok(body.result.comparisons.length && body.result.efficiency);
   assert.doesNotMatch(JSON.stringify(body), /ownerId|email|revision|share_token|inputHash|mealWindows|localDateTime/);
   assert.equal(places.detailCalls.length, new Set(places.detailCalls).size);

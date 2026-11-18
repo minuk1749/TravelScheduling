@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
-import { JSDOM } from 'jsdom';
+import { installDom } from './helpers/dom';
 import { settingsSnapshot } from './fixtures/living-settings';
 import { calculateSettings } from '../src/settings/calculate';
 import { parseSettings } from '../src/settings/input';
 
 test('T11 UI edits recalculate immediately, show fixed conflicts, preserve draft on error, save and reload', async () => {
-  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/trips/trip/settings' });
-  const names = ['self', 'window', 'document', 'navigator', 'HTMLElement', 'Element', 'MutationObserver'] as const;
-  const previous = names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
-  for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] });
+  const dom = installDom('http://localhost/trips/trip/settings');
   const previousFetch = globalThis.fetch;
   let current = structuredClone(settingsSnapshot), writes = 0, loads = 0;
   globalThis.fetch = async (input, options) => {
@@ -61,7 +58,6 @@ test('T11 UI edits recalculate immediately, show fixed conflicts, preserve draft
     assert.equal((view.getByLabelText('2026-12-02 끼니 수') as HTMLSelectElement).value, '0');
   } finally {
     cleanup(); globalThis.fetch = previousFetch;
-    for (const [name, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); }
-    dom.window.close();
+    await dom.restore();
   }
 });

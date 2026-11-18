@@ -4,12 +4,7 @@ import type { ShareRepository, SharedSnapshot } from '../../src/sharing/model';
 
 export async function sharedSnapshot(): Promise<SharedSnapshot> {
   const input = sampleTrip();
-  return {
-    input: { startDate: input.startDate, endDate: input.endDate, timeZone: input.timeZone,
-      visits: input.visits.map(({ id, place, priority }) => ({ id, place, priority })) },
-    refs: [...input.visits.map(v => v.place), ...input.flights.map(f => f.airport), ...input.lodgings.map(l => l.place)],
-    result: await service().service.compute(input),
-  };
+  return { input, result: await service().service.compute(input) };
 }
 export class MemoryShares implements ShareRepository {
   private hash: string | null = null;
