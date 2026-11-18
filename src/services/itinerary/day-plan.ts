@@ -16,10 +16,10 @@ export interface DayPlan {
   /** `transferFrom` is the lodging left for the airport after the day ends. */
   departure?: { airport: PlaceRef; localDateTime: string; instant: string; bufferMinutes: number; transferFrom?: PlaceRef };
   /**
-   * Daily legs that carry luggage: `ALL_LEGS` on a day trip without lodging (nowhere to leave it),
-   * `INTO_END` for the legs into the airport after a direct-to-airport checkout.
+   * Every daily leg carries luggage: on a day trip without lodging (nowhere to leave it), and on a
+   * direct-to-airport last day (luggage taken at checkout, from the lodging through visits to the airport).
    */
-  luggage?: 'ALL_LEGS' | 'INTO_END';
+  luggage?: true;
 }
 
 export function tripDates(startDate: string, endDate: string): string[] {
@@ -113,7 +113,7 @@ export function planDays(input: TripInputs): DayPlan[] {
     const count = mealCountForSlots(setting?.mealSlots ?? input.mealSlots);
     if (count === null) errors[`daySettings.${date}.mealSlots`] = '끼니는 없음, 점심, 점심·저녁, 아침·점심·저녁 중 하나여야 합니다.';
     const day: DayPlan = { date, start, end, mealCount: count ?? 0, activity };
-    if (!tonight && !lastNight) day.luggage = 'ALL_LEGS';
+    if (!tonight && !lastNight) day.luggage = true;
     if (first && arrival) {
       day.arrival = { airport: arrival.airport, localDateTime: arrival.localDateTime, instant: arrivalInstant, immigrationMinutes: input.arrivalBufferMinutes,
         ...(start.id === arrival.airport.id ? {} : { transferTo: start }) };
@@ -121,7 +121,7 @@ export function planDays(input: TripInputs): DayPlan[] {
     if (last && departure) {
       day.departure = { airport: departure.airport, localDateTime: departure.localDateTime, instant: departureInstant, bufferMinutes: input.departureBufferMinutes,
         ...(end.id === departure.airport.id ? {} : { transferFrom: end }) };
-      if (end.id === departure.airport.id && lastNight) day.luggage = 'INTO_END';
+      if (end.id === departure.airport.id && lastNight) day.luggage = true;
     }
     return day;
   });

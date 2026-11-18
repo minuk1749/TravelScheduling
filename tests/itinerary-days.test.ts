@@ -130,6 +130,21 @@ test('T12 a day trip without lodging carries luggage on every leg', async () => 
   assert.ok((await modes('NEVER')).every(mode => mode !== 'TAXI'));
 });
 
+test('T12B direct-to-airport carries luggage on every last-day leg from the lodging to the airport', async () => {
+  const lastDay = (taxiPolicy: TripInputs['taxiPolicy']) => sampleTrip([{ key: 'tower', minutes: 30, fixedDate: '2026-12-03' }], {
+    taxiPolicy, luggageOption: 'DIRECT_TO_AIRPORT',
+  });
+  const modes = async (taxiPolicy: TripInputs['taxiPolicy']) => {
+    const result = await service().service.compute(lastDay(taxiPolicy));
+    assert.equal(result.status, 'OK');
+    const legs = result.comparisons.filter(leg => leg.kind === 'DAY' && leg.date === '2026-12-03');
+    assert.deepEqual(legs.map(leg => [leg.from, leg.to]), [[placeId('hotel'), placeId('tower')], [placeId('tower'), placeId('airport')]]);
+    return legs.map(leg => leg.selected.mode);
+  };
+  assert.deepEqual(await modes('WHEN_NEEDED'), ['TAXI', 'TAXI']);
+  assert.ok((await modes('NEVER')).every(mode => mode !== 'TAXI'));
+});
+
 test('T12 day plans: per-day settings, day trips anchored at the airport, and meal counts', () => {
   const days = planDays(sampleTrip(okVisits, {
     daySettings: [{ date: '2026-12-02', departureTime: '10:00', returnTime: '18:00', mealSlots: ['BREAKFAST', 'LUNCH', 'DINNER'] }],
@@ -144,7 +159,7 @@ test('T12 day plans: per-day settings, day trips anchored at the airport, and me
     endDate: '2026-12-01', lodgings: [], flights: [arrivalFlight, { ...departureFlight, localDateTime: '2026-12-01T21:00' }],
   }));
   assert.deepEqual([dayTrip.start.id, dayTrip.end.id, dayTrip.arrival?.transferTo, dayTrip.departure?.transferFrom, dayTrip.luggage],
-    [placeId('airport'), placeId('airport'), undefined, undefined, 'ALL_LEGS']);
+    [placeId('airport'), placeId('airport'), undefined, undefined, true]);
 });
 
 test('T12 direct-to-airport falls back to a lodging transfer when check-in closes before the last day starts', () => {
@@ -152,7 +167,7 @@ test('T12 direct-to-airport falls back to a lodging transfer when check-in close
     luggageOption: 'DIRECT_TO_AIRPORT', flights: [arrivalFlight, { ...departureFlight, localDateTime }],
   })).at(-1)!;
   const afternoon = direct('2026-12-03T18:00');
-  assert.deepEqual([afternoon.end.id, afternoon.departure?.transferFrom, afternoon.luggage], [placeId('airport'), undefined, 'INTO_END']);
+  assert.deepEqual([afternoon.end.id, afternoon.departure?.transferFrom, afternoon.luggage], [placeId('airport'), undefined, true]);
   const earlyMorning = direct('2026-12-03T00:30');
   assert.deepEqual([earlyMorning.end.id, earlyMorning.departure?.transferFrom?.id, earlyMorning.luggage], [placeId('hotel'), placeId('hotel'), undefined]);
 });
