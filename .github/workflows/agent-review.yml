@@ -116,7 +116,8 @@ jobs:
       - id: t
         run: |
           set +e
-          {
+          # 서브셸 ( ) 안에서 exit 해야 단계 전체가 끝나지 않고 결과(passed=false)를 기록할 수 있다
+          (
             if [ ! -f package.json ]; then echo "package.json 없음"; exit 1; fi
             npm ci || exit 1
             npm run --if-present lint || exit 1
@@ -126,7 +127,7 @@ jobs:
             if node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
               npx playwright install --with-deps chromium && npm run test:e2e -- --trace off || exit 1
             fi
-          } > test.log 2>&1
+          ) > test.log 2>&1
           code=$?
           tail -n 200 test.log
           tail -n 150 test.log > test-tail.log
