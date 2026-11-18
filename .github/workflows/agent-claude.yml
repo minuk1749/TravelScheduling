@@ -1,16 +1,16 @@
-# 리팩터링: Claude(Opus)가 리팩터링 이슈(R번호)를 수행하고 PR을 올린다.
+# Claude 작업: Claude가 담당 작업(T번호, 작업표 담당=claude)이나 리팩터링(R번호)을 수행하고 PR을 올린다.
 #
-# 실행 시점: agent-review가 승인하면서 리뷰에 refactor 항목이 있을 때(자동), 리팩터링 PR에 수정 요청이 나왔을 때(자동),
-#            또는 사람이 refactor-task 라벨 이슈(제목 "R번호: …")를 만들고 수동 실행.
-# PR은 사용자 토큰(USER_PAT)으로 올려 agent-review(테스트 + 실행 리뷰)가 이어서 돌게 한다.
+# 실행 시점: agent-start가 담당이 claude인 작업을 시작할 때, 리뷰가 리팩터링을 제안했을 때,
+#            Claude PR에 수정 요청이 나왔을 때(모두 자동), 또는 사람이 이슈 번호로 수동 실행.
+# PR은 사용자 토큰(USER_PAT)으로 올리고 owner-claude 라벨을 붙인다 → agent-review가 테스트 후 Codex 리뷰를 요청한다.
 # Claude 단계에는 USER_PAT을 넘기지 않는다.
-name: agent-refactor
+name: agent-claude
 
 on:
   workflow_dispatch:
     inputs:
       issue:
-        description: "리팩터링 이슈 번호 (제목이 R번호로 시작)"
+        description: "작업 이슈 번호 (제목이 T번호 또는 R번호로 시작)"
         type: string
         required: true
       pr:
@@ -19,16 +19,16 @@ on:
         default: ""
 
 concurrency:
-  group: agent-refactor
+  group: agent-claude
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  refactor:
+  claude:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
     permissions:
       contents: read
       issues: write
@@ -56,16 +56,17 @@ jobs:
           set -euo pipefail
           out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
           title=$(gh issue view "$ISSUE" --json title --jq .title)
-          id=$(grep -oE '^R[0-9]+' <<<"$title" || true)
-          if [ -z "$id" ]; then echo "::error::이슈 제목이 R번호로 시작하지 않음: $title"; exit 1; fi
+          id=$(grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' <<<"$title" || true)
+          if [ -z "$id" ]; then echo "::error::이슈 제목이 T번호나 R번호로 시작하지 않음: $title"; exit 1; fi
           out id "$id"
+          case "$id" in R*) out kind refactor; suffix=refactor;; *) out kind implement; suffix=claude;; esac
           out title "${title#*: }"
           if [ -n "$PR" ]; then
             out branch "$(gh pr view "$PR" --json headRefName --jq .headRefName)"
             n=$(gh pr view "$PR" --json comments --jq '[.comments[] | select(.body | contains("<!-- agent-feedback"))] | length')
             out round "$((n + 1))"
           else
-            out branch "$(tr 'A-Z' 'a-z' <<<"$id")-refactor"
+            out branch "$(tr 'A-Z' 'a-z' <<<"$id")-$suffix"
             out round 1
           fi
           gh issue view "$ISSUE" --json body --jq .body > "$RUNNER_TEMP/items.md"
@@ -89,21 +90,23 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci --no-audit --no-fund
-          printf '.ctl/\n.refactor-task.md\n.review-tmp/\n' >> .git/info/exclude
+          printf '.ctl/\n.claude-task.md\n.review-tmp/\n' >> .git/info/exclude
 
       - id: prompt
         env:
           ID: ${{ steps.info.outputs.id }}
           TITLE: ${{ steps.info.outputs.title }}
           ROUND: ${{ steps.info.outputs.round }}
+          KIND: ${{ steps.info.outputs.kind }}
         run: |
           set -euo pipefail
-          sed -e "s/{{ID}}/$ID/g" -e "s/{{ROUND}}/$ROUND/g" .ctl/.github/agent/prompts/refactor.md | awk -v t="$TITLE" '{gsub(/\{\{TITLE\}\}/, t)}1' > .refactor-task.md
-          { echo; echo "## 리팩터링 항목"; echo; cat "$RUNNER_TEMP/items.md"; } >> .refactor-task.md
+          if [ "$KIND" = refactor ]; then tpl=refactor.md; head="리팩터링 항목"; mk=claude-refactor; else tpl=claude-implement.md; head="작업 지시 (이슈 본문)"; mk=claude-implement; fi
+          sed -e "s/{{ID}}/$ID/g" -e "s/{{ROUND}}/$ROUND/g" ".ctl/.github/agent/prompts/$tpl" | awk -v t="$TITLE" '{gsub(/\{\{TITLE\}\}/, t)}1' > .claude-task.md
+          { echo; echo "## $head"; echo; cat "$RUNNER_TEMP/items.md"; } >> .claude-task.md
           if [ -s "$RUNNER_TEMP/feedback.md" ]; then
-            { echo; echo "## 직전 리뷰 피드백 (이번 라운드에서 해결할 것)"; echo; cat "$RUNNER_TEMP/feedback.md"; } >> .refactor-task.md
+            { echo; echo "## 직전 리뷰 피드백 (이번 라운드에서 해결할 것)"; echo; cat "$RUNNER_TEMP/feedback.md"; } >> .claude-task.md
           fi
-          echo "model=$(node .ctl/.github/agent/model-for.mjs claude-refactor "$ID" .ctl/.github/agent/models.json)" >> "$GITHUB_OUTPUT"
+          echo "model=$(node .ctl/.github/agent/model-for.mjs "$mk" "$ID" .ctl/.github/agent/models.json)" >> "$GITHUB_OUTPUT"
 
       - id: claude
         uses: anthropics/claude-code-action@v1
@@ -111,10 +114,10 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: |
-            저장소 ${{ github.repository }}의 리팩터링 작업 ${{ steps.info.outputs.id }} 이다. `.refactor-task.md`를 읽고 그 지시를 따르라.
+            저장소 ${{ github.repository }}의 작업 ${{ steps.info.outputs.id }} 이다. `.claude-task.md`를 읽고 그 지시를 따르라.
           claude_args: >-
             --model ${{ steps.prompt.outputs.model }}
-            --max-turns 150
+            --max-turns 200
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*)"
             --disallowedTools "NotebookEdit"
 
@@ -143,20 +146,21 @@ jobs:
             gh issue edit "$ISSUE" --add-label needs-human
             exit 0
           fi
-          git commit -q -m "$ID: $TITLE (round $ROUND)" -m "Claude 리팩터링, agent-refactor 자동 커밋"
+          git commit -q -m "$ID: $TITLE (round $ROUND)" -m "Claude 작업, agent-claude 자동 커밋"
 
           # Claude 최종 메시지 → PR 설명/댓글
           msg=""
           if [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ]; then
             msg=$(jq -r 'if type=="array" then (map(select(.type=="result")) | last | .result // "") else (.result // "") end' "$EXEC_FILE" 2>/dev/null || true)
           fi
-          printf '%s\n\n---\n리팩터링 이슈: #%s · 수행: Claude · 리뷰: Claude(실행 리뷰)\n' "${msg:-(최종 메시지 없음)}" "$ISSUE" > "$RUNNER_TEMP/body.md"
+          printf '%s\n\n---\n작업 이슈: #%s · 구현: Claude · 리뷰: Codex\n' "${msg:-(최종 메시지 없음)}" "$ISSUE" > "$RUNNER_TEMP/body.md"
 
           git push -q --force-with-lease "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "HEAD:refs/heads/$BRANCH"
           if [ -z "$PR" ]; then
-            gh pr create --base develop --head "$BRANCH" --title "$ID: $TITLE" --body-file "$RUNNER_TEMP/body.md"
+            gh label create owner-claude --color fbca04 --description "Claude가 구현한 PR (Codex가 리뷰)" --force >/dev/null
+            gh pr create --base develop --head "$BRANCH" --title "$ID: $TITLE" --label owner-claude --body-file "$RUNNER_TEMP/body.md"
           else
-            { echo "**Claude 리팩터링 수정 (라운드 $ROUND)**"; echo; cat "$RUNNER_TEMP/body.md"; } | gh pr comment "$PR" --body-file -
+            { echo "**Claude 수정 (라운드 $ROUND)**"; echo; cat "$RUNNER_TEMP/body.md"; } | gh pr comment "$PR" --body-file -
           fi
 
       - name: Pause on failure
@@ -167,5 +171,5 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh label create agent-paused --color b60205 --description "자동 루프 일시중단" --force >/dev/null
-          printf '리팩터링 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. 해결한 뒤 이 이슈를 닫고 Actions에서 agent-refactor를 같은 이슈 번호로 다시 실행해 주세요.\n' "$ISSUE" "$RUN_URL" > "$RUNNER_TEMP/p.md"
-          gh issue create --title "자동 루프 일시중단: 리팩터링 #$ISSUE" --label agent-paused --body-file "$RUNNER_TEMP/p.md"
+          printf 'Claude 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. 해결한 뒤 이 이슈를 닫고 Actions에서 agent-claude를 같은 이슈 번호로 다시 실행해 주세요.\n' "$ISSUE" "$RUN_URL" > "$RUNNER_TEMP/p.md"
+          gh issue create --title "자동 루프 일시중단: Claude 작업 #$ISSUE" --label agent-paused --body-file "$RUNNER_TEMP/p.md"

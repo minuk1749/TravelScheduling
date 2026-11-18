@@ -1,6 +1,7 @@
 // docs/tasks.md 표를 읽고 쓰는 도구 (외부 의존 없음)
 //   node tasks.mjs next  [file]                 → 다음 자동 작업 {"id","title"} 또는 {}
 //   node tasks.mjs title <ID> [file]            → 작업 제목
+//   node tasks.mjs get <ID> <열> [--file f]       → 해당 칸 값
 //   node tasks.mjs set <ID> 열=값 ... [--file f] → 해당 행 갱신
 import fs from "node:fs";
 
@@ -64,6 +65,12 @@ if (cmd === "next") {
   const row = rows.find((r) => get(r, "#") === args[0]);
   if (!row) throw new Error(`작업 ${args[0]} 없음`);
   console.log(get(row, "작업"));
+} else if (cmd === "get") {
+  // node tasks.mjs get <ID> <열> → 해당 칸 값
+  const { rows } = load(file);
+  const row = rows.find((r) => get(r, "#") === args[0]);
+  if (!row) throw new Error(`작업 ${args[0]} 없음`);
+  console.log(get(row, args[1]));
 } else if (cmd === "set") {
   set(file, args[0], args.slice(1));
 } else {

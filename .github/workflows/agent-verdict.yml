@@ -1,0 +1,78 @@
+# Codex 리뷰 판정: Mac 러너가 Claude PR에 남긴 Codex 리뷰 댓글(<!-- codex-review sha=… -->)을 읽어
+# agent-review와 같은 판정(.github/agent/decide.sh)을 실행한다.
+# 러너는 저장소 소유자 계정(gh 로그인)으로 댓글을 달기 때문에 이 이벤트가 발생한다.
+name: agent-verdict
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: agent-verdict-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verdict:
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '<!-- codex-review') &&
+      github.event.comment.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    env:
+      PR: ${{ github.event.issue.number }}
+      MAX_ROUNDS: ${{ vars.AGENT_MAX_ROUNDS || '3' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: develop
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+          info=$(gh pr view "$PR" --json title,headRefOid,state,labels)
+          if [ "$(jq -r .state <<<"$info")" != OPEN ]; then echo "::notice::PR이 열려 있지 않음"; out go false; exit 0; fi
+          if ! jq -e '[.labels[].name] | index("owner-claude")' <<<"$info" >/dev/null; then echo "::notice::Claude PR이 아님"; out go false; exit 0; fi
+          sha=$(grep -oE '<!-- codex-review sha=[0-9a-f]+' <<<"$BODY" | sed 's/.*sha=//')
+          head=$(jq -r .headRefOid <<<"$info")
+          if [ "$sha" != "$head" ]; then echo "::notice::리뷰한 커밋($sha)이 PR 최신 커밋($head)과 달라 무시"; out go false; exit 0; fi
+          # 댓글의 ```json 블록에서 판정 JSON을 꺼낸다
+          awk '/^```json$/{f=1;next} /^```$/{if(f){exit}} f' <<<"$BODY" > "$RUNNER_TEMP/review.json"
+          jq -e '.verdict' "$RUNNER_TEMP/review.json" >/dev/null || { echo "::error::Codex 리뷰 JSON을 읽지 못함"; exit 1; }
+          title=$(jq -r .title <<<"$info")
+          task=$(grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' <<<"$title")
+          issue=$(gh issue list --state open --json number,title,labels --jq "[.[] | select([.labels[].name] | (index(\"agent-task\") or index(\"refactor-task\"))) | select(.title | startswith(\"$task:\"))] | first | .number // empty")
+          n=0
+          if [ -n "$issue" ]; then n=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$issue/comments" --jq '.[].body' | grep -c '<!-- agent-review -->' || true); fi
+          out go true; out task "$task"; out issue "$issue"; out round "$((n + 1))"
+      - if: steps.v.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          USER_PAT: ${{ secrets.USER_PAT }}
+          EXECUTOR: ${{ vars.AGENT_EXECUTOR || 'local' }}
+          REFACTOR_MODE: ${{ vars.AGENT_REFACTOR || 'on' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TASK: ${{ steps.v.outputs.task }}
+          ISSUE: ${{ steps.v.outputs.issue }}
+          ROUND: ${{ steps.v.outputs.round }}
+          OWNER: claude
+          REVIEWER: Codex
+          PASSED: "true"
+          R_TEST: success
+          R_REVIEW: success
+        run: |
+          REVIEW_JSON=$(cat "$RUNNER_TEMP/review.json") bash .github/agent/decide.sh

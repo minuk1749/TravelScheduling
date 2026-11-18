@@ -1,11 +1,12 @@
 #!/bin/bash
 # Mac 러너: 한 번 실행에 한 가지 일만 하고 끝난다. launchd가 1시간마다 실행한다.
 #
-#   1) 열린 작업 PR에 아직 반영하지 않은 자동 피드백이 있으면 → Codex CLI로 수정 후 푸시
-#   2) 작업 PR이 없고 열린 작업 이슈(agent-task)가 있으면 → Codex CLI로 구현, 브랜치 푸시, PR 생성
+#   0) Claude가 만든 PR에 needs-codex-review 라벨이 있으면 → Codex CLI로 리뷰하고 판정 댓글 (agent-verdict가 판정)
+#   1) Codex가 만든 열린 작업 PR에 아직 반영하지 않은 자동 피드백이 있으면 → Codex CLI로 수정 후 푸시
+#   2) 작업 PR이 없고 Codex 담당 작업 이슈(agent-task, owner-claude 아님)가 있으면 → Codex CLI로 구현, 브랜치 푸시, PR 생성
 #   3) 그 밖에는 아무것도 하지 않음 (리뷰 대기 중이거나 할 작업 없음)
 #
-# 테스트와 Claude 리뷰, 머지는 GitHub Actions(agent-review)가 한다.
+# 테스트와 판정·머지는 GitHub Actions(agent-review, agent-verdict)가 한다.
 # Codex 사용 한도에 걸리면 이번 실행은 실패하고, 다음 실행에서 다시 시도한다.
 #
 # 환경 변수
@@ -67,10 +68,18 @@ main() {
   git reset -q --hard
   git clean -qfd
 
-  # 1) 수정 모드: 열린 작업 PR 확인
+  # 0) 리뷰 모드: Claude가 만든 PR 중 Codex 리뷰를 기다리는 것
+  local rpr
+  rpr=$(gh pr list -R "$REPO" --state open --label needs-codex-review --json number --jq 'sort_by(.number) | first | .number // empty')
+  if [ -n "$rpr" ]; then
+    review_pr "$rpr"
+    return $?
+  fi
+
+  # 1) 수정 모드: 열린 작업 PR 확인 (Codex가 만든 PR만)
   local pr
   pr=$(gh pr list -R "$REPO" --state open --base develop --json number,title,labels \
-    --jq '[.[] | select(.title | test("^T[0-9]+[A-Z]?:")) | select([.labels[].name] | index("needs-human") | not)] | sort_by(.number) | first | .number // empty')
+    --jq '[.[] | select(.title | test("^T[0-9]+[A-Z]?:")) | select([.labels[].name] | (index("needs-human") or index("owner-claude")) | not)] | sort_by(.number) | first | .number // empty')
 
   if [ -n "$pr" ]; then
     local fb_at head_at branch title task
@@ -121,7 +130,7 @@ main() {
 
   # 2) 구현 모드: 열린 작업 이슈 확인
   local issue
-  issue=$(gh issue list -R "$REPO" --state open --label agent-task --json number --jq 'sort_by(.number) | first | .number // empty')
+  issue=$(gh issue list -R "$REPO" --state open --label agent-task --json number,labels --jq '[.[] | select([.labels[].name] | index("owner-claude") | not)] | sort_by(.number) | first | .number // empty')
   if [ -z "$issue" ]; then
     log "진행할 작업 없음"; return 0
   fi
@@ -164,6 +173,66 @@ main() {
   gh pr create -R "$REPO" --base develop --head "$ibranch" --title "$ititle" --body-file "$imsg.body"
   rm -f "$imsg" "$imsg.body"
   log "PR 생성 완료"
+}
+
+review_pr() { # pr
+  local pr="$1" head branch task title out schema prompt used picked model effort
+  head=$(gh pr view "$pr" -R "$REPO" --json headRefOid --jq .headRefOid)
+  branch=$(gh pr view "$pr" -R "$REPO" --json headRefName --jq .headRefName)
+  title=$(gh pr view "$pr" -R "$REPO" --json title --jq .title)
+  task=$(echo "$title" | grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' || echo "?")
+  log "리뷰 모드: PR #$pr ($task), 커밋 ${head:0:7}"
+  git fetch -q origin "$branch"
+  git checkout -q --detach "$head"
+  printf '.ctl-pr-body.md\n' >> .git/info/exclude
+  gh pr view "$pr" -R "$REPO" --json body --jq .body > .ctl-pr-body.md
+
+  schema="$TMPD/review-schema.json"
+  cat > "$schema" <<'JSON'
+{"type":"object","additionalProperties":false,"properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"},"refactor":{"type":"array","items":{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"},"scope":{"type":"string"},"reason":{"type":"string"}},"required":["title","scope","reason"]}}},"required":["verdict","summary","issues","notes","refactor"]}
+JSON
+  prompt="$TMPD/review-prompt.md"
+  {
+    echo "저장소 $REPO, PR #$pr, 작업 $task. 구현은 Claude가 했고 너(Codex)가 리뷰한다. 기준 브랜치는 origin/develop이다."
+    echo "PR 설명은 .ctl-pr-body.md에 있다. 파일을 수정하지 마라. 결과는 지정된 JSON 스키마로만 반환하라(notes, refactor는 없으면 빈 값)."
+    echo
+    git show origin/develop:.github/agent/prompts/review.md 2>/dev/null
+  } > "$prompt"
+
+  git show origin/develop:.github/agent/models.json > "$TMPD/models.json" 2>/dev/null || true
+  git show origin/develop:.github/agent/model-for.mjs > "$TMPD/model-for.mjs" 2>/dev/null || true
+  picked=$(node "$TMPD/model-for.mjs" codex-review "$task" "$TMPD/models.json" 2>/dev/null || printf '\t\n')
+  model=$(printf '%s' "$picked" | cut -f1); effort=$(printf '%s' "$picked" | cut -f2)
+  local args=(exec -s read-only -c 'approval_policy="never"' --output-schema "$schema" --output-last-message "$TMPD/review.json")
+  if [ -n "$model" ]; then args+=(--model "$model"); fi
+  if [ -n "$effort" ]; then args+=(-c "model_reasoning_effort=\"$effort\""); fi
+  log "Codex 리뷰 시작 (모델 ${model:-기본값}, 추론 ${effort:-기본값})"
+  out="$TMPD/codex.out"
+  if ! codex "${args[@]}" "$(cat "$prompt")" < /dev/null 2>&1 | tee "$out"; then
+    record_failure "$task 리뷰" "$out"; return 1
+  fi
+  used=$(grep -m1 -E '^model: ' "$out" | sed 's/^model: //' || true)
+  if [ -n "$model" ] && [ -n "$used" ] && [ "$used" != "$model" ]; then
+    pause_issue "Codex 리뷰가 배정한 모델(\`$model\`)이 아니라 \`$used\`로 실행되어 결과를 쓰지 않고 멈췄습니다 (PR #$pr)." "$out"
+    return 1
+  fi
+  if ! node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!["approve","request_changes"].includes(r.verdict)) process.exit(1)' "$TMPD/review.json" 2>/dev/null; then
+    record_failure "$task 리뷰(판정 JSON 오류)" "$out"; return 1
+  fi
+  echo 0 > "$FAILFILE"
+
+  # 판정 댓글: 사람이 읽을 요약 + agent-verdict가 읽을 JSON
+  node -e '
+    const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const lines = [`<!-- codex-review sha=${process.argv[2]} -->`, `**Codex 리뷰: ${r.verdict === "approve" ? "승인" : "수정 요청"}**`, "", r.summary];
+    for (const i of r.issues || []) lines.push("", `- **${i.file}**: ${i.problem}`, `  - 수정 방향: ${i.fix}`);
+    if (r.notes) lines.push("", `참고: ${r.notes}`);
+    lines.push("", "<details><summary>판정 JSON</summary>", "", "```json", JSON.stringify(r, null, 2), "```", "", "</details>");
+    process.stdout.write(lines.join("\n") + "\n");
+  ' "$TMPD/review.json" "$head" > "$TMPD/review-comment.md"
+  gh pr edit "$pr" -R "$REPO" --remove-label needs-codex-review >/dev/null
+  gh pr comment "$pr" -R "$REPO" --body-file "$TMPD/review-comment.md" >/dev/null
+  log "PR #$pr 에 Codex 리뷰 판정을 남김"
 }
 
 install_deps() {

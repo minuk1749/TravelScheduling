@@ -3,6 +3,8 @@
 //   claude → "모델" 출력
 //   claude-exec → 실행 리뷰 대상이면 "true", 아니면 "false"
 //   claude-refactor → 리팩터링 수행 모델
+//   claude-implement → Claude가 담당 작업을 구현할 모델
+//   codex-review → Claude PR을 리뷰할 Codex "모델<TAB>추론강도"
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,12 +27,18 @@ if (kind === "codex") {
 } else if (kind === "claude") {
   const c = cfg.claude || {};
   process.stdout.write(`${(c.tasks || {})[task] || c.default || ""}\n`);
+} else if (kind === "codex-review") {
+  const r = (cfg.codex || {}).review || {};
+  process.stdout.write(`${r.model || ""}\t${r.effort || ""}\n`);
+} else if (kind === "claude-implement") {
+  const c = (cfg.claude || {}).implement || {};
+  process.stdout.write(`${(c.tasks || {})[task] || c.default || "claude-opus-5-5"}\n`);
 } else if (kind === "claude-refactor") {
   process.stdout.write(`${(cfg.claude || {}).refactor || "claude-opus-5-5"}\n`);
 } else if (kind === "claude-exec") {
   const list = (cfg.claude || {}).exec_review || [];
   process.stdout.write(list.includes(task) ? "true\n" : "false\n");
 } else {
-  console.error("사용법: model-for.mjs <codex|claude|claude-exec|claude-refactor> <TASK> [models.json]");
+  console.error("사용법: model-for.mjs <codex|codex-review|claude|claude-exec|claude-implement|claude-refactor> <TASK> [models.json]");
   process.exit(2);
 }

@@ -1,23 +1,19 @@
-# 자동 루프 운영 가이드
+# 자동 협업 루프 운영 가이드
 
-Codex(구현, ChatGPT 구독)와 Claude(리뷰, Claude 구독)가 GitHub에서 작업을 이어서 진행한다. API 종량제 비용은 없다.
+Codex(ChatGPT 구독)와 Claude(Claude 구독)가 **맡은 작업을 각자 구현하고, 서로의 코드를 리뷰**한다. API 종량제 비용은 없다.
 
 ```
-agent-start (Actions) ─ 다음 작업 이슈 생성
-     │
-     ▼
-구현 주체 (저장소 변수 AGENT_EXECUTOR)
-  local (기본) : Mac 러너가 1시간마다 이슈를 확인 → Codex CLI 구현 → 브랜치 푸시 → PR 생성
-  cloud        : 이슈에 @codex 요청 → [사람] Codex 화면에서 PR 생성 버튼
-     │
-     ▼
-agent-review (Actions) ─ 테스트 → Claude 리뷰
-     ├─ 승인 → develop 머지 → 다음 작업 agent-start (자동)
-     ├─ 수정 요청 → PR에 피드백 댓글 → 구현 주체가 수정 (local: 다음 러너 실행 때 자동)
-     └─ 3라운드 초과 → needs-human, 작업 보류 → 다음 작업
+agent-start ─ 다음 작업 이슈 생성 (작업표의 담당 확인)
+   │
+   ├─ 담당 gpt ──→ Mac 러너: Codex 구현 → PR ──→ agent-review: 테스트 → Claude 리뷰 ─┐
+   │                                                                                 │
+   └─ 담당 claude → agent-claude: Claude 구현 → PR(owner-claude) → agent-review: 테스트 │
+                     → needs-codex-review → Mac 러너: Codex 리뷰 → agent-verdict ─────┤
+                                                                                      ▼
+                                          판정(.github/agent/decide.sh): 승인 → 머지 → 다음 작업
+                                                                       수정 요청 → 작성자가 수정
+                                                                       리팩터링 제안 → R번호(Claude 수행, Codex 리뷰)
 ```
-
-두 구현 주체를 동시에 쓰지 않는다. 전환은 Settings → Secrets and variables → Actions → Variables에서 `AGENT_EXECUTOR`를 `local` 또는 `cloud`로 바꾸면 된다(없으면 `local`).
 
 ## 공통 1회 설정
 
@@ -71,11 +67,11 @@ bash scripts/agent/install-launchd.sh
 - `claude.exec_review`: 이 목록의 작업은 **실행 리뷰**. Claude가 테스트를 직접 돌리고, 테스트에 없는 경우를 확인용 스크립트로 실행해 본다. 리뷰 시간과 Claude 사용량이 늘고, Claude 토큰이 있는 리뷰 작업에서 PR 코드가 실행된다(본인 러너가 만든 PR만 대상).
 - 이 파일은 보호 파일이라 사람(또는 사람이 지시한 대화형 세션)만 바꾼다.
 
-## 리팩터링 (`agent-refactor.yml`)
+## 리팩터링 (`agent-claude.yml`)
 
 - 리뷰가 승인하면서 `refactor` 항목을 제안하면(구조 문제로 곧 버그가 나거나 다음 작업을 막을 때만), 다음 작업 대신 리팩터링 이슈 `R번호`를 만들고 Claude(`models.json`의 `claude.refactor`, 기본 Opus)가 수행한다.
-- 리팩터링 PR은 사용자 토큰으로 올라가 agent-review(테스트 + Opus 실행 리뷰)를 거친다. 수정 요청은 다시 Claude가 반영하고, 머지되면 원래 작업 순서(agent-start)로 돌아간다.
-- 수동 실행: `refactor-task` 라벨 이슈를 제목 `R번호: 내용`으로 만들고 Actions → agent-refactor → 이슈 번호 입력.
+- 리팩터링 PR은 사용자 토큰으로 올라가 agent-review(테스트)와 Codex 리뷰를 거친다. 수정 요청은 다시 Claude가 반영하고, 머지되면 원래 작업 순서(agent-start)로 돌아간다.
+- 수동 실행: `refactor-task` 라벨 이슈를 제목 `R번호: 내용`으로 만들고 Actions → agent-claude → 이슈 번호 입력.
 - 끄기: 저장소 변수 `AGENT_REFACTOR=off`.
 
 ## 알려진 제약
