@@ -1,8 +1,8 @@
 # 아키텍처
 
-기준: 2026-11-18, T9 시작 시 `develop`의 `50f0110`를 바탕으로 갱신.
+기준: 2026-11-18, T10 시작 시 원격 `develop`의 `1b23d6f`를 바탕으로 갱신.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
-**현재**는 T1–T9에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
+**현재**는 T1–T10에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
 디렉터리·서비스·HTTP 응답은 아직 존재하지 않는다. 구조나 계약 변경 시 이 문서와
 [결정 기록](decisions/0001-pure-core-and-service-boundaries.md)을 같은 PR에서 갱신한다.
 
@@ -13,6 +13,9 @@ src/
   app/                         현재: App Router, 홈/manifest, 서버 액션
     api/auth/[...nextauth]/     현재: Auth.js HTTP 진입점
     api/trips/[id]/             현재: 소유권 확인 후 { id }만 반환
+    trips/new/                  현재 T10: 여행·항공·숙소·장소 입력
+    api/trips/                  현재 T10: 인증된 생성 POST
+    api/city-profiles/          현재 T10: 인증된 프로필 GET
     api/places/                 현재 T8: 인증된 한국어 검색·상세·좌표 조회
   components/service-worker.tsx  현재: 프로덕션 서비스워커 등록
   auth.ts                      현재: Google 공급자, JWT/세션 콜백 구성
@@ -28,7 +31,8 @@ src/
   fare/index.ts                현재: 도시 프로필 타입, 순수 택시 요금 계산
   places/                      현재 T8: 장소 포트·좌표 캐시·Google 어댑터·HTTP 처리
   travel-time/                 현재 T9: 이동시간 포트·선택적 캐시·Google 어댑터·서버 팩터리
-  repositories/                후속 T10/T12: 여행·장소 ID·프로필·일정 SQL 경계
+  trips/                       현재 T10: 공유 입력 검증·HTTP 처리·서버 팩터리
+  repositories/                현재 T10: 여행 생성·장소 ID 저장·프로필 조회. 수정/일정은 후속 T11/T12
   services/itinerary.ts         후속 T12: 입력 조립, 재조회 루프, 결과 저장
 migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비
 public/                        현재: 온라인 전용 sw.js, 아이콘
@@ -61,7 +65,9 @@ type import한다. 런타임에는 `index → capacity → placement → transpo
 
 현재 연결된 실행 흐름은 `홈/서버 액션 → Auth.js → 인증 저장소 → PostgreSQL`,
 `GET /api/trips/[id] → auth → authorizeTrip → tripOwner → { id }`,
-`GET /api/places → auth → PlaceProvider → Google/좌표 캐시`다.
+`GET /api/places → auth → PlaceProvider → Google/좌표 캐시`,
+`/trips/new → POST /api/trips → auth → parseTripDraft → tripInputRepository → PostgreSQL`,
+`GET /api/city-profiles → auth → cityProfileRepository`다.
 스케줄러·요금 함수는 테스트에서 호출하며 아직 API/화면과 연결되지 않았다.
 
 다음은 T8–T13에서 연결할 흐름이다. 화살표는 데이터 이동이며 호출 주체는 API의 서비스다.
@@ -228,7 +234,7 @@ export interface TripInputs {
   mealSlots: readonly MealSlot[];
   mealWindows: MealWindows;
   taxiPolicy: TaxiPolicy;
-  luggageOption: string; // T10에서 입력 값 집합을 확정하고 검증
+  luggageOption: 'VIA_LODGING' | 'DIRECT_TO_AIRPORT'; // 마지막 날 숙소 경유/직접 공항 이동
   arrivalBufferMinutes: number;
   departureBufferMinutes: number;
   daySettings: readonly {
@@ -272,7 +278,16 @@ export interface CityProfileRepository {
 여행 수정과 새 일정/하위 행 저장은 각각 트랜잭션으로 처리한다. `saveItinerary`는 계산 중 입력이
 바뀌었으면 `STALE`을 반환한다. 현재 스키마에 버전 열은 없으므로 T12에서 입력 해시 재검증과
 잠금/버전 저장 방식을 구현할 때 결정 기록을 보완한다. JSONB를 타입 단언만으로 읽지 않는다.
-T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10에서 연결한다.
+T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.
+
+T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisions/0006-trip-input-creation.md)에 기록한다.
+[TripDraft 검증기](../src/trips/input.ts)는 클라이언트 단계 검사와 서버 전체 검사에 공용이며,
+[HTTP 처리기](../src/trips/http.ts)는 인증·JSON·동일 출처·필드 오류를 확인한다.
+[여행 생성 저장소](../src/repositories/trip-inputs.ts)는 세션 ownerId만 받아 트랜잭션으로 저장한다.
+[프로필 저장소](../src/repositories/city-profiles.ts)는 SQL numeric/time/JSONB를 정규화한다.
+이 생성 계약은 위 후속 loadInputs/saveInputs/saveItinerary의 완성 구현을 뜻하지 않는다.
+UI는 Google Maps와 제공자 attribution을 표시하며 외부 링크는 http/https만 허용한다.
+입력 이름과 검색 결과는 화면 메모리에만 존재한다. 새로고침 시 미저장 입력 복구는 제공하지 않는다.
 
 ## 5. 저장 형식·시간대 변환
 
@@ -338,8 +353,8 @@ day_plans → stops/legs`의 FK cascade로 실행한다. 공유 장소 캐시와
 | 상황 | 현재 동작 | 후속 API 처리 계약 |
 |---|---|---|
 | 로그인 없음/타인 소유/여행 없음 | `authorizeTrip`: 401/403/404. 현재 GET은 공통 한국어 오류 메시지 | 같은 상태 유지, 서버 액션도 소유권 확인 |
-| 잘못된 시각·기간·숫자/중복 방문 ID | 순수 함수에서 `RangeError` 등 발생. 전체 요청 검증기는 아직 없음 | 입력 검증 단계에서 400 + 필드별 오류. 모든 내부 예외를 400으로 일괄 변환하지 않음 |
-| 여행 입력 미완성/계산 중 변경 | 현재 여행 CRUD 미구현 | 409, 누락 필드 또는 재계산 안내 |
+| 잘못된 시각·기간·숫자/중복 방문 ID | 순수 함수에서 `RangeError` 등 발생. T10 생성 입력은 공유 검증기로 400 + 필드 오류 반환 | 입력 검증 단계에서 400 + 필드별 오류. 모든 내부 예외를 400으로 일괄 변환하지 않음 |
+| 여행 입력 미완성/계산 중 변경 | 현재 생성만 구현, 수정·계산은 후속 | 409, 누락 필드 또는 재계산 안내 |
 | `OK/OVER_CAPACITY/CONFLICT` | 정상적인 도메인 결과. `OVER_CAPACITY`에도 유효 추천 있음 | 계산 요청의 200 응답 본문에 상태를 유지. 고정 충돌을 임의 수정하지 않음 |
 | `unplaced.TIME_WINDOW/UNREACHABLE/FIXED_ORDER` | 방문 ID에 연결된 실패 원인. `WISH`는 오류가 아닌 의도적 미배치 | 원래 실패와 추천에서 제외된 목록을 구분 |
 | `issues.MEAL_UNAVAILABLE/UNREACHABLE/TIME_WINDOW` | 식사 슬롯/연결 실패/일일 경로의 시간창 실패. 마지막 것은 T7A 추가 | 날짜별 진단으로 표시. 방문 없는 숙소 이동 초과도 `CONFLICT` |
