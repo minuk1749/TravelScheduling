@@ -18,8 +18,8 @@ REVIEWER="${REVIEWER:-Claude}"
 OWNER="${OWNER:-gpt}"
 
 pause() {
-  printf '%s\n\n- 작업: `%s`, PR #%s, 라운드 %s\n- 실행 기록: %s\n- 결과: test=%s, review=%s\n\n구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. 해결한 뒤 이 이슈를 닫고, PR #%s 를 닫았다가 다시 열어 리뷰를 재실행해 주세요.\n' \
-    "$1" "$TASK" "$PR" "$ROUND" "${RUN_URL:-}" "$R_TEST" "$R_REVIEW" "$PR" > "$RUNNER_TEMP/i.md"
+  printf '%s\n\n- 작업: `%s`, PR #%s, 라운드 %s\n- 실행 기록: %s\n- 결과: test=%s, review=%s\n\n구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. **원인을 해결한 뒤 이 이슈를 닫으면 PR #%s 의 테스트와 리뷰가 자동으로 다시 실행됩니다.**\n\n<!-- resume:review pr=%s -->\n' \
+    "$1" "$TASK" "$PR" "$ROUND" "${RUN_URL:-}" "$R_TEST" "$R_REVIEW" "$PR" "$PR" > "$RUNNER_TEMP/i.md"
   gh issue create --title "자동 루프 일시중단: $TASK (PR #$PR)" --label agent-paused --body-file "$RUNNER_TEMP/i.md"
 }
 IS_REFACTOR=false; case "$TASK" in R*) IS_REFACTOR=true;; esac

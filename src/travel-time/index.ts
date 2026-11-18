@@ -11,6 +11,8 @@ export type TravelRequest = {
   timeZone: string;
   modes: readonly ProviderMode[];
 };
+/** Largest `MatrixRequest.locations` a provider accepts; callers split larger sets. */
+export const MAX_MATRIX_LOCATIONS = 100;
 export type MatrixRequest = TravelRequest & { locations: readonly Location[] };
 export type RouteRequest = TravelRequest & { from: Location; to: Location };
 export type TravelMatrix = ReadonlyMap<string, ReadonlyMap<string, TravelAlternatives>>;

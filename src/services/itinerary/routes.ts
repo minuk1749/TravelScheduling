@@ -1,7 +1,7 @@
 import { estimateTaxiFare, type CityProfile } from '../../fare';
 import type { RouteOptions } from '../../scheduler';
-import type {
-  Location, Money, ProviderMode, TravelAlternatives, TravelMatrix, TravelTimeProvider,
+import {
+  MAX_MATRIX_LOCATIONS, type Location, type Money, type ProviderMode, type TravelAlternatives, type TravelMatrix, type TravelTimeProvider,
 } from '../../travel-time';
 
 export const PROVIDER_MODES: readonly ProviderMode[] = ['TRANSIT', 'WALK', 'DRIVE'];
@@ -79,12 +79,34 @@ export class RouteBook {
     return query;
   }
 
+  /** All ordered pairs of `ids`; sets above the provider limit are split (see `matrixGroups`). */
   async matrix(ids: readonly string[], departure: string): Promise<RouteTable> {
     const unique = [...new Set(ids)];
     if (unique.length < 2) return new Map();
-    const matrix = await this.travel.matrix({
-      locations: unique.map(id => this.location(id)), departure, timeZone: this.timeZone, modes: PROVIDER_MODES,
-    });
-    return this.fares.table(matrix, departure);
+    const parts = await Promise.all(matrixGroups(unique).map(group => this.travel.matrix({
+      locations: group.map(id => this.location(id)), departure, timeZone: this.timeZone, modes: PROVIDER_MODES,
+    })));
+    const merged = new Map<string, Map<string, TravelAlternatives>>();
+    for (const part of parts) {
+      for (const [from, row] of part) {
+        let target = merged.get(from);
+        if (!target) merged.set(from, target = new Map());
+        for (const [to, alternatives] of row) target.set(to, alternatives);
+      }
+    }
+    return this.fares.table(merged, departure);
   }
+}
+
+/**
+ * Location groups whose square matrices together cover every ordered pair, each within
+ * `MAX_MATRIX_LOCATIONS`: one group when it fits, otherwise the union of every pair of
+ * half-limit chunks (e.g. 102 locations → chunks 50/50/2 → 3 requests).
+ */
+export function matrixGroups(ids: readonly string[], limit = MAX_MATRIX_LOCATIONS): string[][] {
+  if (ids.length <= limit) return [[...ids]];
+  const size = Math.floor(limit / 2);
+  const chunks: string[][] = [];
+  for (let index = 0; index < ids.length; index += size) chunks.push(ids.slice(index, index + size));
+  return chunks.flatMap((chunk, i) => chunks.slice(i + 1).map(other => [...chunk, ...other]));
 }

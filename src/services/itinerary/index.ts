@@ -50,7 +50,9 @@ export class ItineraryService {
     }, routes, this.maxAttempts);
 
     const transferIssues = prepared.flatMap(day => day.transferIssues);
-    const status = verified.verified && transferIssues.length === 0 ? verified.capacity.status : 'CONFLICT';
+    const flightConflicts = prepared.flatMap(day => day.flightConflicts);
+    const status = verified.verified && transferIssues.length === 0 && flightConflicts.length === 0
+      ? verified.capacity.status : 'CONFLICT';
     const schedule = status === 'CONFLICT' ? null : verified.capacity.recommendation?.schedule ?? null;
     const comparisons = schedule ? legComparisons(schedule, prepared, verified, profile) : [];
     return {
@@ -58,6 +60,7 @@ export class ItineraryService {
       capacity: verified.capacity,
       verification: { verified: verified.verified, attempts: verified.attempts },
       transferIssues,
+      flightConflicts,
       skippedMeals: prepared.flatMap(day => day.skippedMeals),
       comparisons,
       efficiency: schedule ? summarize(comparisons, fares.currency) : null,

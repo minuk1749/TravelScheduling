@@ -6,7 +6,8 @@ import {
   type ItineraryRepository, type ItineraryResult, type TripInputs,
 } from '../src/services/itinerary';
 import { planDays } from '../src/services/itinerary/day-plan';
-import { TravelProviderError, type TravelTimeProvider } from '../src/travel-time';
+import { matrixGroups } from '../src/services/itinerary/routes';
+import { MAX_MATRIX_LOCATIONS, TravelProviderError, type TravelTimeProvider } from '../src/travel-time';
 import { cityProfile } from './fixtures/trip-input';
 import {
   FixturePlaces, FixtureTravel, okVisits, placeId, samplePlaces, sampleTrip, TIME_ZONE, type RouteTweak, type Sample,
@@ -91,6 +92,12 @@ test('T12 Tokyo sample: OK itinerary is verified at actual departures, respects 
   assert.equal(arrival.selected.mode, 'TAXI');
   assert.deepEqual([departure.kind, departure.from, departure.to], ['AIRPORT', placeId('hotel'), placeId('airport')]);
   assert.ok(local(departure.departure).add({ milliseconds: Math.ceil(departure.selected.minutes * 60_000) }).toPlainTime().toString() <= '15:30');
+  // The day window ends at the same verified, queried departure instant used for the comparison.
+  assert.ok(travel.routeCalls.some(call => call.from.id === placeId('hotel') && call.to.id === placeId('airport') &&
+    Date.parse(call.departure) === Date.parse(departure.departure)));
+  const lastDayEnd = Math.max(...[...days.at(-1)!.stops, ...days.at(-1)!.legs].map(item => Date.parse(item.end)));
+  assert.ok(lastDayEnd <= Date.parse(departure.departure));
+  assert.deepEqual(result.flightConflicts, []);
   assert.deepEqual(result.skippedMeals, [{ date: '2026-12-03', slot: 'DINNER' }]);
 
   // Stage 8: alternatives and efficiency summary in the city currency.
@@ -192,9 +199,77 @@ test('T12 an unreachable airport transfer is a CONFLICT with a transfer issue', 
     route: async input => input.from.id === placeId('airport') ? {} : fixture.route(input),
   };
   const result = await service({ travel }).service.compute(sampleTrip());
-  assert.deepEqual(result.transferIssues, [{ date: '2026-12-01', direction: 'ARRIVAL', from: placeId('airport'), to: placeId('hotel') }]);
+  assert.deepEqual(result.transferIssues, [{ date: '2026-12-01', direction: 'ARRIVAL', from: placeId('airport'), to: placeId('hotel'), reason: 'NO_ROUTE' }]);
   assert.equal(result.status, 'CONFLICT');
   assert.equal(result.efficiency, null);
+});
+
+test('T12 a departure transfer that never fits the check-in deadline within the query limit is a CONFLICT', async () => {
+  // Transit-only lodging → airport: 20, 30, 40, 50 minutes on successive queries (never converges).
+  const fixture = new FixtureTravel();
+  let departureQueries = 0;
+  const travel: TravelTimeProvider = {
+    matrix: input => fixture.matrix(input),
+    route: async input => {
+      if (input.from.id !== placeId('hotel') || input.to.id !== placeId('airport')) return fixture.route(input);
+      departureQueries++;
+      return { TRANSIT: { durationSeconds: (10 + 10 * departureQueries) * 60, distanceMeters: 15_000, fare: { amount: 500, currency: 'JPY' } } };
+    },
+  };
+  const result = await service({ travel }).service.compute(sampleTrip());
+  assert.equal(departureQueries, 4);
+  assert.deepEqual(result.transferIssues, [{ date: '2026-12-03', direction: 'DEPARTURE', from: placeId('hotel'), to: placeId('airport'), reason: 'UNVERIFIED' }]);
+  assert.equal(result.status, 'CONFLICT');
+  assert.equal(result.efficiency, null);
+  assert.ok(result.comparisons.every(leg => leg.kind !== 'AIRPORT' || leg.to !== placeId('airport')));
+});
+
+test('T12 a same-airport day trip whose immigration ends after the departure deadline is a CONFLICT even without required visits', async () => {
+  const trip = sampleTrip([{ key: 'tower', minutes: 30, priority: 'WISH' }], {
+    endDate: '2026-12-01', lodgings: [],
+    flights: [sampleTrip().flights[0], { ...sampleTrip().flights[1], localDateTime: '2026-12-01T11:00' }],
+  });
+  const result = await service().service.compute(trip);
+  assert.equal(result.status, 'CONFLICT');
+  assert.deepEqual(result.flightConflicts.map(conflict => [conflict.date, localTime(conflict.arrivalReadyAt), localTime(conflict.departureStartBy)]),
+    [['2026-12-01', '10:30', '08:30']]);
+  assert.equal(result.efficiency, null);
+  assert.deepEqual(result.comparisons, []);
+});
+
+test('T12 100 required visits plus lodging and airport anchors are split across provider-valid matrix requests', async () => {
+  const extra = new Map<string, Sample>();
+  const visits = Array.from({ length: 100 }, (_, index) => {
+    const googlePlaceId = `synthetic-${index}`;
+    extra.set(googlePlaceId, { googlePlaceId, latitude: 35.6 + (index % 10) * 0.01, longitude: 139.7 + Math.floor(index / 10) * 0.01 });
+    return { id: `visit-${index}`, place: { id: `place-synthetic-${index}`, googlePlaceId }, kind: 'ATTRACTION' as const, minutes: 30, priority: 'REQUIRED' as const };
+  });
+  // Actual departures match the matrix here, so the result depends only on the matrix split.
+  const travel = new FixtureTravel(() => 0);
+  const places = new FixturePlaces(new Set(), extra);
+  const result = await service({ travel, places }).service.compute({ ...sampleTrip([], { luggageOption: 'DIRECT_TO_AIRPORT' }), visits });
+  assert.equal(result.status, 'OVER_CAPACITY');
+  assert.ok(result.verification.verified);
+  assert.ok(result.capacity.recommendation!.requiredCount > 0 && result.capacity.recommendation!.requiredCount < 100);
+  assert.ok(travel.matrixCalls.length > 3, 'a day with more than 100 locations needs several requests');
+  assert.ok(travel.matrixCalls.every(call => call.locations.length <= MAX_MATRIX_LOCATIONS));
+  // The last day (lodging start, airport end, 100 visits) still receives every ordered pair.
+  const lastDayDeparture = travel.matrixCalls.find(call => call.locations.some(location => location.id === placeId('airport')))!.departure;
+  const lastDay = travel.matrixCalls.filter(call => call.departure === lastDayDeparture);
+  assert.equal(lastDay.length, 3);
+  const pairs = new Set(lastDay.flatMap(call => call.locations.flatMap(from => call.locations.map(to => `${from.id}>${to.id}`))));
+  assert.equal(pairs.size, 102 * 102);
+});
+
+test('T12 matrix groups cover every ordered pair within the provider limit', () => {
+  for (const count of [1, 100, 101, 102, 205]) {
+    const ids = Array.from({ length: count }, (_, index) => `id-${index}`);
+    const groups = matrixGroups(ids);
+    assert.ok(groups.every(group => group.length <= MAX_MATRIX_LOCATIONS && new Set(group).size === group.length));
+    const pairs = new Set(groups.flatMap(group => group.flatMap(from => group.map(to => `${from}>${to}`))));
+    assert.equal(pairs.size, count * count);
+  }
+  assert.equal(matrixGroups(Array.from({ length: 102 }, (_, index) => `${index}`)).length, 3);
 });
 
 test('T12 stored inputs that cannot be scheduled are reported per field', async () => {

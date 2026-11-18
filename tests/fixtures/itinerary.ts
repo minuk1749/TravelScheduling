@@ -4,6 +4,7 @@ import type { TripInputs } from '../../src/services/itinerary';
 import type {
   Location, MatrixRequest, RouteRequest, TravelAlternatives, TravelEstimate, TravelMatrix, TravelTimeProvider,
 } from '../../src/travel-time';
+import { matrixRequest, routeRequest } from '../../src/travel-time/validation';
 
 /**
  * Tokyo sample trip with real landmark coordinates and simplified regular hours. Durations and fares
@@ -33,11 +34,16 @@ const byGoogleId = new Map(Object.values(samplePlaces).map(place => [place.googl
 export class FixturePlaces {
   readonly detailCalls: string[] = [];
   readonly locationCalls: string[] = [];
-  constructor(private readonly missing: ReadonlySet<string> = new Set()) {}
+  /** `extra` adds synthetic places (keyed by Google place ID) beyond the Tokyo sample. */
+  constructor(private readonly missing: ReadonlySet<string> = new Set(), private readonly extra: ReadonlyMap<string, Sample> = new Map()) {}
+
+  private find(googlePlaceId: string): Sample | undefined {
+    return byGoogleId.get(googlePlaceId) ?? this.extra.get(googlePlaceId);
+  }
 
   async details(input: PlaceDetailsRequest): Promise<PlaceDetails | null> {
     this.detailCalls.push(input.googlePlaceId);
-    const place = byGoogleId.get(input.googlePlaceId);
+    const place = this.find(input.googlePlaceId);
     if (!place || this.missing.has(input.googlePlaceId)) return null;
     const openingHours = place.hours && input.dates.map(date => ({
       start: Temporal.PlainDateTime.from(`${date}T${place.hours![0]}`).toZonedDateTime(input.timeZone).toInstant().toString(),
@@ -52,7 +58,7 @@ export class FixturePlaces {
 
   async location(googlePlaceId: string): Promise<PlaceLocation | null> {
     this.locationCalls.push(googlePlaceId);
-    const place = byGoogleId.get(googlePlaceId);
+    const place = this.find(googlePlaceId);
     if (!place || this.missing.has(googlePlaceId)) return null;
     return { googlePlaceId, coordinates: { latitude: place.latitude, longitude: place.longitude }, cacheExpiresAt: '2026-12-31T00:00:00Z' };
   }
@@ -91,15 +97,18 @@ export class FixtureTravel implements TravelTimeProvider {
     };
   }
 
+  /** Applies the real provider request validation (location limit, duplicate IDs, instants). */
   async matrix(input: MatrixRequest): Promise<TravelMatrix> {
     this.matrixCalls.push(input);
-    return new Map(input.locations.map(from => [from.id, new Map(input.locations.map(to =>
-      [to.id, this.alternatives(from, to, input.departure, false)]))]));
+    const { locations, departure } = matrixRequest(input);
+    return new Map(locations.map(from => [from.id, new Map(locations.map(to =>
+      [to.id, this.alternatives(from, to, departure, false)]))]));
   }
 
   async route(input: RouteRequest): Promise<TravelAlternatives> {
     this.routeCalls.push(input);
-    return this.alternatives(input.from, input.to, input.departure, true);
+    const { from, to } = routeRequest(input);
+    return this.alternatives(from, to, input.departure, true);
   }
 }
 

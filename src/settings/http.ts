@@ -1,0 +1,27 @@
+import { TripInputError } from '../trips/input';
+import { SettingsError } from './model';
+import type { LivingSettingsService } from './service';
+const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
+export function settingsHandlers(deps: { userId(): Promise<string | undefined>; service: Pick<LivingSettingsService, 'load' | 'save'> }) {
+  return async (request: Request, id: string): Promise<Response> => {
+    try {
+      const ownerId = await deps.userId();
+      if (!ownerId) throw new SettingsError(401, '로그인 후 다시 시도해 주세요.');
+      if (request.method === 'GET') return json(await deps.service.load(id, ownerId));
+      if (request.method !== 'PUT') throw new SettingsError(405, '허용되지 않은 메서드입니다.');
+      const origin = request.headers.get('origin');
+      if (origin && origin !== new URL(request.url).origin) throw new SettingsError(403, '허용되지 않은 요청입니다.');
+      if (request.headers.get('sec-fetch-site') === 'cross-site') throw new SettingsError(403, '허용되지 않은 요청입니다.');
+      if (!request.headers.get('content-type')?.startsWith('application/json')) throw new SettingsError(415, 'JSON 입력이 필요합니다.');
+      const body = await request.text();
+      if (body.length > 30_000) throw new SettingsError(413, '입력 크기를 줄여 주세요.');
+      let raw: unknown;
+      try { raw = JSON.parse(body); } catch { throw new SettingsError(400, '올바른 JSON 입력이 필요합니다.'); }
+      return json(await deps.service.save(id, ownerId, raw));
+    } catch (error) {
+      if (error instanceof TripInputError) return json({ error: error.message, fields: error.fields }, 400);
+      if (error instanceof SettingsError) return json({ error: error.message }, error.status);
+      return json({ error: '설정을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.' }, 500);
+    }
+  };
+}

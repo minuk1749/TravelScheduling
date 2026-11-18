@@ -67,12 +67,24 @@ export interface EfficiencySummary {
   selectedFare: number | null;
 }
 
+/**
+ * NO_ROUTE: no permitted mode connects the airport leg. UNVERIFIED: no queried departure was
+ * confirmed to reach the airport by the check-in deadline within the re-query limit.
+ */
+export type TransferIssue = {
+  date: string; direction: 'ARRIVAL' | 'DEPARTURE'; from: string; to: string; reason: 'NO_ROUTE' | 'UNVERIFIED';
+};
+/** `arrivalReadyAt` is when the arrival transfer ends; `departureStartBy` is the latest departure-transfer start. */
+export type FlightConflict = { date: string; arrivalReadyAt: string; departureStartBy: string };
+
 export interface ItineraryResult {
-  /** CONFLICT also covers unreachable airport transfers and an unverified re-query loop. */
+  /** CONFLICT also covers airport transfer/flight issues and an unverified re-query loop. */
   status: CapacityResult['status'];
   capacity: CapacityResult;
   verification: { verified: boolean; attempts: number };
-  transferIssues: readonly { date: string; direction: 'ARRIVAL' | 'DEPARTURE'; from: string; to: string }[];
+  transferIssues: readonly TransferIssue[];
+  /** Flight days where immigration plus the arrival transfer ends after the departure transfer must start. */
+  flightConflicts: readonly FlightConflict[];
   /** Meal slots dropped on flight days because no usable window remains around the flight. */
   skippedMeals: readonly { date: string; slot: MealSlot }[];
   comparisons: readonly LegComparison[];

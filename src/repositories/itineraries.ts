@@ -36,6 +36,7 @@ export async function saveItinerary(client: PoolClient, tripId: string, expected
         },
         verification: result.verification,
         transferIssues: result.transferIssues,
+        flightConflicts: result.flightConflicts,
         skippedMeals: result.skippedMeals,
         transfers: result.comparisons.filter(leg => leg.kind === 'AIRPORT'),
       }),

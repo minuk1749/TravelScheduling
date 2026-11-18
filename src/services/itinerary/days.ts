@@ -7,15 +7,20 @@ import {
 import type { DayPlan } from './day-plan';
 import { compareLeg } from './efficiency';
 import type { RouteBook } from './routes';
-import { ItineraryInputError, type ItineraryResult, type LegComparison, type TripInputs } from './types';
+import {
+  ItineraryInputError, type FlightConflict, type LegComparison, type TransferIssue, type TripInputs,
+} from './types';
 
-type Transfer = { minutes: number; comparison: LegComparison } | { minutes: null; from: string; to: string };
+type Transfer =
+  | { minutes: number; comparison: LegComparison }
+  | { minutes: null; from: string; to: string; reason: TransferIssue['reason'] };
 
 export interface PreparedDay {
   day: SchedulingDay;
   arrival?: LegComparison;
   departure?: LegComparison;
-  transferIssues: ItineraryResult['transferIssues'][number][];
+  transferIssues: TransferIssue[];
+  flightConflicts: FlightConflict[];
   skippedMeals: { date: string; slot: MealSlot }[];
 }
 
@@ -37,7 +42,7 @@ function choose(context: DayContext, options: RouteOptions) {
 
 function transferComparison(context: DayContext, date: string, from: string, to: string, departure: string, options: RouteOptions): Transfer {
   const choice = choose(context, options);
-  if (!choice) return { minutes: null, from, to };
+  if (!choice) return { minutes: null, from, to, reason: 'NO_ROUTE' };
   return {
     minutes: Math.ceil(choice.minutes),
     comparison: compareLeg({ date, kind: 'AIRPORT', from, to, departure, selected: { mode: choice.mode, minutes: choice.minutes, fare: choice.fare, fixed: false } },
@@ -56,7 +61,9 @@ async function arrivalTransfer(context: DayContext, plan: DayPlan): Promise<Tran
 
 /**
  * Lodging → airport must arrive by the check-in buffer. Query backwards from that instant until the
- * duration at the queried departure fits the reserved time (a conservative, exactly queried departure).
+ * duration at the queried departure fits the reserved time. The returned `minutes` (reserved time)
+ * and `comparison.departure` are the same verified instant, which the day window then ends at.
+ * Without such a departure within the query limit the transfer fails as UNVERIFIED.
  */
 async function departureTransfer(context: DayContext, plan: DayPlan): Promise<Transfer | undefined> {
   const flight = plan.departure;
@@ -64,16 +71,22 @@ async function departureTransfer(context: DayContext, plan: DayPlan): Promise<Tr
   const from = flight.transferFrom.id, to = flight.airport.id;
   const arriveBy = Temporal.Instant.from(flight.instant).subtract({ minutes: flight.bufferMinutes });
   let reserved = 0;
-  let transfer: Transfer = { minutes: null, from, to };
   for (let query = 0; query < DEPARTURE_TRANSFER_QUERIES; query++) {
     const departure = arriveBy.subtract({ minutes: reserved }).toString();
     const result = transferComparison(context, plan.date, from, to, departure, await context.routes.route(from, to, departure));
     if (result.minutes === null) return result;
-    transfer = result;
     if (result.minutes <= reserved) return { ...result, minutes: reserved };
     reserved = result.minutes;
   }
-  return transfer;
+  return { minutes: null, from, to, reason: 'UNVERIFIED' };
+}
+
+/** Immigration and the arrival transfer must finish before the departure transfer has to start. */
+function flightConflict(plan: DayPlan, window: DayWindowResult): FlightConflict | undefined {
+  const arrival = window.airportTransfers.find(transfer => transfer.direction === 'arrival');
+  const departure = window.airportTransfers.find(transfer => transfer.direction === 'departure');
+  if (!arrival || !departure || Temporal.Instant.compare(arrival.end, departure.start) <= 0) return;
+  return { date: plan.date, arrivalReadyAt: arrival.end, departureStartBy: departure.start };
 }
 
 function dayWindow(context: DayContext, plan: DayPlan, arrival?: Transfer, departure?: Transfer): DayWindowResult {
@@ -112,12 +125,15 @@ function flightDayMeals(context: DayContext, plan: DayPlan, window: DayWindowRes
 /** Stages 1–2 for one date plus the representative-departure matrix used for ordering. */
 export async function prepareDay(context: DayContext, plan: DayPlan): Promise<PreparedDay> {
   const [arrival, departure] = await Promise.all([arrivalTransfer(context, plan), departureTransfer(context, plan)]);
-  const transferIssues: PreparedDay['transferIssues'] = [];
-  if (arrival?.minutes === null) transferIssues.push({ date: plan.date, direction: 'ARRIVAL', from: arrival.from, to: arrival.to });
-  if (departure?.minutes === null) transferIssues.push({ date: plan.date, direction: 'DEPARTURE', from: departure.from, to: departure.to });
-  const meals = flightDayMeals(context, plan, dayWindow(context, plan, arrival, departure));
-  // Without a permitted airport route the day cannot be used; the service reports CONFLICT.
-  const window = transferIssues.length
+  const transferIssues: TransferIssue[] = [];
+  if (arrival?.minutes === null) transferIssues.push({ date: plan.date, direction: 'ARRIVAL', from: arrival.from, to: arrival.to, reason: arrival.reason });
+  if (departure?.minutes === null) transferIssues.push({ date: plan.date, direction: 'DEPARTURE', from: departure.from, to: departure.to, reason: departure.reason });
+  const computed = dayWindow(context, plan, arrival, departure);
+  const conflict = flightConflict(plan, computed);
+  const flightConflicts = conflict ? [conflict] : [];
+  const meals = flightDayMeals(context, plan, computed);
+  // A failed airport transfer or overlapping flight constraints make the day unusable; the service reports CONFLICT.
+  const window = transferIssues.length || flightConflicts.length
     ? { ...meals.window, available: null, meals: meals.window.meals.map(({ slot }) => ({ slot, window: null })) }
     : meals.window;
 
@@ -133,6 +149,7 @@ export async function prepareDay(context: DayContext, plan: DayPlan): Promise<Pr
     ...(arrival?.minutes != null ? { arrival: arrival.comparison } : {}),
     ...(departure?.minutes != null ? { departure: departure.comparison } : {}),
     transferIssues,
+    flightConflicts,
     skippedMeals: meals.skipped,
   };
 }

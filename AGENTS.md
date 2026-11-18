@@ -81,7 +81,7 @@
 - Codex 쪽 구현 주체는 저장소 변수 `AGENT_EXECUTOR`로 고른다(`local` 기본: Mac 러너, `cloud`: Codex 클라우드 + 사람 클릭).
 - 작업 PR의 제목은 반드시 `T번호: ` 또는 `R번호: `로 시작한다. Claude가 만든 PR에는 `owner-claude` 라벨이 붙는다.
 - 리뷰 왕복 상한(기본 3라운드)에 도달하면 `needs-human` 라벨을 붙이고 작업을 `보류`로 바꾼 뒤 다음 작업으로 넘어간다.
-- 에이전트 실행이 실패하면(구독 한도 소진 포함) `agent-paused` 이슈를 열고 멈춘다. 이슈를 닫으면 재개한다.
+- 에이전트 실행이 실패하면(구독 한도 소진 포함) `agent-paused` 이슈를 열고 멈춘다. 사람이 이슈를 닫으면 멈춘 작업이 자동으로 재개된다(`agent-resume`). 다른 일시중단 이슈가 열려 있으면 재개하지 않는다.
 - `.github/**`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/tasks.md`, `scripts/agent/**`를 수정한 PR은 자동 머지하지 않고 사람 검토로 넘긴다. 이 파일들은 사람(또는 사람이 지시한 대화형 세션)만 수정한다.
 
 ## 작업 방식 (사람이 지시한 대화형 작업 포함)

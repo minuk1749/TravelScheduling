@@ -15,10 +15,17 @@
   3. 장소는 계산 1회당 장소별 1회 조회한다. 방문 장소는 details(여행 날짜의 영업시간), 공항·숙소는 좌표 캐시.
   4. 공항 이동: 도착은 입국 버퍼가 끝나는 instant로 구간 조회, 출발은 체크인 마감 instant에서 거꾸로
      조회하여 조회한 출발 시각의 소요시간이 확보한 시간 안에 들어올 때까지(최대 4회) 반복한다. 짐 구간이므로
-     `selectTravelMode(..., { luggage: true })`로 고른다. 허용 수단이 없으면 `transferIssues`와 `CONFLICT`.
+     `selectTravelMode(..., { luggage: true })`로 고른다. 확정된 출발 instant 하나를 시간창 끝과 비교 데이터에
+     함께 쓴다. 허용 수단이 없으면 `transferIssues`(`NO_ROUTE`), 4회 안에 마감 준수가 확인되지 않으면
+     `transferIssues`(`UNVERIFIED`)이며 둘 다 `CONFLICT`다. 마지막 미확인 조회값을 성공으로 쓰지 않는다.
+     같은 날 입국 완료(입국 버퍼 + 도착 이동 종료)가 출국 이동 시작 마감보다 늦으면 방문 유무와 무관하게
+     `flightConflicts`와 `CONFLICT`다(관광 시간이 없을 뿐인 날과 항공 제약 자체가 양립하지 않는 날을 구분).
   5. 비행일에는 항공 제약 때문에 식사 시간창이 없거나 식사 시간보다 짧은 끼니를 `skippedMeals`로 빼고 충돌로
      보지 않는다. 비행이 없는 날의 같은 상황은 사용자 설정 충돌로 남긴다.
   6. 날짜별로 시간창 시작 instant의 대표 행렬(TRANSIT/WALK/DRIVE)을 조회해 `RouteOptions`로 바꾼다.
+     장소가 제공자 한도(`MAX_MATRIX_LOCATIONS`=100)를 넘으면 절반 크기 묶음의 모든 쌍을 각각 요청해 병합한다
+     (방문 100개 + 숙소 + 공항 = 102개 → 3회). 고정 날짜가 다른 방문만 제외하고 희망 장소는 스케줄러가 배치할
+     수 있으므로 행렬에 포함한다.
      초→분, DRIVE→TAXI(도시 프로필로 출발 instant의 택시 요금 추정), WALK 요금 0, 다른 통화의 대중교통 요금은 null.
   7. [재조회 루프](../../src/services/itinerary/verification.ts): `checkCapacity` → 결과 일정(OK는 전체, 초과는
      추천 일정)의 구간 중 실제 출발 시각으로 조회되지 않은 것을 `route()`로 조회 → 그 날짜·구간의 경로를
