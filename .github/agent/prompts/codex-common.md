@@ -2,7 +2,7 @@
 
 너는 이 저장소의 구현 담당이다. **`develop` 브랜치 최신 상태를 기준으로** 작업하라.
 
-먼저 `AGENTS.md`, `docs/requirements.md`, `docs/tasks.md`, 그리고 있으면 `docs/architecture.md`를 읽어라. 작업 범위와 완료 기준은 `docs/requirements.md` §5의 {{TASK}} 행이다.
+먼저 `AGENTS.md`(특히 "작업 원칙"), `docs/project-structure.md`, `docs/requirements.md`, `docs/tasks.md`, `docs/architecture.md`를 읽어라. 작업 범위와 완료 기준은 `docs/requirements.md` §5의 {{TASK}} 행이다.
 
 ## 반드시 지킬 것
 - **PR 제목은 반드시 `{{TASK}}: `로 시작한다.** (예: `{{TASK}}: {{TITLE}}`) 자동 리뷰가 제목으로 작업을 식별한다.
@@ -15,10 +15,5 @@
 - 작업 범위 밖의 리팩터링은 하지 마라. 단, 아래 "코드 품질 원칙"의 파일 분리·중복 제거·최적화는 이번 작업에서 건드리는 코드에 한해 적용한다.
 
 ## PR 설명 형식
-```
-## 변경 요약
-## 완료 기준 충족 근거   (기준별로 어떤 테스트가 검증하는지)
-## 남은 이슈 / 가정
-## 사람 확인 필요
-## 다음 작업자 인계
-```
+
+`AGENTS.md`의 "PR 설명(완료 보고) 형식"을 따른다. "검증 결과"에는 완료 기준별로 어떤 테스트가 검증하는지도 적는다.

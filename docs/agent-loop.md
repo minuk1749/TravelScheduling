@@ -15,6 +15,11 @@ agent-start ─ 다음 작업 이슈 생성 (작업표의 담당 확인)
                                                                        리팩터링 제안 → R번호(Claude 수행, Codex 리뷰)
 ```
 
+## 규칙 문서
+
+- 모든 작업 원칙: `AGENTS.md`의 "작업 원칙" (Codex는 `AGENTS.md`를, Claude는 `CLAUDE.md`를 통해 같은 내용을 읽는다)
+- 프로젝트 구조 요약: `docs/project-structure.md` (`CLAUDE.md`가 함께 불러온다)
+
 ## 공통 1회 설정
 
 1. 기본 브랜치: `develop`
