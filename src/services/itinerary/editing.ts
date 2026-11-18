@@ -2,7 +2,7 @@ import type { ItineraryPlaces, TripLoad } from './types';
 import type { Constraints, ResultSnapshot, ResultView } from '../../results/model';
 import { parseConstraints } from '../../results/input';
 import { TripInputError } from '../../trips/input';
-import { displayPlaces } from './display-places';
+import { displayPlaces, tripPlaceRefs } from './display-places';
 
 export interface ConstraintRepository {
   loadInputs(tripId: string): Promise<TripLoad | null>;
@@ -14,8 +14,7 @@ export class ResultEditService {
     const loaded = await this.repository.loadInputs(tripId);
     if (loaded?.status !== 'READY') throw new ResultUnavailableError();
     const { input, inputHash: revision } = loaded;
-    const refs = [...input.visits.map(v => v.place), ...input.flights.map(f => f.airport), ...input.lodgings.map(l => l.place)];
-    return { input, revision, places: await displayPlaces(this.places, refs, input.timeZone, input.startDate) };
+    return { input, revision, places: await displayPlaces(this.places, tripPlaceRefs(input), input.timeZone, input.startDate) };
   }
   async save(tripId: string, ownerId: string, body: unknown): Promise<ResultSnapshot> {
     const loaded = await this.repository.loadInputs(tripId);

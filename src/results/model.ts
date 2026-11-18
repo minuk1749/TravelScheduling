@@ -23,6 +23,11 @@ export type ItineraryDisplayResult = Omit<ItineraryResult, 'capacity'> & {
     recommendation: (Omit<CapacityRecommendation, 'schedule'> & { schedule: Pick<ScheduleResult, 'days'> }) | null;
   };
 };
+/** Narrows stored inputs to the display fields, so read-only views never carry owner settings. */
+export function displayInput(input: TripInputs): ResultDisplayView['input'] {
+  return { startDate: input.startDate, endDate: input.endDate, timeZone: input.timeZone,
+    visits: input.visits.map(({ id, place, priority }) => ({ id, place, priority })) };
+}
 export function constraintsFrom(input: TripInputs): Constraints {
   return {
     visits: input.visits.map(visit => ({ id: visit.id, priority: visit.priority,

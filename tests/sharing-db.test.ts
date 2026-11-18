@@ -8,7 +8,7 @@ import { insertTrip } from '../src/repositories/trip-inputs';
 import { loadTripInputs } from '../src/repositories/trip-snapshot';
 import { saveItinerary } from '../src/repositories/itineraries';
 import { SharingService, hashShareToken } from '../src/services/sharing';
-import { FixturePlaces, sampleTrip } from './fixtures/itinerary';
+import { FixturePlaces, sampleDraft } from './fixtures/itinerary';
 import { service } from './helpers/itinerary-service';
 import { withDatabase } from './helpers/database';
 
@@ -17,12 +17,7 @@ test('T14 SQL: owner-only atomic rotation, persisted latest read, stale/legacy g
     await migrate(client);
     const owner = randomUUID(), visitor = randomUUID();
     for (const id of [owner, visitor]) await client.query("INSERT INTO users (id, google_id, email) VALUES ($1, $2, 'share@example.test')", [id, id]);
-    const input = sampleTrip();
-    const draft = { ...input,
-      flights: input.flights.map(f => ({ ...f, googlePlaceId: f.airport.googlePlaceId })),
-      lodgings: input.lodgings.map(l => ({ ...l, googlePlaceId: l.place.googlePlaceId })),
-      visits: input.visits.map(v => ({ ...v, googlePlaceId: v.place.googlePlaceId })),
-    };
+    const draft = sampleDraft();
     const trip = await insertTrip(client, owner, draft);
     const otherTrip = await insertTrip(client, visitor, draft);
     const pool = new Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}`, max: 3 });

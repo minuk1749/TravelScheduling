@@ -4,6 +4,7 @@ import type { ScheduleResult } from '../scheduler';
 import type {
   ItineraryRepository, ItineraryResult, SaveOutcome, TripLoad,
 } from '../services/itinerary/types';
+import { encodeItineraryDetails } from './itinerary-details';
 import { loadTripInputs } from './trip-snapshot';
 
 /**
@@ -27,19 +28,7 @@ export async function saveItinerary(client: PoolClient, tripId: string, expected
       VALUES ($1, $2, $3, $4, $5, $6, $7)`, [
       itineraryId, tripId, expectedHash, result.status, JSON.stringify(capacity.unplaced),
       result.efficiency && JSON.stringify(result.efficiency),
-      JSON.stringify({
-        schedule: schedule ? (capacity.status === 'OK' ? 'FULL' : 'RECOMMENDATION') : null,
-        time: capacity.time,
-        issues: capacity.issues,
-        recommendation: capacity.recommendation && {
-          requiredCount: capacity.recommendation.requiredCount, requiredVisitIds: capacity.recommendation.requiredVisitIds,
-        },
-        verification: result.verification,
-        transferIssues: result.transferIssues,
-        flightConflicts: result.flightConflicts,
-        skippedMeals: result.skippedMeals,
-        transfers: result.comparisons.filter(leg => leg.kind === 'AIRPORT'),
-      }),
+      JSON.stringify(encodeItineraryDetails(result, schedule)),
     ]);
     if (schedule) await insertSchedule(client, itineraryId, schedule, result, new Map(current.input.visits.map(visit => [visit.id, visit.place.id])));
     await client.query('COMMIT');

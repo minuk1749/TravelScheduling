@@ -1,5 +1,5 @@
 import { authorizeTrip } from '../lib/auth/authorization';
-import { hasForeignOrigin, privateJson } from '../lib/http';
+import { isCrossSiteRequest, privateJson } from '../lib/http';
 import { PlaceProviderError } from '../places';
 import type { SharingService } from '../services/sharing';
 import { isShareToken, ShareUnavailableError } from './model';
@@ -20,7 +20,7 @@ export function sharingHandlers(deps: Dependencies) {
     async rotate(request: Request, id: string) {
       try {
         if (request.method !== 'POST') return json({ error: '허용되지 않은 메서드입니다.' }, 405);
-        if (hasForeignOrigin(request) || request.headers.get('sec-fetch-site') === 'cross-site') return json({ error: '허용되지 않은 요청입니다.' }, 403);
+        if (isCrossSiteRequest(request)) return json({ error: '허용되지 않은 요청입니다.' }, 403);
         const owner = await deps.userId();
         const access = await authorizeTrip(owner, id, deps.findOwner);
         if (access !== 200) return json({ error: access === 401 ? '로그인 후 다시 시도해 주세요.' : '여행에 접근할 수 없습니다.' }, access);

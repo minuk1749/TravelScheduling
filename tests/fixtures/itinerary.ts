@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PlaceDetails, PlaceDetailsRequest, PlaceLocation } from '../../src/places';
 import type { TripInputs } from '../../src/services/itinerary';
+import type { TripDraft } from '../../src/trips/input';
 import type {
   Location, MatrixRequest, RouteRequest, TravelAlternatives, TravelEstimate, TravelMatrix, TravelTimeProvider,
 } from '../../src/travel-time';
@@ -136,5 +137,15 @@ export function sampleTrip(visits: readonly VisitSpec[] = okVisits, changes: Par
       id: `visit-${key}`, place: ref(key), kind: key === 'tsukiji' ? 'RESTAURANT' : 'ATTRACTION', priority, ...visit,
     })),
     ...changes,
+  };
+}
+
+/** The T10 creation draft that `insertTrip` stores for the same sample (Google IDs instead of place rows). */
+export function sampleDraft(input: TripInputs = sampleTrip()): TripDraft {
+  return { cityCode: input.cityCode,timeZone: input.timeZone, startDate: input.startDate, endDate: input.endDate,
+    taxiPolicy: input.taxiPolicy, luggageOption: input.luggageOption,
+    flights: input.flights.map(f => ({ direction: f.direction, localDateTime: f.localDateTime, googlePlaceId: f.airport.googlePlaceId })),
+    lodgings: input.lodgings.map(l => ({ checkIn: l.checkIn, checkOut: l.checkOut, googlePlaceId: l.place.googlePlaceId })),
+    visits: input.visits.map(v => ({ googlePlaceId: v.place.googlePlaceId, kind: v.kind, minutes: v.minutes, priority: v.priority })),
   };
 }

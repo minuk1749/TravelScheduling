@@ -2,18 +2,12 @@ import type { PoolClient } from 'pg';
 import type { ScheduleResult, TravelMode } from '../scheduler';
 import type { ItineraryResult, LegComparison, TripInputs } from '../services/itinerary/types';
 import type { ItineraryDisplayResult } from '../results/model';
+import { isCompleteItineraryDetails, type ItineraryDetails } from './itinerary-details';
 
-type Details = {
-  time: ItineraryResult['capacity']['time']; issues: ScheduleResult['issues'];
-  recommendation: { requiredCount: number; requiredVisitIds: string[] } | null;
-  verification: ItineraryResult['verification']; transfers: LegComparison[];
-  transferIssues: ItineraryResult['transferIssues']; flightConflicts: ItineraryResult['flightConflicts'];
-  skippedMeals: ItineraryResult['skippedMeals'];
-};
 type StoredResult = {
   id: string; input_hash: string; status: ItineraryResult['status'];
   unplaced: ScheduleResult['unplaced']; efficiency_summary: ItineraryResult['efficiency'];
-  details: Partial<Details>;
+  details: Partial<ItineraryDetails>;
 };
 type StoredStop = {
   day_plan_id: string; kind: 'VISIT' | 'MEAL'; trip_place_id: string;
@@ -31,8 +25,7 @@ export async function readSharedResult(client: PoolClient, input: TripInputs, in
     FROM itineraries WHERE trip_id = $1 ORDER BY generation DESC LIMIT 1`, [input.id])).rows[0];
   if (!row || row.input_hash !== inputHash) return null;
   const d = row.details;
-  // Legacy rows without the T12 details cannot be displayed as verified itineraries.
-  if (!d.time || !d.issues || !d.verification || !d.transfers || !d.transferIssues || !d.flightConflicts || !d.skippedMeals) return null;
+  if (!isCompleteItineraryDetails(d)) return null;
   const comparisons = [...d.transfers];
   const base = { time: d.time, unplaced: row.unplaced, issues: d.issues };
   let capacity: ItineraryDisplayResult['capacity'];

@@ -3,7 +3,7 @@
 기준: 2026-11-19, T13A 시작 시 원격 `develop`의 `f0b4239`.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
 T1–T13/T12B의 현재 연결과 T13A 정리를 기술한다. §7–8은 T7A 당시의 점검 기록이며,
-현재 결과 UI와 최신 전체 점검은 §9–10을 따른다. 구조나 계약 변경은 관련 문서와 결정 기록을 함께 갱신한다.
+현재 결과 UI와 전체 점검은 §9–10, 공유는 §11, 최종 점검(T15A, 기준 `ee500de`)은 §12를 따른다. 구조나 계약 변경은 관련 문서와 결정 기록을 함께 갱신한다.
 
 ## 1. 폴더 구조와 모듈 경계
 
@@ -24,7 +24,7 @@ src/
   components/service-worker.tsx  현재: 프로덕션 서비스워커 등록
   auth.ts                      현재: Google 공급자, JWT/세션 콜백 구성
   lib/
-    http.ts                    현재 T13A: private/no-store JSON·Origin 공통 정책
+    http.ts                    현재 T13A: private/no-store JSON·Origin 공통 정책. T15A: isCrossSiteRequest
     db.ts                      현재: 명시적 PostgreSQL Pool 팩터리
     migrations.ts              현재 T8A: 적용 이력·기존 DB 검증·트랜잭션 실행기
     auth/                      현재: 인증 포트/콜백, 권한, SQL 저장소
@@ -39,7 +39,7 @@ src/
   places/                      현재 T8: 장소 포트·좌표 캐시·Google 어댑터·HTTP 처리
   travel-time/                 현재 T9: 이동시간 포트·선택적 캐시·Google 어댑터·서버 팩터리
   trips/                       현재 T10: 공유 입력 검증·HTTP 처리·서버 팩터리
-  repositories/                현재 T10/T11: 여행 생성·장소 ID 저장·프로필 조회·생활 설정 수정. T12: 입력 스냅샷(trip-snapshot.ts), 일정 저장(itineraries.ts)
+  repositories/                현재 T10/T11: 여행 생성·장소 ID 저장·프로필 조회·생활 설정 수정. T12: 입력 스냅샷(trip-snapshot.ts), 일정 저장(itineraries.ts). T15A: details 형식(itinerary-details.ts)
   services/itinerary/           현재 T12: 날짜별 앵커·시간창 조립, 장소·이동시간 조회, 재조회 루프, 비교·효율 요약
   itineraries/                 현재 T12: 동선 생성 HTTP 처리(http.ts)와 조립(server.ts)
   settings/                    현재: 설정 검증·계산·서비스·HTTP·조립, model.ts에 저장소 포트
@@ -446,7 +446,8 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
   세션·여행 소유권·동일 출처를 검사하며 재발급은 이전 링크를 무효화한다.
 - 공개 GET `/api/share/[token]` → [SharingService](../src/services/sharing.ts) →
   [ShareRepository](../src/sharing/model.ts) → [SQL 구현](../src/repositories/sharing.ts).
-  `load`는 표시 입력·장소 참조·결과, 미준비 `UNAVAILABLE`, 잘못된 토큰 `null`을 구분한다.
+  `load`는 입력 스냅샷·결과, 미준비 `UNAVAILABLE`, 잘못된 토큰 `null`을 구분한다.
+  표시 입력 축소와 장소 참조 목록은 서비스가 계산한다(T15A).
 - 기존 `trips.share_token`에 256비트 난수 토큰의 SHA-256 해시를 저장한다. 스키마 변경은 없다.
   재발급 UPDATE도 owner_id를 검사하고, 장소 조회 후 유효성을 재확인한다.
 - [결과 읽기](../src/repositories/shared-itinerary.ts)는 itineraries/day_plans/stops/legs를
@@ -460,3 +461,16 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 - 잘못된/폐기된 토큰 404, 결과 없음/오래된 입력 409, 외부 장애 502/503, 내부 오류 500.
   API는 private/no-store 및 검색·referrer 차단 헤더, 페이지는 동적 렌더링·동일 메타 정책을 사용한다.
 - 검증·대안·제약은 [T14 결정](decisions/T14-read-only-sharing.md)에 기록한다.
+
+## 12. T15A 최종 전체 점검
+
+[최종 점검 목록](t15a-audit.md)에 T13A와 같은 체크리스트·300줄 초과 파일·남은 문제를 기록했다.
+이유와 대안은 [T15A 결정](decisions/T15A-final-audit.md)을 따른다. 공개 API·스키마·화면 동작은 바꾸지 않았다.
+
+- [details 형식](../src/repositories/itinerary-details.ts)이 `itineraries.details` JSONB의 타입·인코더·레거시 판정을
+  한 곳에서 정의한다. 일정 저장과 공유 결과 읽기가 함께 사용한다.
+- `ShareRepository.load`는 `TripInputs`와 결과를 돌려준다. [공유 서비스](../src/services/sharing.ts)가
+  `displayInput`으로 공개 입력을 줄이고 `tripPlaceRefs`(편집 서비스와 공용)로 장소 참조를 만든다.
+- `lib/http.isCrossSiteRequest`는 설정·공유 쓰기가 이미 하던 Origin + `Sec-Fetch-Site` 검사를 합친 것이다.
+  나머지 쓰기 경계의 정책 통일은 [질문](questions.md)의 사람 결정 항목이다.
+- [여행 생성](../src/repositories/trip-inputs.ts)은 자식 테이블당 INSERT 1회다. 장소 upsert는 잠금 순서를 위해 정렬된 행별 실행을 유지한다.

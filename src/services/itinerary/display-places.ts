@@ -1,5 +1,9 @@
 import type { ResultDisplayView } from '../../results/model';
-import type { ItineraryPlaces, PlaceRef } from './types';
+import type { ItineraryPlaces, PlaceRef, TripInputs } from './types';
+
+/** Every place a result screen names: visits, then airports, then lodgings. */
+export const tripPlaceRefs = (input: Pick<TripInputs, 'visits' | 'flights' | 'lodgings'>): PlaceRef[] =>
+  [...input.visits.map(v => v.place), ...input.flights.map(f => f.airport), ...input.lodgings.map(l => l.place)];
 
 /** Fresh metadata, deduplicated per request; Google display content is never persisted. */
 export async function displayPlaces(

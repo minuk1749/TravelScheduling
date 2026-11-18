@@ -8,7 +8,7 @@ import { loadTripInputs } from '../src/repositories/trip-snapshot';
 import { saveConstraints } from '../src/repositories/itinerary-constraints';
 import { saveItinerary } from '../src/repositories/itineraries';
 import { constraintsFrom } from '../src/results/model';
-import { sampleTrip } from './fixtures/itinerary';
+import { sampleDraft } from './fixtures/itinerary';
 import { service } from './helpers/itinerary-service';
 
 test('T13 SQL constraints persist across generation; stale/foreign writes are atomic and hash protects generation', async () => {
@@ -16,19 +16,14 @@ test('T13 SQL constraints persist across generation; stale/foreign writes are at
     await migrate(client);
     const user = randomUUID();
     await client.query("INSERT INTO users (id, google_id, email) VALUES ($1, $2, 't13@example.test')", [user, user]);
-    const input = sampleTrip();
-    const id = await insertTrip(client, user, { ...input,
-      flights: input.flights.map(f => ({ direction: f.direction, localDateTime: f.localDateTime, googlePlaceId: f.airport.googlePlaceId })),
-      lodgings: input.lodgings.map(l => ({ checkIn: l.checkIn, checkOut: l.checkOut, googlePlaceId: l.place.googlePlaceId })),
-      visits: input.visits.map(v => ({ googlePlaceId: v.place.googlePlaceId, kind: v.kind, minutes: v.minutes, priority: v.priority })),
-    });
+    const id = await insertTrip(client, user, sampleDraft());
     const loaded = await loadTripInputs(client, id); assert.ok(loaded?.status === 'READY');
     const originalResult = await service().service.compute(loaded.input);
     const draft = constraintsFrom(loaded.input);
     const wish = loaded.input.visits.find(v => v.priority === 'WISH')!;
     Object.assign(draft.visits.find(v => v.id === wish.id)!, { fixedDate: '2026-12-02', fixedTime: '15:00', fixedOrder: 1 });
     const airport = loaded.input.flights[0].airport.id, hotel = loaded.input.lodgings[0].place.id;
-    draft.legModes = [{ date: input.startDate, from: airport, to: hotel, mode: 'TRANSIT' }];
+    draft.legModes = [{ date: loaded.input.startDate, from: airport, to: hotel, mode: 'TRANSIT' }];
     assert.equal(await saveConstraints(client, id, randomUUID(), loaded.inputHash, draft), null);
     const saved = await saveConstraints(client, id, user, loaded.inputHash, draft); assert.ok(saved);
     assert.notEqual(saved.revision, loaded.inputHash);

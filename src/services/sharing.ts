@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { isShareToken, ShareUnavailableError, type ShareRepository, type SharedItinerary } from '../sharing/model';
+import { displayInput } from '../results/model';
 import type { ItineraryPlaces } from './itinerary/types';
-import { displayPlaces } from './itinerary/display-places';
+import { displayPlaces, tripPlaceRefs } from './itinerary/display-places';
 
 export const hashShareToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -19,10 +20,10 @@ export class SharingService {
     const snapshot = await this.repository.load(hash);
     if (!snapshot) return null;
     if (snapshot === 'UNAVAILABLE') throw new ShareUnavailableError();
-    const { input, refs, result } = snapshot;
-    const places = await displayPlaces(this.places(), refs, input.timeZone, input.startDate);
+    const { input, result } = snapshot;
+    const places = await displayPlaces(this.places(), tripPlaceRefs(input), input.timeZone, input.startDate);
     // Rotation during a slow provider call must not return the old capability's data.
     if (!await this.repository.isActive(hash)) return null;
-    return { view: { input, places }, result };
+    return { view: { input: displayInput(input), places }, result };
   }
 }

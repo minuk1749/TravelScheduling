@@ -7,3 +7,7 @@ export function hasForeignOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
   return origin !== null && origin !== '' && origin !== new URL(request.url).origin;
 }
+
+/** Stricter write check (settings, sharing): also rejects a browser-declared cross-site fetch. */
+export const isCrossSiteRequest = (request: Request): boolean =>
+  hasForeignOrigin(request) || request.headers.get('sec-fetch-site') === 'cross-site';
