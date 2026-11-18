@@ -439,3 +439,24 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
   전체 결과 해시는 점검 문서에 남긴다. Google/DB 네트워크 지연을 측정한 결과는 아니다.
 
 HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 기존 동작은 유지한다.
+
+## 11. T14 읽기 전용 공유
+
+- 소유자 POST `/api/trips/[id]/share`는 `{ path: "/share/{token}" }`를 반환한다.
+  세션·여행 소유권·동일 출처를 검사하며 재발급은 이전 링크를 무효화한다.
+- 공개 GET `/api/share/[token]` → [SharingService](../src/services/sharing.ts) →
+  [ShareRepository](../src/sharing/model.ts) → [SQL 구현](../src/repositories/sharing.ts).
+  `load`는 표시 입력·장소 참조·결과, 미준비 `UNAVAILABLE`, 잘못된 토큰 `null`을 구분한다.
+- 기존 `trips.share_token`에 256비트 난수 토큰의 SHA-256 해시를 저장한다. 스키마 변경은 없다.
+  재발급 UPDATE도 owner_id를 검사하고, 장소 조회 후 유효성을 재확인한다.
+- [결과 읽기](../src/repositories/shared-itinerary.ts)는 itineraries/day_plans/stops/legs를
+  고정 개수 쿼리로 복원한다. REPEATABLE READ 트랜잭션 안에서 입력 해시를 비교하고
+  최신 generation만 선택한다. 이전 결과·현재 입력 혼합은 409로 거부한다.
+- [표시 정보 조회](../src/services/itinerary/display-places.ts)는 편집·공유 서비스에서 재사용하며
+  Google 장소 ID별로 중복 요청을 제거한다. 이름·귀속 정보의 영속 저장은 추가하지 않는다.
+- 공개 응답은 `SharedItinerary`의 표시용 `ResultDisplayView`와 계산 결과만 포함한다.
+  원본 여행 설정·사용자 정보·revision은 제외한다. 공유 화면은 편집 콜백 없이 기존
+  지도·타임라인·효율 표시를 사용하며 기존 수정 API의 인증 계약은 유지한다.
+- 잘못된/폐기된 토큰 404, 결과 없음/오래된 입력 409, 외부 장애 502/503, 내부 오류 500.
+  API는 private/no-store 및 검색·referrer 차단 헤더, 페이지는 동적 렌더링·동일 메타 정책을 사용한다.
+- 검증·대안·제약은 [T14 결정](decisions/T14-read-only-sharing.md)에 기록한다.

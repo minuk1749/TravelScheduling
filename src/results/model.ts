@@ -1,6 +1,6 @@
 import type { PlaceDetails } from '../places';
-import type { TravelMode } from '../scheduler';
-import type { TripInputs } from '../services/itinerary/types';
+import type { CapacityRecommendation, ScheduleResult, TravelMode } from '../scheduler';
+import type { ItineraryResult, TripInputs } from '../services/itinerary/types';
 
 export type VisitEdit = {
   id: string; priority: 'REQUIRED' | 'WISH';
@@ -10,6 +10,19 @@ export type LegEdit = { date: string; from: string; to: string; mode: TravelMode
 export type Constraints = { visits: VisitEdit[]; legModes: LegEdit[] };
 export type ResultSnapshot = { input: TripInputs; revision: string };
 export type ResultView = ResultSnapshot & { places: Record<string, Pick<PlaceDetails, 'googlePlaceId' | 'name' | 'coordinates' | 'attributions'> | null> };
+/** Only fields needed to display a result; no owner, revision or editable settings. */
+export type ResultDisplayView = {
+  input: Pick<TripInputs, 'startDate' | 'endDate' | 'timeZone'> & {
+    visits: readonly Pick<TripInputs['visits'][number], 'id' | 'place' | 'priority'>[];
+  };
+  places: ResultView['places'];
+};
+/** Display needs the witness's days; full-request failures remain in capacity.unplaced/issues. */
+export type ItineraryDisplayResult = Omit<ItineraryResult, 'capacity'> & {
+  capacity: Omit<ItineraryResult['capacity'], 'recommendation'> & {
+    recommendation: (Omit<CapacityRecommendation, 'schedule'> & { schedule: Pick<ScheduleResult, 'days'> }) | null;
+  };
+};
 export function constraintsFrom(input: TripInputs): Constraints {
   return {
     visits: input.visits.map(visit => ({ id: visit.id, priority: visit.priority,
