@@ -170,7 +170,12 @@ main() {
     { echo "**Mac 러너: 변경 없이 종료.** 다음 실행에서 다시 시도합니다. 계속 반복되면 사람이 확인해 주세요."; echo; cat "$imsg" 2>/dev/null; } | gh issue comment "$issue" -R "$REPO" --body-file -
     rm -f "$imsg"; return 0
   fi
-  git push -q -f origin "HEAD:$ibranch"
+  # 강제 푸시는 쓰지 않는다. 같은 이름의 브랜치가 이미 있으면(이전 실패 흔적) 새 이름을 쓴다
+  if git ls-remote --exit-code --heads origin "$ibranch" >/dev/null 2>&1; then
+    ibranch="$ibranch-$(date +%Y%m%d%H%M%S)"
+    git branch -q -m "$ibranch"
+  fi
+  git push -q origin "HEAD:$ibranch"
   {
     cat "$imsg" 2>/dev/null || true
     echo

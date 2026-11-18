@@ -10,7 +10,7 @@
 - 구조가 바뀌면 `docs/architecture.md`를 같이 갱신하고, 큰 결정은 `docs/decisions/`에 기록하라.
 - 범위가 너무 커서 한 번에 안전하게 끝낼 수 없으면, 안전한 부분까지만 하고 남은 것을 최종 메시지에 적어라.
 - 다음 파일은 수정하지 마라(수정해도 되돌려진다): `.github/**`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/tasks.md`, `scripts/agent/**`.
-- git commit/push와 PR 생성은 하지 마라. 워크플로가 한다.
+- 파일 이동·이름 변경은 `git mv`, 삭제는 `git rm`으로 한다. git commit/push와 PR 생성은 하지 마라. 워크플로가 한다.
 - 끝내기 전에 `npm run lint`, `npm run typecheck`, `npm run build`, `npm test`를 실행해 모두 통과하는지 확인하라. `DATABASE_URL`로 PostgreSQL 16을 쓸 수 있다.
 
 ## 최종 메시지 (PR 설명으로 쓰인다)
