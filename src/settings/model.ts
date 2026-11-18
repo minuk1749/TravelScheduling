@@ -28,3 +28,8 @@ export interface SettingsView { snapshot: SettingsSnapshot; calculation: Setting
 export class SettingsError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
+
+export interface LivingSettingsStore {
+  load(id: string, ownerId: string): Promise<SettingsSnapshot>;
+  save(id: string, ownerId: string, expectedRevision: string, settings: LivingSettings): Promise<SettingsSnapshot>;
+}

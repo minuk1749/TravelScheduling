@@ -1,3 +1,4 @@
+import { privateJson as json, hasForeignOrigin } from '../lib/http';
 import { authorizeTrip } from '../lib/auth/authorization';
 import { PlaceInputError, PlaceProviderError } from '../places';
 import { ItineraryInputError, type GenerateOutcome } from '../services/itinerary/types';
@@ -14,7 +15,6 @@ type Dependencies = {
   generator(): { generator: ItineraryGenerator; dispose(): void };
 };
 
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 const ACCESS_ERRORS = { 401: '로그인 후 다시 시도해 주세요.', 403: '접근할 수 없습니다.', 404: '여행을 찾을 수 없습니다.' } as const;
 const INCOMPLETE = '일정을 만들기 전에 여행 정보를 보완해 주세요.';
 
@@ -32,8 +32,7 @@ export function itineraryHandlers(deps: Dependencies) {
   return {
     generate: async (request: Request, tripId: string): Promise<Response> => {
       try {
-        const origin = request.headers.get('origin');
-        if (origin && origin !== new URL(request.url).origin) return json({ error: '허용되지 않은 요청입니다.' }, 403);
+        if (hasForeignOrigin(request)) return json({ error: '허용되지 않은 요청입니다.' }, 403);
         const access = await authorizeTrip(await deps.userId(), tripId, deps.findOwner);
         if (access !== 200) return json({ error: ACCESS_ERRORS[access] }, access);
         const { generator, dispose } = deps.generator();

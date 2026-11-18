@@ -1,10 +1,9 @@
 # 아키텍처
 
-기준: 2026-11-18, T11 시작 시 원격 `develop`의 `6e1d5cc`를 바탕으로 갱신. T12(동선 생성 API)에서 일정 서비스·저장 부분 갱신.
+기준: 2026-11-19, T13A 시작 시 원격 `develop`의 `f0b4239`.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
-**현재**는 T1–T11에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
-디렉터리·서비스·HTTP 응답은 아직 존재하지 않는다. 구조나 계약 변경 시 이 문서와
-[결정 기록](decisions/0001-pure-core-and-service-boundaries.md)을 같은 PR에서 갱신한다.
+T1–T13/T12B의 현재 연결과 T13A 정리를 기술한다. §7–8은 T7A 당시의 점검 기록이며,
+현재 결과 UI와 최신 전체 점검은 §9–10을 따른다. 구조나 계약 변경은 관련 문서와 결정 기록을 함께 갱신한다.
 
 ## 1. 폴더 구조와 모듈 경계
 
@@ -14,6 +13,8 @@ src/
     api/auth/[...nextauth]/     현재: Auth.js HTTP 진입점
     api/trips/[id]/             현재: 소유권 확인 후 { id }만 반환
     api/trips/[id]/itinerary/   현재 T12: 인증·소유권 확인 후 동선 생성 POST
+    trips/[id]/result/          현재 T13: 지도·타임라인·비교·제약 편집
+    api/trips/[id]/constraints/ 현재 T13: 제약 GET/PUT
     trips/[id]/settings/        현재 T11: 생활 설정·시간창/고정 시각 충돌 미리보기
     api/trips/[id]/settings/    현재 T11: 소유자 설정 GET/PUT
     trips/new/                  현재 T10: 여행·항공·숙소·장소 입력
@@ -23,12 +24,15 @@ src/
   components/service-worker.tsx  현재: 프로덕션 서비스워커 등록
   auth.ts                      현재: Google 공급자, JWT/세션 콜백 구성
   lib/
+    http.ts                    현재 T13A: private/no-store JSON·Origin 공통 정책
     db.ts                      현재: 명시적 PostgreSQL Pool 팩터리
     migrations.ts              현재 T8A: 적용 이력·기존 DB 검증·트랜잭션 실행기
     auth/                      현재: 인증 포트/콜백, 권한, SQL 저장소
   scheduler/
     index.ts                   현재: 시간창·식사 슬롯, 공개 export
     placement.ts               현재: 고정/필수 배치, 지리적 순서, 삽입·2-opt
+    placement-types.ts         현재 T13A: 배치 입출력 계약
+    route-evaluation.ts        현재 T13A: 단일 경로의 시간·수단·고정 순서 평가
     transport.ts               현재: 정책·수동 지정에 따른 이동수단 선택
     capacity.ts                현재: 실제 배치 기반 수용량·추천 검증
   fare/index.ts                현재: 도시 프로필 타입, 순수 택시 요금 계산
@@ -38,9 +42,10 @@ src/
   repositories/                현재 T10/T11: 여행 생성·장소 ID 저장·프로필 조회·생활 설정 수정. T12: 입력 스냅샷(trip-snapshot.ts), 일정 저장(itineraries.ts)
   services/itinerary/           현재 T12: 날짜별 앵커·시간창 조립, 장소·이동시간 조회, 재조회 루프, 비교·효율 요약
   itineraries/                 현재 T12: 동선 생성 HTTP 처리(http.ts)와 조립(server.ts)
-  settings/                    현재 T11: 설정 검증·계산·서비스·HTTP·조립
+  settings/                    현재: 설정 검증·계산·서비스·HTTP·조립, model.ts에 저장소 포트
+  results/                     현재 T13: 제약 DTO·검증·표시 변환·HTTP·조립
   repositories/living-settings.ts 현재 T11: 설정 읽기·잠금/revision/원자적 수정
-migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비 → 005 일정 저장 필드
+migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비 → 005 일정 저장 필드 → 006 구간 고정
 public/                        현재: 온라인 전용 sw.js, 아이콘
 tests/                         현재: node:test + tsx, SQL/HTTP/순수 함수 검사
 scripts/verify-pwa.mjs          현재: 빌드 산출물 검사
@@ -58,9 +63,9 @@ docs/decisions/                설계 결정과 대안
 | 제공자 | 외부 응답/단위 정규화, 캐시, 네트워크 실패 구분 | 정책에 맞는 이동수단 선택, 사용자 입력 변경 |
 | 저장소 | SQL, 트랜잭션, 행→도메인 변환, 소유 데이터 연쇄 삭제 | 스케줄러 실행, 외부 API 호출 |
 
-현재 `placement.ts`는 `CityProfile`의 두 필드만 **type import**하고, `index.ts`의 타입도
-type import한다. 런타임에는 `index → capacity → placement → transport`와
-`index → placement/transport`가 연결된다. 전역 가변 캐시를 코어에 넣지 않는다.
+배치 계약의 `CityProfile`/시간창 참조는 **type import**다. 런타임에는
+`index → capacity → placement → route-evaluation → transport`와
+`index → placement/transport`가 연결된다. `placement-types.ts`의 타입 참조는 런타임 의존이 아니다. 전역 가변 캐시를 코어에 넣지 않는다.
 `ReadonlyMap`/readonly 배열 입력을 바꾸지 않고 결과를 새로 반환한다.
 
 현재 SQL 구현은 [auth/store.ts](../src/lib/auth/store.ts)에 있다. 새 저장소는 같은 `pg` 풀을
@@ -171,9 +176,9 @@ export const fareProvider: FareProvider = { estimateTaxiFare };
 시간 하한만으로 수용 여부를 판단하지 않는다. 다른 N개 조합도 반드시 재검증한다.
 [T7 인계](t7-handoff.md)의 추천 재현 방식은 유지한다.
 
-## 4. 후속 제공자와 저장소 계약
+## 4. 현재 제공자와 저장소 계약
 
-장소와 이동시간 포트는 **T8/T9 구현**을 직접 참조하며 저장소는 **T10/T12 구현 방향**이다.
+장소와 이동시간 포트는 **T8/T9 구현**을 직접 참조하며 저장소는 **T10–T13 구현**을 따른다.
 외부 SDK 타입, `pg` 행, Next.js `Request`를 이 경계 너머로 넘기지 않는다.
 
 ```typescript
@@ -410,3 +415,27 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
 - [지도 어댑터](../src/components/itinerary/google-map.ts)는 브라우저 전용 Maps 키/지도 ID로 고급 마커를 표시한다. 지도 로딩 실패에도 장소 목록에서 편집할 수 있다.
 
 이 결정의 이유·대안·검증은 [T13 ADR](decisions/T13-result-ui-and-constraints.md)에 기록한다. T12B의 날짜별 짐 처리 모듈은 변경하지 않는다.
+
+## 10. T13A 전체 점검과 성능
+
+[전체 점검 목록](t13a-audit.md)에 책임 혼합·중복·순환/경계·변경 지점·불필요 코드와
+시작 시 300줄 초과 파일을 모두 기록했다. 동작 보존 정리의 이유와 대안은
+[T13A 결정](decisions/T13A-audit-and-fare-preparation.md)을 따른다.
+
+- `scheduler/placement-types.ts`는 타입, `route-evaluation.ts`는 단일 경로 평가,
+  `placement.ts`는 배치/개선 탐색이다. `scheduler/index.ts`와 `placement.ts`의 기존 export를 유지한다.
+- `fare.createTaxiFareEstimator(profile, departure, timeZone)`는 동일 출발 시각의 요금 준비를
+  최초 사용 시 한 번 수행하고, 매 구간의 거리·시간 검증과 금액 계산은 계속 수행한다.
+  `FareConverter.table`은 행렬 내에서만 재사용하며 실제 출발 시각 route는 별도 준비한다.
+  기존 `estimateTaxiFare` 시그니처/오류/금액은 유지하며 프로세스 전역 상태는 추가하지 않는다.
+- `LivingSettingsStore`는 소비자인 `settings/model.ts`에 두고 구현체는 repositories가 제공한다.
+  저장소 모듈의 기존 타입 export도 유지해 호출 지점의 호환성을 보존한다.
+- `lib/http.ts`는 캐시 금지 JSON과 Origin 비교만 공유한다. 기존 endpoint별 입력 크기,
+  Content-Type/Sec-Fetch-Site 검사, 인증 순서와 400/401/403/404/409/500 계약은 바꾸지 않는다.
+- 구조 검사: [계층](../tests/architecture-layers.test.ts), [전체 소스 의존 그래프](../tests/helpers/source-graph.ts).
+  클라이언트 코드의 전이 의존까지 검사하되 타입 import와 공개 빌드 상수 `NODE_ENV`는 구별한다.
+- 성능 회귀: [요금 행렬](../tests/fare-matrix.test.ts). 시간 비율 대신 행렬별 준비 1회와
+  단일 변환 동등성을 검사한다. [오프라인 벤치마크](../scripts/benchmark-itinerary.ts)의 전후 중앙값과
+  전체 결과 해시는 점검 문서에 남긴다. Google/DB 네트워크 지연을 측정한 결과는 아니다.
+
+HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 기존 동작은 유지한다.

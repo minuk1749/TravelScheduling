@@ -1,3 +1,4 @@
+import { privateJson as json, hasForeignOrigin } from '../lib/http';
 import type { CityProfile } from '../fare';
 import { parseTripDraft, TripInputError, type TripDraft } from './input';
 
@@ -6,7 +7,6 @@ type Dependencies = {
   create(ownerId: string, input: TripDraft): Promise<string>;
   profile(cityCode: string): Promise<CityProfile | null>;
 };
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 export function tripHandlers(deps: Dependencies) {
   const handle = async (action: (userId: string) => Promise<Response>) => {
     try {
@@ -20,8 +20,7 @@ export function tripHandlers(deps: Dependencies) {
   };
   return {
     create: (request: Request) => handle(async userId => {
-      const origin = request.headers.get('origin');
-      if (origin && origin !== new URL(request.url).origin) return json({ error: '허용되지 않은 요청입니다.' }, 403);
+      if (hasForeignOrigin(request)) return json({ error: '허용되지 않은 요청입니다.' }, 403);
       if (!request.headers.get('content-type')?.startsWith('application/json')) return json({ error: 'JSON 입력이 필요합니다.' }, 415);
       const body = await request.text();
       if (body.length > 100_000) return json({ error: '입력 크기를 줄여 주세요.' }, 413);

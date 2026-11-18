@@ -1,7 +1,7 @@
+import { privateJson as json, hasForeignOrigin } from '../lib/http';
 import { TripInputError } from '../trips/input';
 import { SettingsError } from './model';
 import type { LivingSettingsService } from './service';
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 export function settingsHandlers(deps: { userId(): Promise<string | undefined>; service: Pick<LivingSettingsService, 'load' | 'save'> }) {
   return async (request: Request, id: string): Promise<Response> => {
     try {
@@ -9,8 +9,7 @@ export function settingsHandlers(deps: { userId(): Promise<string | undefined>; 
       if (!ownerId) throw new SettingsError(401, '로그인 후 다시 시도해 주세요.');
       if (request.method === 'GET') return json(await deps.service.load(id, ownerId));
       if (request.method !== 'PUT') throw new SettingsError(405, '허용되지 않은 메서드입니다.');
-      const origin = request.headers.get('origin');
-      if (origin && origin !== new URL(request.url).origin) throw new SettingsError(403, '허용되지 않은 요청입니다.');
+      if (hasForeignOrigin(request)) throw new SettingsError(403, '허용되지 않은 요청입니다.');
       if (request.headers.get('sec-fetch-site') === 'cross-site') throw new SettingsError(403, '허용되지 않은 요청입니다.');
       if (!request.headers.get('content-type')?.startsWith('application/json')) throw new SettingsError(415, 'JSON 입력이 필요합니다.');
       const body = await request.text();

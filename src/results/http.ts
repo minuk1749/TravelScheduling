@@ -1,3 +1,4 @@
+import { privateJson as json, hasForeignOrigin } from '../lib/http';
 import { authorizeTrip } from '../lib/auth/authorization';
 import { PlaceProviderError } from '../places';
 import { ResultStaleError, ResultUnavailableError, type ResultEditService } from '../services/itinerary/editing';
@@ -7,12 +8,10 @@ type Dependencies = {
   userId(): Promise<string | undefined>; findOwner(id: string): Promise<string | null>;
   service(): Pick<ResultEditService, 'load' | 'save'>;
 };
-const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } });
 export function constraintHandlers(deps: Dependencies) {
   const handle = async (request: Request, id: string, write: boolean) => {
     try {
-      const origin = request.headers.get('origin');
-      if (write && origin && origin !== new URL(request.url).origin) return json({ error: '허용되지 않은 요청입니다.' }, 403);
+      if (write && hasForeignOrigin(request)) return json({ error: '허용되지 않은 요청입니다.' }, 403);
       const userId = await deps.userId();
       const access = await authorizeTrip(userId, id, deps.findOwner);
       if (access !== 200) return json({ error: access === 401 ? '로그인 후 다시 시도해 주세요.' : access === 404 ? '여행을 찾을 수 없습니다.' : '접근할 수 없습니다.' }, access);
