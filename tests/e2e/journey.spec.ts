@@ -147,6 +147,15 @@ test('T15 375px journey: login → create → settings → over capacity → sel
   await expectMarkers(page, expectedStates);
   // Taxi policy PREFER (saved in the settings step) reaches the calculation: some leg is a taxi ride.
   await expect(timeline.locator('.result-leg > p', { hasText: '택시' }).first()).toBeVisible();
+  // Every leg card compares transit and taxi: minutes plus an estimated fare in the city currency.
+  const legCards = timeline.locator('.result-leg');
+  expect(await legCards.count()).toBeGreaterThan(0);
+  for (const card of await legCards.all()) {
+    for (const mode of ['대중교통', '택시']) {
+      await expect(card.locator('.result-comparison > div', { has: page.locator('dt', { hasText: new RegExp(`^${mode}$`) }) }))
+        .toHaveText(/\d+분 · [\d,]+ JPY \(추정\)/);
+    }
+  }
   // Clicking a marker reports that visit's id to the editor, which selects the matching card.
   const [anyPlaced] = required;
   await clickMarker(page, `● 배치 ${anyPlaced}`);
@@ -161,18 +170,30 @@ test('T15 375px journey: login → create → settings → over capacity → sel
   await page.getByLabel(`${required.at(-1)} 필수`).uncheck();
   await page.getByLabel(`${wish} 날짜`).fill('2026-12-02');
   await page.getByLabel(`${wish} 시각`).fill('15:00');
+  await page.getByLabel(`${wish} 순서`).fill('0');
   await revalidate(page);
   await expect(diagnostics.getByText('일정을 만들었습니다')).toBeVisible();
   await expect(timeline.locator('.result-stop strong', { hasText: wish })).toHaveCount(1);
   await expectMarkers(page, { ...expectedStates, [wish]: 'placed', [required.at(-1)!]: 'wish' });
-  await timeline.locator('select').first().selectOption('TRANSIT');
+  // The leg to fix: the first leg card, pinned to transit.
+  const legSelect = timeline.locator('.result-leg select').first();
+  const legLabel = (await legSelect.evaluate(node => node.parentElement!.firstChild!.textContent))!;
+  await legSelect.selectOption('TRANSIT');
   await revalidate(page);
   await expect(diagnostics.getByText('일정을 만들었습니다')).toBeVisible();
   await page.reload();
   await expect(page.getByLabel(`${wish} 시각`)).toHaveValue('15:00');
+  await expect(page.getByLabel(`${wish} 순서`)).toHaveValue('0');
   await revalidate(page);
   await expect(diagnostics.getByText('일정을 만들었습니다')).toBeVisible();
-  await expect(timeline.locator('select').first()).toHaveValue('TRANSIT');
+  await expect(page.getByLabel(legLabel)).toHaveValue('TRANSIT');
+  // The calculated timeline honours the fixed date, time, order and leg mode.
+  const day = timeline.locator('.result-day', { has: page.getByRole('heading', { name: '2026-12-02' }) });
+  const dayVisits = (await day.locator('.result-stop').allInnerTexts()).filter(text => !text.includes('식사'));
+  expect(dayVisits[0]).toMatch(/^15:00–\d\d:\d\d\s+teamLab Planets$/);
+  const fixedCard = timeline.locator('.result-leg', { has: page.getByLabel(legLabel) });
+  await expect(fixedCard.locator('> p').first()).toContainText('대중교통');
+  await expect(fixedCard.locator('> p').first()).toContainText('수단 고정');
   await expectMarkers(page, { ...expectedStates, [wish]: 'placed', [required.at(-1)!]: 'wish' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('journey-result-375.png'), fullPage: true });
