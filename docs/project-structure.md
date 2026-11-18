@@ -87,8 +87,12 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 
 ## T15 종단 간 시나리오
 
-- `tests/e2e/journey.spec.ts`: 375px 한 세션에서 흐름 1–10(여행 생성 → 생활 설정 → 수용량 초과 → 필수 선택 → 재검증 → 결과·수정 → 공유)을 검증한다. 소스 변경 없음.
-- Google 로그인·Places·Routes는 HTTP 경계(`page.route`)에서 픽스처와 실제 서비스(`ItineraryService`, `SharingService`)로 대체한다. 공용 장소 검색 헬퍼: `tests/helpers/e2e-places.ts`.
+- `tests/e2e/journey.spec.ts`: 375px 한 세션에서 흐름 1–10(로그인 → 여행 생성 → 생활 설정 → 수용량 초과 → 필수 선택 → 재검증 → 결과·지도·수정 → 공유 → 탈퇴)을 검증한다. 소스(`src/`) 변경 없음.
+- **실제 서버·Auth.js 세션·PostgreSQL·서비스를 그대로 쓰고 Google만 대체한다.** 앱 API를 `page.route`로 가로채지 않는다. 화면 입력이 DB에 저장되고(`trips`, `trip_places` 조회로 확인), 설정·제약 변경과 계산·공유가 같은 저장 상태를 읽는다.
+  - 서버 쪽: `tests/e2e/support/google-doubles.mjs`를 `NODE_OPTIONS=--import`로 서버에 미리 불러와 `accounts.google.com`/`oauth2.googleapis.com`(OpenID 설정·JWKS·토큰, RS256 id_token), Places, Routes로 가는 `fetch`만 결정적 응답으로 바꾼다. 브라우저 쪽 동의 화면은 `page.route`가 인가 요청을 콜백으로 되돌린다.
+  - 지도: `tests/helpers/e2e-maps.ts`가 `google.maps.importLibrary`를 기록용 스텁으로 바꾼다. 실제 `GoogleResultMap`이 만든 마커(이름·배치/희망/미배치 상태)를 읽고 마커 클릭으로 편집 카드를 선택한다. 지도를 그리는 모든 e2e는 이 스텁을 설치한다.
+  - `playwright.config.ts`의 webServer는 가짜 `NEXT_PUBLIC_GOOGLE_MAPS_*`를 포함해 다시 빌드한 뒤 `localhost:3210`에서 시작한다(세션 쿠키·Auth.js 리다이렉트 호스트 일치). `TOKYO` 도시 프로필은 테스트가 upsert하고, 테스트 사용자는 시작·종료 때 삭제한다.
+- 공용 장소 검색 헬퍼: `tests/helpers/e2e-places.ts`.
 
 ## T14 읽기 전용 공유 연결
 

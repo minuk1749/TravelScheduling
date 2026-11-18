@@ -2,11 +2,13 @@ import { expect, test } from '@playwright/test';
 import { sampleTrip, FixturePlaces } from '../fixtures/itinerary';
 import { service } from '../helpers/itinerary-service';
 import { applyEdits } from '../helpers/result';
+import { installMapsDouble } from '../helpers/e2e-maps';
 import { inputHash } from '../../src/repositories/trip-snapshot';
 import { parseConstraints } from '../../src/results/input';
 import { ResultEditService } from '../../src/services/itinerary/editing';
 
 test('T13 375px result: wishlist pin, manual mode, reload, timeline and no horizontal overflow', async ({ page }, testInfo) => {
+  await installMapsDouble(page);
   let input = sampleTrip();
   const editor = new ResultEditService({ loadInputs: async () => ({ status: 'READY', input, inputHash: inputHash(input) }), save: async () => null }, new FixturePlaces());
   await page.route('**/api/trips/test/constraints', async route => {
