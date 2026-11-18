@@ -1,6 +1,7 @@
 # 루프 2단계: 작업 PR을 테스트하고 작성자가 아닌 쪽이 리뷰한다.
 #  - Codex(gpt)가 만든 PR → Claude가 여기서 리뷰
 #  - Claude가 만든 PR(owner-claude 라벨) → needs-codex-review 라벨을 붙이고, Mac 러너의 Codex 리뷰 후 agent-verdict가 판정
+#  - Codex가 만든 PR은 이중 리뷰: Claude 판정을 댓글로 남기고 Codex 자체 리뷰를 기다려 agent-verdict가 둘 다 승인일 때만 머지
 #
 #  - 승인 + 테스트 통과 → develop에 머지, 작업 완료 처리, agent-start로 다음 작업 시작
 #  - 수정 필요 → PR에 피드백 댓글. local이면 Mac 러너가 반영, cloud면 "@codex" 요청 후 사람이 PR 버튼 클릭
@@ -259,6 +260,7 @@ jobs:
           REVIEW_JSON: ${{ needs.review.outputs.result }}
           OWNER: ${{ needs.gate.outputs.owner }}
           REVIEWER: Claude
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           # Claude가 만든 PR이 테스트를 통과하면 Codex 리뷰를 요청하고 기다린다 (Mac 러너가 리뷰 후 agent-verdict가 판정)
@@ -266,6 +268,20 @@ jobs:
             gh label create needs-codex-review --color 1d76db --description "Codex 리뷰 대기" --force >/dev/null
             gh pr edit "$PR" --add-label needs-codex-review
             gh pr comment "$PR" --body "테스트 통과. Codex 리뷰를 요청했습니다 (Mac 러너가 다음 실행 때 리뷰)."
+            exit 0
+          fi
+          # Codex가 만든 PR은 이중 리뷰: Claude 판정을 남기고 Codex 자체 리뷰를 기다린다 (agent-verdict가 둘을 합쳐 판정)
+          verdict=$(printf '%s' "${REVIEW_JSON:-}" | jq -r '.verdict // empty' 2>/dev/null || true)
+          if [ "$OWNER" = gpt ] && [ "$PASSED" = true ] && [ "$R_REVIEW" = success ] && [ -n "$verdict" ]; then
+            {
+              echo "<!-- claude-review sha=$HEAD_SHA -->"
+              jq -r '"**Claude 리뷰: " + (if .verdict == "approve" then "승인" else "수정 요청" end) + "** (Codex 자체 리뷰와 합쳐 판정)\n\n" + .summary + ([.issues[] | "\n\n- **" + .file + "**: " + .problem + "\n  - 수정 방향: " + .fix] | join(""))' <<<"$REVIEW_JSON"
+              echo
+              echo "<details><summary>판정 JSON</summary>"; echo; echo '```json'; jq . <<<"$REVIEW_JSON"; echo '```'; echo; echo "</details>"
+            } > "$RUNNER_TEMP/cr.md"
+            gh label create needs-codex-review --color 1d76db --description "Codex 리뷰 대기" --force >/dev/null
+            gh pr comment "$PR" --body-file "$RUNNER_TEMP/cr.md"
+            gh pr edit "$PR" --add-label needs-codex-review
             exit 0
           fi
           bash .github/agent/decide.sh

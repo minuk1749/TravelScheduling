@@ -72,7 +72,7 @@
 
 ## 자동 협업 루프 (`.github/workflows/agent-*.yml`, `scripts/agent/local-runner.sh`)
 - **역할: 담당한 쪽이 구현하고, 다른 쪽이 리뷰한다.**
-  - 작업표(`docs/tasks.md`)의 담당이 `gpt`인 작업 → Codex(Mac 러너)가 구현, Claude(agent-review)가 리뷰
+  - 작업표(`docs/tasks.md`)의 담당이 `gpt`인 작업 → Codex(Mac 러너)가 구현, **Codex 자체 리뷰 + Claude 리뷰(이중 리뷰)**. 둘 다 승인해야 머지하고, 지적 사항은 합쳐서 작성자에게 보낸다(agent-verdict)
   - 담당이 `claude`인 작업 → Claude(agent-claude)가 구현, Codex(Mac 러너)가 리뷰 후 agent-verdict가 판정
   - 리팩터링(`R번호`) → Claude가 수행, Codex가 리뷰
 - **동시 진행:** 담당별로 하나씩(Codex 1개 + Claude 1개) 동시에 진행한다. 리팩터링(R번호) 중에는 새 작업을 시작하지 않는다.

@@ -205,7 +205,11 @@ review_pr() { # pr
 JSON
   prompt="$TMPD/review-prompt.md"
   {
-    echo "저장소 $REPO, PR #$pr, 작업 $task. 구현은 Claude가 했고 너(Codex)가 리뷰한다. 기준 브랜치는 origin/develop이다."
+    if gh pr view "$pr" -R "$REPO" --json labels --jq '[.labels[].name] | index("owner-claude")' | grep -q '^[0-9]'; then
+      echo "저장소 $REPO, PR #$pr, 작업 $task. 구현은 Claude가 했고 너(Codex)가 리뷰한다. 기준 브랜치는 origin/develop이다."
+    else
+      echo "저장소 $REPO, PR #$pr, 작업 $task. 구현은 Codex의 다른 실행이 했고, 너는 **자체 리뷰** 담당이다. Claude도 별도로 리뷰하며 둘 다 승인해야 머지된다. 작성자의 설명을 믿지 말고 독립적인 시각으로 검토하라. 기준 브랜치는 origin/develop이다."
+    fi
     echo "PR 설명은 .ctl-pr-body.md에 있다. 파일을 수정하지 마라. 결과는 지정된 JSON 스키마로만 반환하라(notes, refactor는 없으면 빈 값)."
     echo
     git show origin/develop:.github/agent/prompts/review.md 2>/dev/null

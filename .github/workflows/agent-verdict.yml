@@ -1,4 +1,5 @@
-# Codex 리뷰 판정: Mac 러너가 Claude PR에 남긴 Codex 리뷰 댓글(<!-- codex-review sha=… -->)을 읽어
+# Codex 리뷰 판정: Mac 러너가 남긴 Codex 리뷰 댓글(<!-- codex-review sha=… -->)을 읽어
+# (Claude PR이면 그대로, Codex PR이면 같은 커밋의 Claude 판정과 합쳐 둘 다 승인일 때만 승인)
 # agent-review와 같은 판정(.github/agent/decide.sh)을 실행한다.
 # 러너는 저장소 소유자 계정(gh 로그인)으로 댓글을 달기 때문에 이 이벤트가 발생한다.
 name: agent-verdict
@@ -46,19 +47,35 @@ jobs:
           out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
           info=$(gh pr view "$PR" --json title,headRefOid,state,labels)
           if [ "$(jq -r .state <<<"$info")" != OPEN ]; then echo "::notice::PR이 열려 있지 않음"; out go false; exit 0; fi
-          if ! jq -e '[.labels[].name] | index("owner-claude")' <<<"$info" >/dev/null; then echo "::notice::Claude PR이 아님"; out go false; exit 0; fi
+          if jq -e '[.labels[].name] | index("owner-claude")' <<<"$info" >/dev/null; then owner=claude; else owner=gpt; fi
           sha=$(grep -oE '<!-- codex-review sha=[0-9a-f]+' <<<"$BODY" | sed 's/.*sha=//')
           head=$(jq -r .headRefOid <<<"$info")
           if [ "$sha" != "$head" ]; then echo "::notice::리뷰한 커밋($sha)이 PR 최신 커밋($head)과 달라 무시"; out go false; exit 0; fi
           # 댓글의 ```json 블록에서 판정 JSON을 꺼낸다
           awk '/^```json$/{f=1;next} /^```$/{if(f){exit}} f' <<<"$BODY" > "$RUNNER_TEMP/review.json"
           jq -e '.verdict' "$RUNNER_TEMP/review.json" >/dev/null || { echo "::error::Codex 리뷰 JSON을 읽지 못함"; exit 1; }
+          reviewer=Codex
+          if [ "$owner" = gpt ]; then
+            # Codex가 만든 PR: 같은 커밋에 대한 Claude 판정과 합친다. 둘 다 승인일 때만 승인
+            gh pr view "$PR" --json comments --jq "[.comments[] | select(.body | contains(\"<!-- claude-review sha=$head\"))] | last | .body // \"\"" > "$RUNNER_TEMP/claude-review-body.md"
+            awk '/^```json$/{f=1;next} /^```$/{if(f){exit}} f' "$RUNNER_TEMP/claude-review-body.md" > "$RUNNER_TEMP/claude.json"
+            if ! jq -e '.verdict' "$RUNNER_TEMP/claude.json" >/dev/null 2>&1; then echo "::error::같은 커밋에 대한 Claude 판정을 찾지 못함"; exit 1; fi
+            jq -n --slurpfile a "$RUNNER_TEMP/claude.json" --slurpfile b "$RUNNER_TEMP/review.json" '
+              ($a[0]) as $c | ($b[0]) as $x |
+              { verdict: (if $c.verdict == "approve" and $x.verdict == "approve" then "approve" else "request_changes" end),
+                summary: ("Claude(" + $c.verdict + "): " + $c.summary + "\n\nCodex 자체 리뷰(" + $x.verdict + "): " + $x.summary),
+                issues: ((($c.issues // []) | map(.problem = "[Claude] " + .problem)) + (($x.issues // []) | map(.problem = "[Codex] " + .problem))),
+                notes: ([$c.notes, $x.notes] | map(select(. != null and . != "")) | join(" / ")),
+                refactor: (($c.refactor // []) + ($x.refactor // [])) }' > "$RUNNER_TEMP/combined.json"
+            mv "$RUNNER_TEMP/combined.json" "$RUNNER_TEMP/review.json"
+            reviewer="Claude·Codex"
+          fi
           title=$(jq -r .title <<<"$info")
           task=$(grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' <<<"$title")
           issue=$(gh issue list --state open --json number,title,labels --jq "[.[] | select([.labels[].name] | (index(\"agent-task\") or index(\"refactor-task\"))) | select(.title | startswith(\"$task:\"))] | first | .number // empty")
           n=0
           if [ -n "$issue" ]; then n=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$issue/comments" --jq '.[].body' | grep -c '<!-- agent-review -->' || true); fi
-          out go true; out task "$task"; out issue "$issue"; out round "$((n + 1))"
+          out go true; out task "$task"; out issue "$issue"; out round "$((n + 1))"; out owner "$owner"; out reviewer "$reviewer"
       - if: steps.v.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -69,8 +86,8 @@ jobs:
           TASK: ${{ steps.v.outputs.task }}
           ISSUE: ${{ steps.v.outputs.issue }}
           ROUND: ${{ steps.v.outputs.round }}
-          OWNER: claude
-          REVIEWER: Codex
+          OWNER: ${{ steps.v.outputs.owner }}
+          REVIEWER: ${{ steps.v.outputs.reviewer }}
           PASSED: "true"
           R_TEST: success
           R_REVIEW: success

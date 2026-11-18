@@ -8,7 +8,8 @@ Codex(ChatGPT 구독)와 Claude(Claude 구독)가 **맡은 작업을 각자 구�
 ```
 agent-start ─ 다음 작업 이슈 생성 (작업표의 담당 확인)
    │
-   ├─ 담당 gpt ──→ Mac 러너: Codex 구현 → PR ──→ agent-review: 테스트 → Claude 리뷰 ─┐
+   ├─ 담당 gpt ──→ Mac 러너: Codex 구현 → PR ──→ agent-review: 테스트 → Claude 리뷰    │
+   │                 → needs-codex-review → Mac 러너: Codex 자체 리뷰 → agent-verdict(둘 다 승인?) ─┤
    │                                                                                 │
    └─ 담당 claude → agent-claude: Claude 구현 → PR(owner-claude) → agent-review: 테스트 │
                      → needs-codex-review → Mac 러너: Codex 리뷰 → agent-verdict ─────┤
