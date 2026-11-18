@@ -319,7 +319,7 @@ T11 완료 기준의 전체 동선 의미는 미충족이다.** 화면에도 범
 | `fixed_date` + `fixed_time` | 여행 시간대에서 `fixedStart` instant로 변환. 날짜 없이 시각만 저장된 행은 입력 보완 필요 |
 | 날짜별 null 설정 | 여행 기본값 상속. `meal_slots: []`는 끼니 없음이며 null과 다름 |
 | `meal_slots`, `meal_windows` JSONB | 슬롯 집합과 `{start,end}` 검증. 현재 SQL 테스트의 `["11:30","14:00"]` 형태도 변환 필요 |
-| 슬롯 집합 → T5의 `mealCount` | `[]/[LUNCH]/[LUNCH,DINNER]/[BREAKFAST,LUNCH,DINNER]`만 수로 직접 변환 가능. `[DINNER]` 등을 길이만 세어 점심으로 바꾸지 않음. T11은 countForSlots로 이 네 조합만 허용하며 임의 조합은 거부 |
+| 슬롯 집합 → T5의 `mealCount` | `[]/[LUNCH]/[LUNCH,DINNER]/[BREAKFAST,LUNCH,DINNER]`만 수로 직접 변환 가능. `[DINNER]` 등을 길이만 세어 점심으로 바꾸지 않음. 변환 규칙은 scheduler의 `mealCountForSlots` 하나이며 T11 `countForSlots`(거부 시 RangeError)와 T12 일정 생성(필드 오류)이 함께 쓴다. 임의 조합은 거부 |
 | `stops`/`legs` SQL | T12의 [005](../migrations/005_itinerary_details.sql)가 stop 종류·식사 슬롯, leg 양 끝점·출발/도착 instant·요금, 일정 `details` JSONB를 추가. 사용자 구간 이동수단 고정 입력은 T13에서 보완 |
 
 시간은 여행의 IANA 시간대를 항상 함께 전달한다. 현지 입력은 `Temporal`의

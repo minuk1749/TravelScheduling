@@ -93,8 +93,13 @@ const timestamp = ({ start, end }: Interval): Timed => ({
   end: new Date(end).toISOString(),
 });
 
-function isFixed(visit: Visit): boolean {
+export function isFixed(visit: Visit): boolean {
   return visit.fixedDate !== undefined || visit.fixedStart !== undefined || visit.fixedOrder !== undefined;
+}
+
+/** Visits the scheduler may place: REQUIRED or pinned. Unpinned wishes are never placed automatically. */
+export function isPlaceable(visit: Visit): boolean {
+  return visit.priority === 'REQUIRED' || isFixed(visit);
 }
 
 function evaluate({ day, available }: Pick<DayState, 'day' | 'available'>, route: readonly Item[], input: ScheduleInput): Evaluation | Rejection {

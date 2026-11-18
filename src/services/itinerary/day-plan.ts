@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { MealSlot, TimeWindow } from '../../scheduler';
+import { mealCountForSlots, type MealSlot, type TimeWindow } from '../../scheduler';
 import { ItineraryInputError, type PlaceRef, type TripInputs } from './types';
 
 /** Minutes reserved per meal slot. Not configurable yet (docs/questions.md, T12). */
@@ -15,16 +15,11 @@ export interface DayPlan {
   arrival?: { airport: PlaceRef; localDateTime: string; instant: string; immigrationMinutes: number; transferTo?: PlaceRef };
   /** `transferFrom` is the lodging left for the airport after the day ends. */
   departure?: { airport: PlaceRef; localDateTime: string; instant: string; bufferMinutes: number; transferFrom?: PlaceRef };
-  /** Daily legs into this airport carry luggage (direct-to-airport option). */
-  luggageInto?: PlaceRef;
-}
-
-const COUNTS: readonly (readonly MealSlot[])[] = [[], ['LUNCH'], ['LUNCH', 'DINNER'], ['BREAKFAST', 'LUNCH', 'DINNER']];
-
-/** Only the documented slot sets map to T5 meal counts; other sets are not reinterpreted by size. */
-export function mealCount(slots: readonly MealSlot[]): 0 | 1 | 2 | 3 | null {
-  const index = COUNTS.findIndex(set => set.length === slots.length && set.every(slot => slots.includes(slot)));
-  return index < 0 ? null : index as 0 | 1 | 2 | 3;
+  /**
+   * Daily legs that carry luggage: `ALL_LEGS` on a day trip without lodging (nowhere to leave it),
+   * `INTO_END` for the legs into the airport after a direct-to-airport checkout.
+   */
+  luggage?: 'ALL_LEGS' | 'INTO_END';
 }
 
 export function tripDates(startDate: string, endDate: string): string[] {
@@ -44,6 +39,19 @@ export function localInstant(localDateTime: string, timeZone: string): string {
 
 function lodgingFor(input: TripInputs, night: string): PlaceRef | undefined {
   return input.lodgings.find(lodging => lodging.checkIn <= night && night < lodging.checkOut)?.place;
+}
+
+/**
+ * Going straight to the airport needs time on the last day itself. When the check-in deadline is
+ * not after that day's activity start (an early-morning flight), the transfer leaves from the lodging.
+ */
+function directFits(date: string, activityStart: string, departureInstant: string, bufferMinutes: number, timeZone: string): boolean {
+  const deadline = Temporal.Instant.from(departureInstant).subtract({ minutes: bufferMinutes });
+  try {
+    return Temporal.Instant.compare(deadline, Temporal.Instant.from(localInstant(`${date}T${activityStart}`, timeZone))) > 0;
+  } catch {
+    return true; // An invalid activity start is reported when the day window is computed.
+  }
 }
 
 function validateVisits(input: TripInputs, errors: Record<string, string>): void {
@@ -92,20 +100,20 @@ export function planDays(input: TripInputs): DayPlan[] {
       errors.lodgings = '여행의 모든 숙박 날짜에 숙소가 필요합니다.';
       return null;
     }
+    const setting = settings.get(date);
+    const activity = { start: setting?.departureTime ?? input.activity.start, end: setting?.returnTime ?? input.activity.end };
     const start = lastNight ?? tonight ?? (first ? arrival?.airport : undefined);
-    const direct = input.luggageOption === 'DIRECT_TO_AIRPORT' || !lastNight;
+    const direct = !lastNight || input.luggageOption === 'DIRECT_TO_AIRPORT' &&
+      departureInstant !== '' && directFits(date, activity.start, departureInstant, input.departureBufferMinutes, input.timeZone);
     const end = tonight ?? (departure && direct ? departure.airport : lastNight);
     if (!start || !end) {
       errors.lodgings = '숙소가 없는 당일 여행은 도착·출발 항공편이 필요합니다.';
       return null;
     }
-    const setting = settings.get(date);
-    const count = mealCount(setting?.mealSlots ?? input.mealSlots);
+    const count = mealCountForSlots(setting?.mealSlots ?? input.mealSlots);
     if (count === null) errors[`daySettings.${date}.mealSlots`] = '끼니는 없음, 점심, 점심·저녁, 아침·점심·저녁 중 하나여야 합니다.';
-    const day: DayPlan = {
-      date, start, end, mealCount: count ?? 0,
-      activity: { start: setting?.departureTime ?? input.activity.start, end: setting?.returnTime ?? input.activity.end },
-    };
+    const day: DayPlan = { date, start, end, mealCount: count ?? 0, activity };
+    if (!tonight && !lastNight) day.luggage = 'ALL_LEGS';
     if (first && arrival) {
       day.arrival = { airport: arrival.airport, localDateTime: arrival.localDateTime, instant: arrivalInstant, immigrationMinutes: input.arrivalBufferMinutes,
         ...(start.id === arrival.airport.id ? {} : { transferTo: start }) };
@@ -113,7 +121,7 @@ export function planDays(input: TripInputs): DayPlan[] {
     if (last && departure) {
       day.departure = { airport: departure.airport, localDateTime: departure.localDateTime, instant: departureInstant, bufferMinutes: input.departureBufferMinutes,
         ...(end.id === departure.airport.id ? {} : { transferFrom: end }) };
-      if (end.id === departure.airport.id && lastNight) day.luggageInto = departure.airport;
+      if (end.id === departure.airport.id && lastNight) day.luggage = 'INTO_END';
     }
     return day;
   });

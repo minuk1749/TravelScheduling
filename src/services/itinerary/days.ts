@@ -1,19 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { CityProfile } from '../../fare';
 import {
-  calculateDayWindow, selectTravelMode, type DayWindowResult, type MealSlot, type RouteOptions,
-  type SchedulingDay, type Visit,
+  calculateDayWindow, isPlaceable, type DayWindowResult, type MealSlot, type SchedulingDay, type TimeWindow, type Visit,
 } from '../../scheduler';
 import type { DayPlan } from './day-plan';
-import { compareLeg } from './efficiency';
-import type { RouteBook } from './routes';
-import {
-  ItineraryInputError, type FlightConflict, type LegComparison, type TransferIssue, type TripInputs,
-} from './types';
-
-type Transfer =
-  | { minutes: number; comparison: LegComparison }
-  | { minutes: null; from: string; to: string; reason: TransferIssue['reason'] };
+import { arrivalTransfer, departureTransfer, type Transfer, type TransferContext } from './transfers';
+import { ItineraryInputError, type FlightConflict, type LegComparison, type TransferIssue } from './types';
 
 export interface PreparedDay {
   day: SchedulingDay;
@@ -24,70 +15,25 @@ export interface PreparedDay {
   skippedMeals: { date: string; slot: MealSlot }[];
 }
 
-export interface DayContext {
-  input: TripInputs;
-  profile: CityProfile | null;
-  routes: RouteBook;
+export interface DayContext extends TransferContext {
   visits: readonly Visit[];
   mealMinutes: Readonly<Record<MealSlot, number>>;
 }
 
-const DEPARTURE_TRANSFER_QUERIES = 4;
-
-function choose(context: DayContext, options: RouteOptions) {
-  return selectTravelMode(options, context.input.taxiPolicy, {
-    callBufferMinutes: context.profile?.callBufferMinutes, efficiencyThreshold: context.profile?.efficiencyThreshold, luggage: true,
-  });
+/** Stages 1–2 for one date before other dates' airport transfers are applied. */
+interface Draft {
+  plan: DayPlan;
+  arrival?: Transfer;
+  departure?: Transfer;
+  window: DayWindowResult;
 }
 
-function transferComparison(context: DayContext, date: string, from: string, to: string, departure: string, options: RouteOptions): Transfer {
-  const choice = choose(context, options);
-  if (!choice) return { minutes: null, from, to, reason: 'NO_ROUTE' };
-  return {
-    minutes: Math.ceil(choice.minutes),
-    comparison: compareLeg({ date, kind: 'AIRPORT', from, to, departure, selected: { mode: choice.mode, minutes: choice.minutes, fare: choice.fare, fixed: false } },
-      options, context.profile),
-  };
-}
+type Occupied = DayWindowResult['airportTransfers'][number] & { date: string };
 
-/** Airport → lodging, queried at the exact instant immigration ends. */
-async function arrivalTransfer(context: DayContext, plan: DayPlan): Promise<Transfer | undefined> {
-  const arrival = plan.arrival;
-  if (!arrival?.transferTo) return;
-  const departure = Temporal.Instant.from(arrival.instant).add({ minutes: arrival.immigrationMinutes }).toString();
-  const options = await context.routes.route(arrival.airport.id, arrival.transferTo.id, departure);
-  return transferComparison(context, plan.date, arrival.airport.id, arrival.transferTo.id, departure, options);
-}
-
-/**
- * Lodging → airport must arrive by the check-in buffer. Query backwards from that instant until the
- * duration at the queried departure fits the reserved time. The returned `minutes` (reserved time)
- * and `comparison.departure` are the same verified instant, which the day window then ends at.
- * Without such a departure within the query limit the transfer fails as UNVERIFIED.
- */
-async function departureTransfer(context: DayContext, plan: DayPlan): Promise<Transfer | undefined> {
-  const flight = plan.departure;
-  if (!flight?.transferFrom) return;
-  const from = flight.transferFrom.id, to = flight.airport.id;
-  const arriveBy = Temporal.Instant.from(flight.instant).subtract({ minutes: flight.bufferMinutes });
-  let reserved = 0;
-  for (let query = 0; query < DEPARTURE_TRANSFER_QUERIES; query++) {
-    const departure = arriveBy.subtract({ minutes: reserved }).toString();
-    const result = transferComparison(context, plan.date, from, to, departure, await context.routes.route(from, to, departure));
-    if (result.minutes === null) return result;
-    if (result.minutes <= reserved) return { ...result, minutes: reserved };
-    reserved = result.minutes;
-  }
-  return { minutes: null, from, to, reason: 'UNVERIFIED' };
-}
-
-/** Immigration and the arrival transfer must finish before the departure transfer has to start. */
-function flightConflict(plan: DayPlan, window: DayWindowResult): FlightConflict | undefined {
-  const arrival = window.airportTransfers.find(transfer => transfer.direction === 'arrival');
-  const departure = window.airportTransfers.find(transfer => transfer.direction === 'departure');
-  if (!arrival || !departure || Temporal.Instant.compare(arrival.end, departure.start) <= 0) return;
-  return { date: plan.date, arrivalReadyAt: arrival.end, departureStartBy: departure.start };
-}
+const compare = (a: string, b: string) => Temporal.Instant.compare(Temporal.Instant.from(a), Temporal.Instant.from(b));
+const later = (a: string, b: string) => compare(a, b) >= 0 ? a : b;
+const earlier = (a: string, b: string) => compare(a, b) <= 0 ? a : b;
+const asWindow = (start: string, end: string): TimeWindow | null => compare(start, end) < 0 ? { start, end } : null;
 
 function dayWindow(context: DayContext, plan: DayPlan, arrival?: Transfer, departure?: Transfer): DayWindowResult {
   const { input } = context;
@@ -109,47 +55,101 @@ function dayWindow(context: DayContext, plan: DayPlan, arrival?: Transfer, depar
   }
 }
 
-/** On flight days, a meal whose window cannot hold it around the flight is skipped, not a conflict. */
-function flightDayMeals(context: DayContext, plan: DayPlan, window: DayWindowResult) {
+async function draftDay(context: DayContext, plan: DayPlan): Promise<Draft> {
+  const [arrival, departure] = await Promise.all([arrivalTransfer(context, plan), departureTransfer(context, plan)]);
+  return { plan, arrival, departure, window: dayWindow(context, plan, arrival, departure) };
+}
+
+/**
+ * An airport transfer can cross midnight (late arrival, early-morning departure). Its instant range
+ * then also bounds the adjacent dates: nothing may start before an arrival transfer ends or end
+ * after a departure transfer starts. Same-date transfers are already applied by the scheduler.
+ */
+function clipToTransfers(window: DayWindowResult, date: string, occupied: readonly Occupied[]): { window: DayWindowResult; clipped: boolean } {
+  let available = window.available;
+  let clipped = false;
+  for (const transfer of occupied) {
+    if (!available || transfer.date === date) continue;
+    if (compare(transfer.end, available.start) <= 0 || compare(available.end, transfer.start) <= 0) continue;
+    clipped = true;
+    available = transfer.direction === 'arrival'
+      ? asWindow(later(available.start, transfer.end), available.end)
+      : asWindow(available.start, earlier(available.end, transfer.start));
+  }
+  if (!clipped) return { window, clipped };
+  const meals = window.meals.map(({ slot, window: meal }) => ({
+    slot, window: available && meal ? asWindow(later(meal.start, available.start), earlier(meal.end, available.end)) : null,
+  }));
+  return { window: { ...window, available, meals }, clipped };
+}
+
+type TripConflict = { conflict: FlightConflict; dates: readonly string[] };
+
+/** Immigration and the arrival transfer must finish before the departure transfer has to start, on any dates. */
+function flightConflicts(occupied: readonly Occupied[]): TripConflict[] {
+  return occupied.filter(transfer => transfer.direction === 'departure').flatMap(departure => occupied
+    .filter(arrival => arrival.direction === 'arrival' && compare(arrival.end, departure.start) > 0)
+    .map(arrival => ({
+      conflict: { date: departure.date, arrivalReadyAt: arrival.end, departureStartBy: departure.start },
+      dates: [arrival.date, departure.date],
+    })));
+}
+
+/** On flight-constrained days, a meal whose window cannot hold it around the flight is skipped, not a conflict. */
+function skipUnusableMeals(context: DayContext, date: string, window: DayWindowResult) {
   const skipped: PreparedDay['skippedMeals'] = [];
-  if (!plan.arrival && !plan.departure) return { window, skipped };
   const meals = window.meals.filter(({ slot, window: meal }) => {
     const usable = meal !== null && Temporal.Instant.from(meal.end).epochMilliseconds -
       Temporal.Instant.from(meal.start).epochMilliseconds >= context.mealMinutes[slot] * 60_000;
-    if (!usable) skipped.push({ date: plan.date, slot });
+    if (!usable) skipped.push({ date, slot });
     return usable;
   });
   return { window: { ...window, meals }, skipped };
 }
 
-/** Stages 1–2 for one date plus the representative-departure matrix used for ordering. */
-export async function prepareDay(context: DayContext, plan: DayPlan): Promise<PreparedDay> {
-  const [arrival, departure] = await Promise.all([arrivalTransfer(context, plan), departureTransfer(context, plan)]);
+/** Luggage-carrying daily legs: every leg on a day trip without lodging, or the legs into a direct-to-airport end. */
+function luggageLegs(plan: DayPlan, ids: readonly string[]): SchedulingDay['legSettings'] {
+  if (!plan.luggage) return undefined;
+  const targets = plan.luggage === 'ALL_LEGS' ? ids : [plan.end.id];
+  return new Map(ids.map(id => [id, new Map(targets.map(target => [target, { luggage: true }]))]));
+}
+
+async function finishDay(context: DayContext, draft: Draft, occupied: readonly Occupied[], conflicts: readonly TripConflict[]): Promise<PreparedDay> {
+  const { plan, arrival, departure } = draft;
   const transferIssues: TransferIssue[] = [];
   if (arrival?.minutes === null) transferIssues.push({ date: plan.date, direction: 'ARRIVAL', from: arrival.from, to: arrival.to, reason: arrival.reason });
   if (departure?.minutes === null) transferIssues.push({ date: plan.date, direction: 'DEPARTURE', from: departure.from, to: departure.to, reason: departure.reason });
-  const computed = dayWindow(context, plan, arrival, departure);
-  const conflict = flightConflict(plan, computed);
-  const flightConflicts = conflict ? [conflict] : [];
-  const meals = flightDayMeals(context, plan, computed);
+  const clipped = clipToTransfers(draft.window, plan.date, occupied);
+  const meals = plan.arrival || plan.departure || clipped.clipped
+    ? skipUnusableMeals(context, plan.date, clipped.window) : { window: clipped.window, skipped: [] };
   // A failed airport transfer or overlapping flight constraints make the day unusable; the service reports CONFLICT.
-  const window = transferIssues.length || flightConflicts.length
+  const window = transferIssues.length || conflicts.some(({ dates }) => dates.includes(plan.date))
     ? { ...meals.window, available: null, meals: meals.window.meals.map(({ slot }) => ({ slot, window: null })) }
     : meals.window;
 
-  // Every visit that may land on this date; the scheduler decides which ones it places.
-  const ids = [plan.start.id, plan.end.id, ...context.visits
-    .filter(visit => visit.fixedDate === undefined || visit.fixedDate === plan.date)
-    .map(visit => visit.locationId)];
+  // Only visits the scheduler may place on this date; unpinned wishes are never routed.
+  const ids = [...new Set([plan.start.id, plan.end.id, ...context.visits
+    .filter(visit => isPlaceable(visit) && (visit.fixedDate === undefined || visit.fixedDate === plan.date))
+    .map(visit => visit.locationId)])];
   const routes = window.available ? await context.routes.matrix(ids, window.available.start) : new Map();
-  const luggage = plan.luggageInto;
-  const legSettings = luggage && new Map(ids.map(id => [id, new Map([[luggage.id, { luggage: true }]])]));
+  const legSettings = luggageLegs(plan, ids);
   return {
     day: { date: plan.date, window, startLocationId: plan.start.id, endLocationId: plan.end.id, routes, ...(legSettings ? { legSettings } : {}) },
     ...(arrival?.minutes != null ? { arrival: arrival.comparison } : {}),
     ...(departure?.minutes != null ? { departure: departure.comparison } : {}),
     transferIssues,
-    flightConflicts,
+    flightConflicts: conflicts.filter(({ conflict }) => conflict.date === plan.date).map(({ conflict }) => conflict),
     skippedMeals: meals.skipped,
   };
+}
+
+/**
+ * Stages 1–2 for every date plus the representative-departure matrix used for ordering. Airport
+ * transfers are queried first so that each date's window also respects transfers of other dates.
+ */
+export async function prepareDays(context: DayContext, plans: readonly DayPlan[]): Promise<PreparedDay[]> {
+  const drafts = await Promise.all(plans.map(plan => draftDay(context, plan)));
+  const occupied = drafts.flatMap(({ plan, window }) => window.airportTransfers.map(transfer => ({ ...transfer, date: plan.date })));
+  const conflicts = flightConflicts(occupied);
+  return Promise.all(drafts.map(draft => finishDay(context, draft, occupied, conflicts)));
 }

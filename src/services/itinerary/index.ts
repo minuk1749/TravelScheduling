@@ -1,7 +1,7 @@
 import type { CityProfile } from '../../fare';
 import type { ScheduleResult } from '../../scheduler';
 import { MEAL_MINUTES, planDays, tripDates } from './day-plan';
-import { prepareDay, type PreparedDay } from './days';
+import { prepareDays, type PreparedDay } from './days';
 import { compareLeg, summarize } from './efficiency';
 import { resolvePlaces, schedulerVisits } from './places';
 import { FareConverter, RouteBook } from './routes';
@@ -42,7 +42,7 @@ export class ItineraryService {
     const routes = new RouteBook(this.deps.travel, fares, input.timeZone, places.locations);
     const visits = schedulerVisits(input, places);
     const context = { input, profile, routes, visits, mealMinutes: MEAL_MINUTES };
-    const prepared = await Promise.all(plans.map(plan => prepareDay(context, plan)));
+    const prepared = await prepareDays(context, plans);
 
     const verified = await scheduleWithActualRoutes({
       days: prepared.map(day => day.day), visits, mealMinutes: MEAL_MINUTES, taxiPolicy: input.taxiPolicy,

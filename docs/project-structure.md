@@ -23,7 +23,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | 경로 | 책임 | 의존해도 되는 것 | 의존하면 안 되는 것 |
 |---|---|---|---|
 | `src/app/` | 화면, 서버 액션, API 라우트(`api/auth`, `api/places`, `api/trips`, `api/trips/[id]/itinerary`). 세션 확인·입력 검증·응답 변환 | 서비스, 각 모듈의 `server.ts`, `auth` | 스케줄링 알고리즘 직접 구현, 브라우저에서 DB·비밀 키 접근 |
-| `src/services/itinerary/` | **동선 생성 서비스(T12).** 날짜별 앵커·시간창 조립(`day-plan.ts`, `days.ts`), 장소 조회(`places.ts`), 단위·요금 변환과 구간 조회(`routes.ts`), 실제 출발 시각 재조회 루프(`verification.ts`), 비교·효율 요약(`efficiency.ts`), 포트·결과 타입(`types.ts`) | `scheduler`, `fare`, `places`·`travel-time`의 포트 타입 | SQL, HTTP 객체, 구체 Google 어댑터, 환경 변수 |
+| `src/services/itinerary/` | **동선 생성 서비스(T12).** 날짜별 앵커·짐 구간(`day-plan.ts`), 시간창·자정을 넘는 공항 이동 반영·행렬(`days.ts`), 공항 이동 조회(`transfers.ts`), 장소 조회(`places.ts`), 단위·요금 변환과 구간 조회(`routes.ts`), 실제 출발 시각 재조회 루프(`verification.ts`), 비교·효율 요약(`efficiency.ts`), 포트·결과 타입(`types.ts`) | `scheduler`, `fare`, `places`·`travel-time`의 포트 타입 | SQL, HTTP 객체, 구체 Google 어댑터, 환경 변수 |
 | `src/itineraries/` | 동선 생성 HTTP 처리(`http.ts`: 인증·소유권·오류 변환)와 구체 구현 조립(`server.ts`) | 서비스, 저장소, 각 모듈 `server.ts` | 스케줄링 계산 |
 | `src/repositories/` | 여행 생성(`trip-inputs.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 일정 저장(`itineraries.ts`) | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
 | `src/auth.ts`, `src/lib/auth/` | Google 로그인, 세션, 여행 소유권 확인(`authorizeTrip`), 인증 SQL(`store.ts`) | `lib/db` | 화면 |

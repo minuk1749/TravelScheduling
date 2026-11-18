@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { scheduleVisits, type ScheduleInput, type ScheduleResult, type Visit } from './placement';
+import { isFixed, isPlaceable as isRequested, scheduleVisits, type ScheduleInput, type ScheduleResult, type Visit } from './placement';
 import { selectTravelMode } from './transport';
 
 export interface CapacityTimeSummary {
@@ -32,9 +32,6 @@ export type CapacityResult = CapacityDetails & (
   | { status: 'CONFLICT'; recommendation: null }
 );
 
-const isFixed = (visit: Visit) =>
-  visit.fixedDate !== undefined || visit.fixedStart !== undefined || visit.fixedOrder !== undefined;
-const isRequested = (visit: Visit) => visit.priority === 'REQUIRED' || isFixed(visit);
 const minutesBetween = (start: string, end: string) =>
   (Temporal.Instant.from(end).epochMilliseconds - Temporal.Instant.from(start).epochMilliseconds) / 60_000;
 

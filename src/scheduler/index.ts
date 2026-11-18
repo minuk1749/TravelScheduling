@@ -20,6 +20,16 @@ export function mealSlotsForCount(count: 0 | 1 | 2 | 3): MealSlot[] {
   }
 }
 
+/** Inverse of `mealSlotsForCount`; null for any other slot set (including duplicates). */
+export function mealCountForSlots(slots: readonly MealSlot[]): 0 | 1 | 2 | 3 | null {
+  if (new Set(slots).size !== slots.length) return null;
+  for (const count of [0, 1, 2, 3] as const) {
+    const expected = mealSlotsForCount(count);
+    if (slots.length === expected.length && expected.every(slot => slots.includes(slot))) return count;
+  }
+  return null;
+}
+
 export interface DayWindowInput {
   date: string;
   timeZone: string;
@@ -86,6 +96,6 @@ export function calculateDayWindow(input: DayWindowInput): DayWindowResult {
   return { timeZone: input.timeZone, available, meals, airportTransfers };
 }
 
-export { scheduleVisits, type ScheduleInput, type ScheduleResult, type SchedulingDay, type Visit } from './placement';
+export { isPlaceable, scheduleVisits, type ScheduleInput, type ScheduleResult, type SchedulingDay, type Visit } from './placement';
 export { selectTravelMode, type RouteEstimate, type RouteOptions, type TaxiPolicy, type TravelMode } from './transport';
 export { checkCapacity, type CapacityResult, type CapacityRecommendation, type CapacityTimeSummary } from './capacity';
