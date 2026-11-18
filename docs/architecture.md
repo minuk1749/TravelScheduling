@@ -1,8 +1,8 @@
 # 아키텍처
 
-기준: 2026-11-18, T10 시작 시 원격 `develop`의 `1b23d6f`를 바탕으로 갱신.
+기준: 2026-11-18, T11 시작 시 원격 `develop`의 `6e1d5cc`를 바탕으로 갱신.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
-**현재**는 T1–T10에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
+**현재**는 T1–T11에 있는 코드, **후속 계약**은 아직 구현하지 않은 경계다. 후속 계약에 적힌
 디렉터리·서비스·HTTP 응답은 아직 존재하지 않는다. 구조나 계약 변경 시 이 문서와
 [결정 기록](decisions/0001-pure-core-and-service-boundaries.md)을 같은 PR에서 갱신한다.
 
@@ -13,6 +13,8 @@ src/
   app/                         현재: App Router, 홈/manifest, 서버 액션
     api/auth/[...nextauth]/     현재: Auth.js HTTP 진입점
     api/trips/[id]/             현재: 소유권 확인 후 { id }만 반환
+    trips/[id]/settings/        현재 T11: 생활 설정·시간창/고정 시각 충돌 미리보기
+    api/trips/[id]/settings/    현재 T11: 소유자 설정 GET/PUT
     trips/new/                  현재 T10: 여행·항공·숙소·장소 입력
     api/trips/                  현재 T10: 인증된 생성 POST
     api/city-profiles/          현재 T10: 인증된 프로필 GET
@@ -32,8 +34,10 @@ src/
   places/                      현재 T8: 장소 포트·좌표 캐시·Google 어댑터·HTTP 처리
   travel-time/                 현재 T9: 이동시간 포트·선택적 캐시·Google 어댑터·서버 팩터리
   trips/                       현재 T10: 공유 입력 검증·HTTP 처리·서버 팩터리
-  repositories/                현재 T10: 여행 생성·장소 ID 저장·프로필 조회. 수정/일정은 후속 T11/T12
+  repositories/                현재 T10/T11: 여행 생성·장소 ID 저장·프로필 조회·생활 설정 수정. 일정은 후속 T12
   services/itinerary.ts         후속 T12: 입력 조립, 재조회 루프, 결과 저장
+  settings/                    현재 T11: 설정 검증·계산·서비스·HTTP·조립
+  repositories/living-settings.ts 현재 T11: 설정 읽기·잠금/revision/원자적 수정
 migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비
 public/                        현재: 온라인 전용 sw.js, 아이콘
 tests/                         현재: node:test + tsx, SQL/HTTP/순수 함수 검사
@@ -68,7 +72,7 @@ type import한다. 런타임에는 `index → capacity → placement → transpo
 `GET /api/places → auth → PlaceProvider → Google/좌표 캐시`,
 `/trips/new → POST /api/trips → auth → parseTripDraft → tripInputRepository → PostgreSQL`,
 `GET /api/city-profiles → auth → cityProfileRepository`다.
-스케줄러·요금 함수는 테스트에서 호출하며 아직 API/화면과 연결되지 않았다.
+T11 생활 설정은 `/trips/[id]/settings → GET/PUT /api/trips/[id]/settings → LivingSettingsService → LivingSettingsRepository`로 연결한다. 공용 계산은 기존 calculateDayWindow를 호출한다. 전체 경로 생성·요금 연결은 후속 T12다.
 
 다음은 T8–T13에서 연결할 흐름이다. 화살표는 데이터 이동이며 호출 주체는 API의 서비스다.
 
@@ -289,6 +293,26 @@ T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisio
 UI는 Google Maps와 제공자 attribution을 표시하며 외부 링크는 http/https만 허용한다.
 입력 이름과 검색 결과는 화면 메모리에만 존재한다. 새로고침 시 미저장 입력 복구는 제공하지 않는다.
 
+### T11 생활 설정 계약
+
+[ADR 0007](decisions/0007-living-settings.md)에 설정 상속·동시 편집·재계산 범위를 기록한다.
+[타입](../src/settings/model.ts)의 `LivingSettings`는 기본 시각·식사 슬롯/시간대·택시 정책과
+날짜별 nullable 덮어쓰기다. `GET/PUT /api/trips/[id]/settings`는 세션 소유권을 확인한다.
+PUT은 `{ revision, settings }`, 응답은 `{ snapshot, calculation }`이다.
+[서비스](../src/settings/service.ts)는 [공유 검증](../src/settings/input.ts)과
+[계산](../src/settings/calculate.ts)을 호출하고 [저장소](../src/repositories/living-settings.ts)가
+여행 행 잠금 뒤 소유권·revision을 다시 검사해 기본값/날짜별 행만 원자적으로 저장한다.
+기존 고정 방문과 결과는 수정하지 않는다. 읽기는 repeatable read 스냅샷이다.
+날짜별 0끼와 null 상속은 구별하며 기존 날짜 행의 created_at은 유지한다.
+
+`calculation.scope = TIME_WINDOWS`: 활동/식사창과 항공 버퍼, 고정 시각·체류시간의
+시간창 충돌만 검사한다. 공항 이동은 0분으로 두며 실제 이동·영업시간·고정 순서·수단·식사
+배치와 택시 정책별 경로 재선택은 T12/T13 연결 필요다. **전체 동선 재계산은 미구현이며
+T11 완료 기준의 전체 동선 의미는 미충족이다.** 화면에도 범위를 알린다.
+서버 저장 실패 시 UI는 초안을 보존하고 재시도한다. 변경된 입력은 409로 거부하며 사용자가
+명시적으로 다시 불러온다. 전체 itinerary input_hash는 이 설정 revision과 별도로 계산해야 한다.
+검증/후속 연결은 [T11 인계](t11-handoff.md)에 기록한다.
+
 ## 5. 저장 형식·시간대 변환
 
 결정 근거: [ADR 0002](decisions/0002-time-storage-and-error-contracts.md),
@@ -330,7 +354,7 @@ UI는 Google Maps와 제공자 attribution을 표시하며 외부 링크는 http
 | `fixed_date` + `fixed_time` | 여행 시간대에서 `fixedStart` instant로 변환. 날짜 없이 시각만 저장된 행은 입력 보완 필요 |
 | 날짜별 null 설정 | 여행 기본값 상속. `meal_slots: []`는 끼니 없음이며 null과 다름 |
 | `meal_slots`, `meal_windows` JSONB | 슬롯 집합과 `{start,end}` 검증. 현재 SQL 테스트의 `["11:30","14:00"]` 형태도 변환 필요 |
-| 슬롯 집합 → T5의 `mealCount` | `[]/[LUNCH]/[LUNCH,DINNER]/[BREAKFAST,LUNCH,DINNER]`만 수로 직접 변환 가능. `[DINNER]` 등을 길이만 세어 점심으로 바꾸지 않음. T11에서 명시적 슬롯 API/제약을 결정 |
+| 슬롯 집합 → T5의 `mealCount` | `[]/[LUNCH]/[LUNCH,DINNER]/[BREAKFAST,LUNCH,DINNER]`만 수로 직접 변환 가능. `[DINNER]` 등을 길이만 세어 점심으로 바꾸지 않음. T11은 countForSlots로 이 네 조합만 허용하며 임의 조합은 거부 |
 | `stops`/`legs` SQL | 현재 MEAL 슬롯 종류, leg 시간/양 끝점, 사용자 구간 고정 입력 등 저장 필드가 충분하지 않음. T12/T13에서 마이그레이션을 동반해 보완 |
 
 시간은 여행의 IANA 시간대를 항상 함께 전달한다. 현지 입력은 `Temporal`의

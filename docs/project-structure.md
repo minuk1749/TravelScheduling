@@ -1,7 +1,7 @@
 # 프로젝트 구조 요약
 
 작업 전에 읽는 짧은 지도다. 상세 계약과 데이터 흐름은 [아키텍처](architecture.md), 결정 근거는 [결정 기록](decisions/)에 있다.
-모듈을 추가·이동하거나 연결 방식이 바뀌면 **같은 PR에서 이 문서를 갱신**한다. (기준: T9 머지 시점의 `develop`)
+모듈을 추가·이동하거나 연결 방식이 바뀌면 **같은 PR에서 이 문서를 갱신**한다. (기준: T11 작업, develop `6e1d5cc`)
 
 ## 기술과 검증 명령
 
@@ -30,9 +30,13 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `src/fare/` | **순수 계산.** 도시 프로필 타입, 택시 요금 추정 | `Temporal` | DB, 네트워크 |
 | `src/places/` | 장소 포트(`index.ts`), Google 어댑터, 좌표 캐시, 입력 검증, 영업시간 변환, HTTP 핸들러, 조립(`server.ts`) | `scheduler` 타입, `auth` | 이름·영업시간 등 상세 저장(약관) |
 | `src/travel-time/` | 이동시간 포트(`index.ts`), Google 어댑터, 캐시, 검증, 조립(`server.ts`) | `scheduler` 타입 | 이동수단 선택(스케줄러 책임), 택시 요금 계산(`fare` 책임) |
+| `src/components/` | T10 입력·장소 검색·프로필, T11 생활 설정 폼/필드/미리보기 | 브라우저용 검증·계산, HTTP | DB·비밀 키 |
+| `src/trips/` | T10 입력 검증·생성 HTTP·서버 조립 | 인증, 여행 생성·도시 프로필 저장소 | 전체 동선 생성 |
+| `src/settings/` | 생활 설정 타입·검증·시간창 재계산·서비스·HTTP·서버 조립 | scheduler 공개 함수, 저장소 포트, 인증 | 전체 경로 생성 중복 구현 |
+| `src/repositories/` | 여행 생성, 도시 프로필 읽기, 생활 설정 읽기/원자적 수정 | pg, 설정 검증·타입 | 스케줄러 실행·외부 API |
 | `tests/` | 순수 함수·SQL·HTTP·구조 검사. `fixtures/`(가짜 외부 응답), `helpers/database.ts` | 모든 모듈 | 실제 Google 키 |
 
-**아직 없는 모듈(예정):** `src/repositories/`(여행·장소·일정 SQL), `src/services/itinerary.ts`(T12 동선 생성), 입력·결과 화면(T10·T11·T13).
+**아직 없는 모듈(예정):** 전체 입력·일정 저장소, `src/services/itinerary.ts`(T12 동선 생성), 결과 화면(T13).
 
 ## 연결 방식
 
@@ -41,6 +45,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - **조립 지점:** 구체 구현을 고르는 곳은 각 모듈의 `server.ts` 하나다. 모듈 import 시점에는 연결·네트워크 작업을 하지 않고, 처음 쓸 때 만든다. 테스트는 같은 인터페이스에 가짜 구현을 넣는다.
 - **오류:** 입력 오류(`*InputError`)와 제공자 장애(`*ProviderError`)를 구분한다. 장애를 빈 결과나 null로 숨기지 않는다.
 - **시간:** 모든 시각은 IANA 시간대와 함께 다룬다. 현지 날짜·시각 문자열과 오프셋이 있는 instant를 구분한다.
+- **생활 설정:** `/trips/[id]/settings` → GET/PUT `/api/trips/[id]/settings` → LivingSettingsService → LivingSettingsRepository. 여행 생성 성공 화면에서 진입한다. 설정 변경 즉시 scheduler의 시간창을 다시 계산하며 고정 시각 충돌을 표시한다. 전체 동선 재계산은 T12/T13 연결 필요이며 현재 결과는 TIME_WINDOWS다.
 
 ## 중요한 설계 이유
 
@@ -51,5 +56,6 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | 장소는 좌표만 캐시 | Google 약관이 상세 정보 저장을 허용하지 않기 때문 | [ADR 0003](decisions/0003-places-cache-policy.md) |
 | 마이그레이션 이력·행 시각 | 스키마 변경이 쌓여도 환경 간 상태가 어긋나지 않게 하기 위해 | [ADR 0004](decisions/0004-database-migrations-and-timestamps.md) |
 | 이동시간 제공자와 캐시 | 행렬 한도 분할, 요금 없음/경로 없음 구분, 약관 범위 안의 캐시 | [ADR 0005](decisions/0005-travel-time-provider-and-cache.md) |
+| 생활 설정 상속·저장·부분 재계산 | null/0끼 구별, 동시 편집 방지, 전체 동선과 시간창 미리보기 구분 | [ADR 0007](decisions/0007-living-settings.md) |
 
 `tests/architecture.test.ts`가 코어의 I/O 금지, 아키텍처 문서의 타입 계약과 실제 export 일치, 문서 링크 유효성을 검사한다.
