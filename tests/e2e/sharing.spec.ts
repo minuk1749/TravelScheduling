@@ -26,7 +26,7 @@ test('T14 375px anonymous share is read-only, no-referrer/noindex, rotation expi
   await page.screenshot({ path: testInfo.outputPath('share-375.png'), fullPage: true });
   const next = await service.rotate('trip', 'owner');
   await page.reload();
-  await expect(page.getByRole('alert')).toHaveText('공유 링크가 유효하지 않거나 만료되었습니다.');
+  await expect(page.getByRole('main').getByRole('alert')).toHaveText('공유 링크가 유효하지 않거나 만료되었습니다.');
   await page.goto(`/share/${next}`);
   await expect(page.getByText('일정을 만들었습니다')).toBeVisible();
   // Real route exports expose GET only; Next rejects these before calling any providers.
