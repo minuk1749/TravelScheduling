@@ -64,6 +64,7 @@ test('T10 UI flows 2–5: profile, validation, multiple lodgings, edit/remove, b
     button('여행 저장'); await waitFor(() => error(/저장 실패/));
     assert.equal((view.getByLabelText('방문 장소 2 검색') as HTMLInputElement).value, '식당');
     button('여행 저장'); await view.findByRole('heading', { name: '여행 입력을 저장했습니다' });
+    assert.equal(view.getByRole('link', { name: '생활 설정으로' }).getAttribute('href'), '/trips/saved-trip/settings');
     assert.equal(writes, 2); assert.equal(saved?.taxiPolicy, 'NEVER'); assert.equal(saved?.lodgings.length, 2);
     assert.deepEqual(saved?.visits.map(v => [v.kind, v.minutes, v.priority]), [['ATTRACTION', 90, 'REQUIRED'], ['RESTAURANT', 60, 'WISH']]);
     assert.doesNotMatch(JSON.stringify(saved), /호텔 A|호텔 B|ownerId/);

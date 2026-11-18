@@ -48,7 +48,7 @@ export function TripInputForm() {
     } catch { showErrors({ request: '연결을 확인하고 다시 시도해 주세요. 입력 내용은 유지됩니다.' }); }
     finally { inFlight.current = false; setSaving(false); }
   }
-  if (savedId) return <section className="input-card" role="status"><h2>여행 입력을 저장했습니다</h2><p>{draft.startDate} – {draft.endDate} · {draft.timeZone}</p><p>항공 {draft.flights.length}편 · 숙소 {draft.lodgings.length}곳 · 방문 장소 {draft.visits.length}곳</p><p>생활 설정과 동선 생성 기능은 준비 중입니다.</p><p className="field-hint">여행 번호: {savedId}</p><Link href="/">홈으로</Link></section>;
+  if (savedId) return <section className="input-card" role="status"><h2>여행 입력을 저장했습니다</h2><p>{draft.startDate} – {draft.endDate} · {draft.timeZone}</p><p>항공 {draft.flights.length}편 · 숙소 {draft.lodgings.length}곳 · 방문 장소 {draft.visits.length}곳</p><p><Link className="primary-link" href={`/trips/${encodeURIComponent(savedId)}/settings`}>생활 설정으로</Link></p><p className="field-hint">여행 번호: {savedId}</p><Link href="/">홈으로</Link></section>;
   return <>
     <ol className="steps" aria-label="입력 단계">{steps.map((label, index) => <li key={label} aria-current={step === index ? 'step' : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
     <form noValidate onSubmit={event => { event.preventDefault(); void advance(); }}>
