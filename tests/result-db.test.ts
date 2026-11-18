@@ -15,7 +15,7 @@ test('T13 SQL constraints persist across generation; stale/foreign writes are at
   await withDatabase(async client => {
     await migrate(client);
     const user = randomUUID();
-    await client.query("INSERT INTO users (id, google_id, email) VALUES ($1, $1, 't13@example.test')", [user]);
+    await client.query("INSERT INTO users (id, google_id, email) VALUES ($1, $2, 't13@example.test')", [user, user]);
     const input = sampleTrip();
     const id = await insertTrip(client, user, { ...input,
       flights: input.flights.map(f => ({ direction: f.direction, localDateTime: f.localDateTime, googlePlaceId: f.airport.googlePlaceId })),
