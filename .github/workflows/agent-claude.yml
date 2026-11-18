@@ -189,5 +189,5 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           gh label create agent-paused --color b60205 --description "자동 루프 일시중단" --force >/dev/null
-          printf 'Claude 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. 해결한 뒤 이 이슈를 닫고 Actions에서 agent-claude를 같은 이슈 번호로 다시 실행해 주세요.\n' "$ISSUE" "$RUN_URL" > "$RUNNER_TEMP/p.md"
+          printf 'Claude 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. **원인을 해결한 뒤 이 이슈를 닫으면 같은 Claude 작업이 자동으로 다시 실행됩니다.**\n\n<!-- resume:claude issue=%s pr=%s -->\n' "$ISSUE" "$RUN_URL" "$ISSUE" "$PR" > "$RUNNER_TEMP/p.md"
           gh issue create --title "자동 루프 일시중단: Claude 작업 #$ISSUE" --label agent-paused --body-file "$RUNNER_TEMP/p.md"
