@@ -2,7 +2,7 @@ import { checkCapacity, type CapacityResult, type RouteOptions, type ScheduleInp
 import type { RouteBook } from './routes';
 
 /**
- * Re-schedule rounds (ADR 0007). On the Tokyo sample (tests/itinerary-service.test.ts) the OK
+ * Re-schedule rounds (ADR 0008). On the Tokyo sample (tests/itinerary-service.test.ts) the OK
  * trip verifies in round 5 and the over-capacity trip in round 3: partially replaced route tables
  * can move visits between days, so a few rounds are normal. Each round costs one capacity search
  * (tens of ms) plus at most one route query per unverified leg; 8 leaves margin over the sample.

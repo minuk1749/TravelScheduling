@@ -156,3 +156,74 @@ test('T12 direct-to-airport falls back to a lodging transfer when check-in close
   const earlyMorning = direct('2026-12-03T00:30');
   assert.deepEqual([earlyMorning.end.id, earlyMorning.departure?.transferFrom?.id, earlyMorning.luggage], [placeId('hotel'), placeId('hotel'), undefined]);
 });
+
+// Airport transfers are hard bounds on every other date, not overlap checks: a window lying
+// wholly after the departure transfer starts (or wholly before the arrival transfer ends) is closed.
+
+test('T12 an evening window wholly after an overnight departure transfer starts cannot hold a pinned visit', async () => {
+  const trip = (visits: Parameters<typeof sampleTrip>[0]) => sampleTrip(visits, {
+    flights: [arrivalFlight, { ...departureFlight, localDateTime: '2026-12-03T00:30' }],
+    daySettings: [{ date: '2026-12-02', departureTime: '22:00', returnTime: '23:30', mealSlots: [] }],
+  });
+
+  // The lodging is left around 21:10 on Dec 2, before the 22:00–23:30 window opens.
+  const pinned = await service().service.compute(trip([{ key: 'tower', minutes: 10, fixedDate: '2026-12-02', fixedTime: '22:20' }]));
+  assert.equal(pinned.status, 'CONFLICT');
+  assert.deepEqual(pinned.capacity.unplaced.map(item => [item.visitId, item.fixed]), [['visit-tower', true]]);
+  assert.equal(pinned.efficiency, null);
+
+  const free = await service().service.compute(trip([{ key: 'tower', minutes: 10 }]));
+  assert.equal(free.status, 'OK');
+  const departure = free.comparisons.at(-1)!;
+  assert.equal(departure.kind, 'AIRPORT');
+  const [, secondDay] = schedule(free).days;
+  assert.deepEqual(itemsOf(secondDay), [], 'the closed evening holds nothing');
+  assert.ok(schedule(free).days.flatMap(itemsOf).every(item => Date.parse(item.end) <= Date.parse(departure.departure)));
+});
+
+test('T12 a next-day window wholly before a late arrival transfer ends cannot hold a pinned visit', async () => {
+  const night: Sample = { googlePlaceId: 'sample-night-spot', latitude: 35.6700, longitude: 139.7600 };
+  const places = new FixturePlaces(new Set(), new Map([[night.googlePlaceId, night]]));
+  const trip = (fixedTime?: string): TripInputs => ({
+    ...sampleTrip([], {
+      flights: [{ ...arrivalFlight, localDateTime: '2026-12-01T23:00' }, departureFlight],
+      // Immigration ends 00:30 on Dec 2, so the 00:00–00:20 window closes before the transfer even starts.
+      daySettings: [{ date: '2026-12-02', departureTime: '00:00', returnTime: '00:20', mealSlots: [] }],
+    }),
+    visits: [{
+      id: 'visit-night', place: { id: 'place-night', googlePlaceId: night.googlePlaceId }, kind: 'ATTRACTION', minutes: 5, priority: 'REQUIRED',
+      ...(fixedTime ? { fixedDate: '2026-12-02', fixedTime } : {}),
+    }],
+  });
+
+  const pinned = await service({ places }).service.compute(trip('00:08'));
+  assert.equal(pinned.status, 'CONFLICT');
+  assert.deepEqual(pinned.capacity.unplaced.map(item => [item.visitId, item.fixed]), [['visit-night', true]]);
+  assert.equal(pinned.efficiency, null);
+
+  const free = await service({ places }).service.compute(trip());
+  assert.equal(free.status, 'OK');
+  const arrival = free.comparisons[0];
+  assert.equal(arrival.kind, 'AIRPORT');
+  const readyAt = Date.parse(arrival.departure) + Math.ceil(arrival.selected.minutes) * 60_000;
+  const [, secondDay] = schedule(free).days;
+  assert.deepEqual(itemsOf(secondDay), []);
+  assert.ok(schedule(free).days.flatMap(itemsOf).every(item => Date.parse(item.start) >= readyAt));
+});
+
+test('T12 transfer bounds leave windows wholly outside the transfer untouched', async () => {
+  // Overnight departure: a Dec 2 window ending at 20:00 is before the ~21:10 transfer and stays open.
+  const evening = await service().service.compute(sampleTrip([{ key: 'tower', minutes: 30, fixedDate: '2026-12-02', fixedTime: '19:00' }], {
+    flights: [arrivalFlight, { ...departureFlight, localDateTime: '2026-12-03T00:30' }],
+    daySettings: [{ date: '2026-12-02', departureTime: null, returnTime: '20:00', mealSlots: [] }],
+  }));
+  assert.equal(evening.status, 'OK');
+  assert.ok(schedule(evening).days[1].stops.some(stop => 'visitId' in stop && stop.visitId === 'visit-tower'));
+
+  // Late arrival: the regular 09:00 start on Dec 2 is long after the transfer ends.
+  const morning = await service().service.compute(sampleTrip([{ key: 'tower', minutes: 30, fixedDate: '2026-12-02', fixedTime: '09:30' }], {
+    flights: [{ ...arrivalFlight, localDateTime: '2026-12-01T23:00' }, departureFlight],
+  }));
+  assert.equal(morning.status, 'OK');
+  assert.ok(schedule(morning).days[1].stops.some(stop => 'visitId' in stop && stop.visitId === 'visit-tower'));
+});

@@ -61,21 +61,21 @@ async function draftDay(context: DayContext, plan: DayPlan): Promise<Draft> {
 }
 
 /**
- * An airport transfer can cross midnight (late arrival, early-morning departure). Its instant range
- * then also bounds the adjacent dates: nothing may start before an arrival transfer ends or end
- * after a departure transfer starts. Same-date transfers are already applied by the scheduler.
+ * An airport transfer can cross midnight (late arrival, early-morning departure), so its instants
+ * also bound the other dates: the traveler is in the city only after the arrival transfer ends and
+ * until the departure transfer starts. These are hard bounds, not overlap checks — a window lying
+ * wholly before the arrival or after the departure becomes unavailable. Same-date transfers are
+ * already applied by the scheduler.
  */
 function clipToTransfers(window: DayWindowResult, date: string, occupied: readonly Occupied[]): { window: DayWindowResult; clipped: boolean } {
   let available = window.available;
-  let clipped = false;
   for (const transfer of occupied) {
     if (!available || transfer.date === date) continue;
-    if (compare(transfer.end, available.start) <= 0 || compare(available.end, transfer.start) <= 0) continue;
-    clipped = true;
     available = transfer.direction === 'arrival'
       ? asWindow(later(available.start, transfer.end), available.end)
       : asWindow(available.start, earlier(available.end, transfer.start));
   }
+  const clipped = available?.start !== window.available?.start || available?.end !== window.available?.end;
   if (!clipped) return { window, clipped };
   const meals = window.meals.map(({ slot, window: meal }) => ({
     slot, window: available && meal ? asWindow(later(meal.start, available.start), earlier(meal.end, available.end)) : null,

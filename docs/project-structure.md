@@ -60,6 +60,6 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | 마이그레이션 이력·행 시각 | 스키마 변경이 쌓여도 환경 간 상태가 어긋나지 않게 하기 위해 | [ADR 0004](decisions/0004-database-migrations-and-timestamps.md) |
 | 이동시간 제공자와 캐시 | 행렬 한도 분할, 요금 없음/경로 없음 구분, 약관 범위 안의 캐시 | [ADR 0005](decisions/0005-travel-time-provider-and-cache.md) |
 | 생활 설정 상속·저장·부분 재계산 | null/0끼 구별, 동시 편집 방지, 전체 동선과 시간창 미리보기 구분 | [ADR 0007 생활 설정](decisions/0007-living-settings.md) |
-| 동선 생성 재조회 루프·저장 | 실제 출발 시각 재조회 후 순수 스케줄러 재실행으로 검사 규칙을 한 곳에 두고, 트립 잠금 + 입력 해시로 계산 중 변경을 감지 | [ADR 0007 동선 생성](decisions/0007-itinerary-generation.md) |
+| 동선 생성 재조회 루프·저장 | 실제 출발 시각 재조회 후 순수 스케줄러 재실행으로 검사 규칙을 한 곳에 두고, 트립 잠금 + 입력 해시로 계산 중 변경을 감지 | [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md) |
 
 `tests/architecture.test.ts`가 코어의 I/O 금지, 아키텍처 문서의 타입 계약과 실제 export 일치, 문서 링크 유효성을 검사한다.

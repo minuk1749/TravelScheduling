@@ -112,7 +112,7 @@ flowchart TD
    실제 배치 성공에 근거한다. 희망 장소는 고정한 경우에만 배치한다.
 6. T12 서비스가 선택된 구간을 실제 출발 instant로 재조회하고 요금·영업시간·시간창을 다시 검사한다.
    위반 시 고정 제약을 유지한 입력으로 재배치한다. 시도 상한(`MAX_ROUTE_ATTEMPTS` = 8)과 같은
-   미검증 구간 집합의 반복 탐지로 종료한다. 상한 근거와 루프 설계는 [ADR 0007 동선 생성](decisions/0007-itinerary-generation.md)에 있다.
+   미검증 구간 집합의 반복 탐지로 종료한다. 상한 근거와 루프 설계는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md)에 있다.
    검증되지 않은 일정은 `CONFLICT`로 보고하며 `OK`로 저장하지 않는다.
 7. 대중교통 기준과 정책 적용 결과의 이동시간·요금을 집계한다. 미상 요금은 0으로 합산하지 않는다.
    입력 해시와 결과를 함께 저장하고 API에서 JSON으로 직렬화한다.
@@ -246,7 +246,7 @@ SQL time·JSONB·`WISHLIST`를 검증·변환하고 누락 필드를 `INCOMPLETE
 Google ID를 함께 갖는 `PlaceRef`이며 ownerId는 담지 않는다(소유권은 HTTP 처리기가 먼저 확인한다).
 [일정 저장](../src/repositories/itineraries.ts)은 `trips` 행을 `FOR UPDATE`로 잠근 뒤 같은 트랜잭션에서
 입력 해시를 다시 계산하고, 다르면 아무것도 쓰지 않고 `STALE`을 반환한다. T11 [생활 설정 저장소](../src/repositories/living-settings.ts)도
-같은 `trips` 행을 `FOR UPDATE`로 잠그므로 설정 수정과 일정 저장이 직렬화된다. 상세는 [ADR 0007 동선 생성](decisions/0007-itinerary-generation.md).
+같은 `trips` 행을 `FOR UPDATE`로 잠그므로 설정 수정과 일정 저장이 직렬화된다. 상세는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md).
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.
 
 T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisions/0006-trip-input-creation.md)에 기록한다.
