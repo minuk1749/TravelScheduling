@@ -7,6 +7,20 @@ import { assertAcyclic, assertBrowserSafe, sourceGraph, type SourceGraph } from 
 
 const graph = sourceGraph();
 
+test('T20 declaration files have no runtime edges and bundled fonts remain checked asset dependencies', async () => {
+  const sources = await graph;
+  const declarations = sources.get('apps/mobile/src/theme/assets.d.ts');
+  assert.ok(declarations, 'The font type declaration must be included in the graph');
+  assert.deepEqual(declarations.runtime, []);
+  const fonts = sources.get('apps/mobile/src/theme/fonts.ts');
+  assert.ok(fonts);
+  for (const weight of ['Regular', 'SemiBold']) {
+    const asset = `apps/mobile/assets/fonts/Pretendard-${weight}.ttf`;
+    assert.ok(fonts.runtime.includes(asset));
+    assert.ok(fonts.declarations.includes(asset));
+  }
+});
+
 test('T13A all source runtime dependencies are acyclic and client closures exclude server modules', async () => {
   const sources = await graph;
   assertAcyclic(sources);

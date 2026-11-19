@@ -11,3 +11,4 @@ test-results/
 .agent-prompt.md
 .ctl/
 *.tsbuildinfo
+.expo/

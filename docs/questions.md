@@ -59,6 +59,16 @@
 - 삭제된 장소로 `PlaceProvider.location`이 null이면 해당 구간도 명시적 `NONE`으로 반환한다. 제공자 장애는 null로 처리하지 않는다. 결과 미저장은 RESULT_UNAVAILABLE, 저장 결과는 있으나 현재 입력이 불완전하거나 해시가 다르면 STALE_INPUT이다.
 - 모양 표시만을 위한 Google 재조회이므로 저장 당시와 제공자 경로가 달라질 수 있다. 현재 선택 수단·출발 시각을 유지하며 동선·요금·시간을 재계산하지 않는다. 상세: [T19 결정](decisions/T19-route-shapes.md).
 
+## T20 앱 골격과 로그인 가정
+
+| 항목 | 질문 | 채택한 가정과 처리 |
+|---|---|---|
+| T20 첫 화면 | 로그인 뒤 첫 화면의 여행 기능 범위는? | `내 여행` 제목과 로그아웃만 제공한다. 여행 입력은 T21, 공유·탈퇴는 T24에서 구현한다. 디자인 문서의 기존 카드·버튼·글자 규칙을 사용한다 |
+| T20 OAuth 대상 | T18 문서는 iOS·Android 클라이언트 ID를 허용 대상으로 예시했지만 네이티브 Google SDK는 ID 토큰에 Web client ID를 요구한다 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`를 설정하고 서버 `GOOGLE_MOBILE_CLIENT_IDS`에도 실제 aud인 Web ID를 포함한다. 서버 검증을 완화하거나 요구사항을 바꾸지 않는다. [SDK 근거](https://react-native-google-signin.github.io/docs/integration-notes), 실제 기기에서 aud 확인은 사람 작업 |
+| T20 설치와 실행 | 키 없이 실행하는 CI와 네이티브 로그인 설정을 어떻게 구분하는가? | JS export와 테스트는 키 없이 가능하다. iOS 네이티브 설정은 `GOOGLE_IOS_URL_SCHEME`으로 plugin을 활성화한다. 실제 로그인은 Expo Go가 아닌 개발 빌드에서 확인한다. 번들 ID·설치 절차는 T26에서 마무리한다 |
+
+구현 결정과 검증: [T20 앱 골격·인증](decisions/T20-mobile-shell-and-auth.md).
+
 ## T15A 남은 구조 문제와 사람 결정 항목
 
 최종 전체 점검([목록](t15a-audit.md), [결정](decisions/T15A-final-audit.md))에서 동작·데이터·운영 정책을 바꿔야 해서 자동 작업으로 처리하지 않은 항목이다.

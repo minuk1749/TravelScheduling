@@ -21,7 +21,11 @@ export async function sourceGraph(): Promise<SourceGraph> {
   const sources = new Map(entries.flat());
   const resolve = (from: string, specifier: string): string => {
     if (!specifier.startsWith('.') && !specifier.startsWith('@travel/')) return specifier;
-    if (specifier.endsWith('.css')) return path.posix.normalize(path.posix.join(path.posix.dirname(from), specifier));
+    if (/\.(?:css|ttf)$/.test(specifier)) {
+      const asset = path.posix.normalize(path.posix.join(path.posix.dirname(from), specifier));
+      assert.ok(ts.sys.fileExists(path.join(repositoryRoot, asset)), `Missing asset: ${from} -> ${specifier}`);
+      return asset;
+    }
     const resolution = ts.resolveModuleName(specifier, path.join(repositoryRoot, from), {
       module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler,
     }, ts.sys).resolvedModule;
@@ -30,7 +34,8 @@ export async function sourceGraph(): Promise<SourceGraph> {
     return target;
   };
   return new Map([...sources].map(([file, source]) => {
-    const emitted = ts.transpileModule(source, { fileName: file, compilerOptions: {
+    // Ambient declarations have no runtime output, but retain their type dependency edges.
+    const emitted = file.endsWith('.d.ts') ? '' : ts.transpileModule(source, { fileName: file, compilerOptions: {
       target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX,
     } }).outputText;
     const imports = (text: string) => ts.preProcessFile(text, true, true).importedFiles.map(ref => resolve(file, ref.fileName));
