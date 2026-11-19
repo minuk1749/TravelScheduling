@@ -65,6 +65,12 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 
 `tests/architecture.test.ts`가 코어의 I/O 금지, 아키텍처 문서의 타입 계약과 실제 export 일치, 문서 링크 유효성을 검사한다.
 
+## T16 디자인 규칙
+
+- 시각 규칙은 [디자인 규칙](design.md), 토큰 값은 `src/app/globals.css`의 `:root` 변수 한 곳에만 둔다. 컴포넌트·페이지 CSS(`result.css` 등)는 변수만 쓴다.
+- 글꼴은 `pretendard` 패키지를 `layout.tsx`에서 불러와 자체 호스팅한다(외부 글꼴 요청 없음).
+- 화면별 적용은 T17(여행 만들기·생활 설정), T18(장소 추가), T19(동선 결과), T20(필수 장소 선택). 근거: [T16 결정](decisions/T16-design-system.md).
+
 ## T13 결과 UI 연결
 
 - 기준: 작업 시작 원격 `develop` fed5c6f. `/trips/[id]/result`와 `src/components/itinerary/`가 지도·타임라인·구간 비교·전체 효율·장소 제약 편집을 제공한다.

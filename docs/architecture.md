@@ -474,3 +474,10 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 - `lib/http.isCrossSiteRequest`는 설정·공유 쓰기가 이미 하던 Origin + `Sec-Fetch-Site` 검사를 합친 것이다.
   나머지 쓰기 경계의 정책 통일은 [질문](questions.md)의 사람 결정 항목이다.
 - [여행 생성](../src/repositories/trip-inputs.ts)은 자식 테이블당 INSERT 1회다. 장소 upsert는 잠금 순서를 위해 정렬된 행별 실행을 유지한다.
+
+## 13. T16 디자인 시스템
+
+- 화면의 시각 규칙은 [디자인 규칙](design.md)을 따르고, 색·글자·간격 토큰은 `src/app/globals.css`의 `:root` 변수 한 곳에 둔다. 컴포넌트·페이지 CSS는 변수만 쓴다.
+- 글꼴(`pretendard`)은 빌드 산출물로 자체 호스팅한다. 서비스워커의 온라인 전용 정책은 바꾸지 않는다.
+- 데이터 흐름·API·저장 형식은 바꾸지 않는다. 화면 구성 변경은 T17–T20에서 화면별로 하며, 도로 경로 모양(polyline)처럼 새 외부 조회가 필요한 표현은 사람 결정 후 추가한다.
+- 이유와 대안은 [T16 결정](decisions/T16-design-system.md)을 따른다.
