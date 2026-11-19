@@ -15,12 +15,16 @@
 3. **API 계약은 기존 라우트를 그대로 쓴다.** 앱 전용 새 경로는 로그인 세션(`/api/session`), 탈퇴(`/api/account`),
    구간 경로 모양(`/api/trips/[id]/itinerary/shapes`) 세 개뿐이다. 요청·응답 DTO는 core 타입이 기준이다.
    오류 본문은 지금의 `{ error, fields? }`에 기계용 `code`를 **추가**한다(기존 필드는 유지, T18이 구현).
+   `fields`는 현재 응답에 있는 두 형태, 즉 필드별 메시지(`Record<string, string>`)와 보완할 필드 이름 목록(`readonly string[]`,
+   `POST …/itinerary`의 `INCOMPLETE`)을 모두 계약에 둔다. 한 형태로 합치면 기존 응답이 바뀌므로 하지 않는다.
 4. **모바일 세션 토큰은 DB에 해시만 저장하는 불투명 토큰이다.** 앱이 네이티브 Google 로그인으로 받은 ID 토큰을
    `POST /api/session`에 보내면 서버가 Google JWKS로 서명·발급자·대상·만료·이메일 확인을 검사하고, 256비트 난수 토큰을 만든다.
    `mobile_sessions`에 SHA-256 해시와 만료(발급 후 30일, 연장 없음)를 저장한다. 로그아웃은 그 행 삭제, 탈퇴는 `users` 삭제의
    FK cascade로 모든 세션을 지운다. 앱은 원문을 기기 보안 저장소(`expo-secure-store`)에만 둔다.
 5. **소유권 검사는 바꾸지 않는다.** 모든 HTTP 처리기가 이미 주입받는 `userId` 의존성만 요청 기반
-   `userId(request)`로 바꾼다. `Authorization` 헤더가 있으면 Bearer만 보고(실패 시 401, 쿠키로 넘어가지 않음), 없으면 T25 전까지
+   `userId(request)`로 바꾼다. 처리기 없이 라우트에서 `auth()`를 직접 부르는 `GET /api/trips/[id]`
+   (`src/app/api/trips/[id]/route.ts`)도 같은 `RequestAuthenticator.userId(request)`로 바꾼다. 빠뜨리면 이 API만 Bearer를 받지 못하고
+   T25의 `src/auth.ts` 삭제 때 참조가 남는다. `Authorization` 헤더가 있으면 Bearer만 보고(실패 시 401, 쿠키로 넘어가지 않음), 없으면 T25 전까지
    Auth.js 쿠키 세션을 본다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다.
 6. **구간 경로 모양은 저장하지 않는다.** 최신 저장 일정의 각 구간(`comparisons`)을 실제 출발 instant와 선택 수단으로 Routes
    `computeRoutes`에 다시 요청하고 field mask는 `routes.polyline.encodedPolyline` 하나만 쓴다. 응답의 인코딩된 polyline을 그대로
@@ -72,6 +76,8 @@
 
 - [`tests/app-transition-design.test.ts`](../../tests/app-transition-design.test.ts)가 §13의 필수 항목, 모든 기존 API 라우트·메서드가
   계약 표에 있는지, 새 경로 계약, 세션 토큰 항목, 디자인 토큰 위치, T25 삭제 목록의 경로가 실제로 존재하는지 검사한다.
+- [`tests/app-transition-contract.test.ts`](../../tests/app-transition-contract.test.ts)는 실제 처리기의 오류 응답(`fields` 목록·필드별 메시지)이
+  문서의 `ApiErrorFields`에 맞는지, `auth()`를 직접 import하는 모든 API 라우트가 Bearer 전환 대상과 T18 검증 계획에 있는지 검사한다.
 - 계획 단계의 인터페이스(§13의 `ts` 블록)는 아직 구현이 없어 타입 검사 대상이 아니다. 구현하는 작업(T18–T22)이 실제 export와 함께
   `typescript` 블록으로 바꿔 [architecture.test.ts](../../tests/architecture.test.ts)의 타입 검사에 넣는다.
 - Google 약관(경로 모양 저장 금지 범위), Android 네이티브 로그인의 ID 토큰 `aud` 값, 실제 기기 동작은 사람 확인이 필요하다

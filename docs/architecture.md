@@ -551,10 +551,10 @@ T17이 옮길 공용 코드(DTO와 포트가 섞인 파일은 나눈다):
 | `GET /api/places` | `?query=&regionCode=` | `{ places: PlaceSummary[], attribution }` | 400, 401, 502/503 `PROVIDER_*`, 500 |
 | `GET /api/places/[id]` (`id`=Google 장소 ID) | `?timeZone=&date=…` 또는 `?fields=location` | `{ place: PlaceDetails \| PlaceLocation, attribution }` | 400, 401, 404, 502/503, 500 |
 | `POST /api/trips` | `TripDraft` | 201 `{ id }` | 400 `INVALID_INPUT` + `fields`, 401, 403, 413, 415, 500 |
-| `GET /api/trips/[id]` | — | `{ id }` | 401, 403, 404 |
+| `GET /api/trips/[id]` | — | `{ id }` (처리기 모듈 없이 라우트가 직접 인증. T18이 `RequestAuthenticator`로 전환, §13.3) | 401, 403, 404 |
 | `GET /api/trips/[id]/settings` | — | `SettingsView` (`{ snapshot, calculation }`) | 401, 403, 404, 409 `INCOMPLETE_TRIP`(초 단위 시각 등 저장 형식 불일치), 500 |
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
-| `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (`status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields` / `STALE_INPUT`, 502/503, 500 |
+| `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (`status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
 | `GET /api/trips/[id]/itinerary/shapes` (T19 신규) | `?inputHash=` | `{ inputHash, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `GET /api/trips/[id]/constraints` | — | `ResultView` (`{ input, revision, places }`) | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
@@ -562,7 +562,15 @@ T17이 옮길 공용 코드(DTO와 포트가 섞인 파일은 나눈다):
 | `GET /api/share/[token]` (비로그인) | — | `SharedItinerary` | 404, 405, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `GET /api/auth/[...nextauth]`, `POST /api/auth/[...nextauth]` | 웹 OAuth(Auth.js) | — | 앱은 쓰지 않음. T25에서 삭제 |
 
-오류 본문은 지금의 `{ error: string, fields?: Record<string, string> }`에 기계용 `code`를 더한다. 기존 필드와 상태 코드는 바꾸지 않는다.
+오류 본문은 지금의 `{ error: string, fields? }`에 기계용 `code`를 더한다. 기존 필드와 상태 코드는 바꾸지 않는다.
+`fields`는 지금 두 형태가 있고 둘 다 유지한다.
+
+| `fields` 형태 | 반환 상황 (현재 코드) |
+|---|---|
+| `Record<string, string>` (필드 → 사용자 메시지) | 400 `INVALID_INPUT`: `TripInputError`(`POST /api/trips`, `PUT …/settings`, `PUT …/constraints`). 409 `INCOMPLETE_TRIP`: 계산 중 발견한 입력 오류 `ItineraryInputError`(`POST …/itinerary`) |
+| `readonly string[]` (보완할 필드 이름 목록) | 409 `INCOMPLETE_TRIP`: 저장 입력을 읽을 때 빠진 필드, `GenerateOutcome`의 `{ status: 'INCOMPLETE', fields }`(`POST …/itinerary`) |
+
+앱은 `Array.isArray(fields)`로 나눈다. 목록이면 해당 입력 화면으로 안내하고, 객체면 필드 옆에 메시지를 보여 준다.
 앱은 `code`로 분기하고 `error`는 사용자에게 그대로 보여 준다. 같은 409라도 `INCOMPLETE_TRIP`(입력 보완), `STALE_INPUT`(다시 불러오기),
 `RESULT_UNAVAILABLE`(입력 완성·동선 재생성)을 구분해야 하기 때문이다. 코드 목록은 core `contracts/errors.ts` 하나에 둔다(T18 구현).
 T18이 T20보다 먼저 끝나므로 앱은 처음부터 `code`로 분기한다.
@@ -574,7 +582,8 @@ export type ApiErrorCode =
   | 'INVALID_JSON' | 'INVALID_INPUT' | 'UNSUPPORTED_MEDIA_TYPE' | 'PAYLOAD_TOO_LARGE'
   | 'INCOMPLETE_TRIP' | 'STALE_INPUT' | 'RESULT_UNAVAILABLE'
   | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_INVALID_RESPONSE' | 'INTERNAL';
-export type ApiError = { code: ApiErrorCode; error: string; fields?: Record<string, string> };
+export type ApiErrorFields = readonly string[] | Record<string, string>;
+export type ApiError = { code: ApiErrorCode; error: string; fields?: ApiErrorFields };
 ```
 
 ### 13.3 모바일 세션 토큰
@@ -589,7 +598,7 @@ export type ApiError = { code: ApiErrorCode; error: string; fields?: Record<stri
 | 폐기 | 로그아웃 `DELETE /api/session`이 해당 해시 행 삭제. 앱은 응답과 관계없이 보안 저장소의 토큰을 지운다 |
 | 탈퇴 | `DELETE /api/account` → 기존 `deleteUser` → FK cascade로 여행 데이터와 **모든** 세션 삭제 |
 | 앱 저장 | `expo-secure-store`(iOS Keychain, Android Keystore)에 `{ token, expiresAt }`. AsyncStorage·로그에 쓰지 않음. 401을 받으면 지우고 로그인 화면으로 |
-| 소유권 연결 | 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)가 받는 `userId()`를 `userId(request)`로 바꾸고, 각 `server.ts`가 같은 `RequestAuthenticator`를 주입한다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다 |
+| 소유권 연결 | 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)가 받는 `userId()`를 `userId(request)`로 바꾸고, 각 `server.ts`가 같은 `RequestAuthenticator`를 주입한다. 처리기를 거치지 않고 `auth()`를 직접 부르는 API 라우트 `src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 `RequestAuthenticator.userId(request)`로 바꾼다. 그러면 API 라우트 중 `src/auth.ts`를 참조하는 것은 Auth.js 라우트뿐이고, 나머지 참조(웹 화면 `src/app/page.tsx`·`src/app/actions.ts`)와 함께 T25에서 지운다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다 |
 | 전환 기간 (T18–T25) | `Authorization` 헤더가 있으면 Bearer만 검사하고 실패면 401(쿠키로 넘어가지 않음). 헤더가 없으면 Auth.js 쿠키 세션. T25가 쿠키 경로와 Auth.js를 지운다 |
 | 공유 토큰 | 별개. 공유 토큰은 읽기 전용 GET만 허용하고 세션으로 승격되지 않는다(T14) |
 
@@ -606,6 +615,8 @@ export interface MobileSessionStore {
 
 T18 검증: 가짜 RS256 키와 JWKS 픽스처(T15 `google-doubles.mjs`와 같은 방식)로 서명·발급자·대상·만료 실패를 각각 401로 확인하고,
 기존 403 소유권 테스트를 모두 Bearer 경로로도 실행한다(요구사항 §5 주의).
+직접 인증 라우트 `GET /api/trips/[id]`도 같은 검사를 받는다: 유효 Bearer + 본인 여행 200, 잘못된 토큰(형식 오류·없음·만료·폐기) 401, 다른 소유자 여행 403.
+또 `src/app/api/` 아래 라우트가 Auth.js 라우트 외에는 `src/auth.ts`를 import하지 않는지 구조 테스트로 확인한다.
 
 ### 13.4 구간 경로 모양 전달
 

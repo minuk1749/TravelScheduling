@@ -117,5 +117,5 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
   - `apps/server`(Next: API + `/share/[token]`), `apps/mobile`(Expo), `packages/core`(scheduler·fare·공용 DTO·검증·표시 변환), `packages/design-tokens`(디자인 값). 앱과 서버는 서로 import하지 않는다.
   - 앱 인증: 네이티브 Google ID 토큰 → `POST /api/session` → 불투명 세션 토큰(DB에는 SHA-256 해시, 30일) → `Authorization: Bearer`. 처리기의 `userId(request)` 뒤 `authorizeTrip`은 그대로.
   - 새 경로는 `/api/session`, `/api/account`, `/api/trips/[id]/itinerary/shapes`(경로 모양, 저장하지 않음) 세 개. 오류 본문에 `code`를 추가한다.
-  - `tests/app-transition-design.test.ts`가 §13의 항목, 모든 API 라우트의 계약 표 수록, T25 삭제 목록 경로의 존재를 검사한다.
+  - `tests/app-transition-design.test.ts`가 §13의 항목, 모든 API 라우트의 계약 표 수록, T25 삭제 목록 경로의 존재를 검사한다. `tests/app-transition-contract.test.ts`는 현재 오류 응답의 `fields` 두 형태(목록·필드별 메시지)가 계획한 `ApiError`에 맞는지, `auth()`를 직접 부르는 API 라우트(`GET /api/trips/[id]`)가 Bearer 전환 대상과 T18 검증 계획에 있는지 검사한다.
 - 웹 화면은 T25에서 지운다. 공유 링크용 읽기 전용 웹 페이지(`/share/[token]`)만 남긴다.
