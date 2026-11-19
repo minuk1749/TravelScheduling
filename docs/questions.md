@@ -46,6 +46,10 @@
 | 2026-11-19 | T16 | Routes API 경로 모양(polyline)을 저장할 수 있나? | 확인 전까지 저장하지 않는다. 결과 화면을 열 때 구간별로 다시 조회하고(field mask는 polyline만) 앱 메모리에만 둔다. 최신 약관 확인과 ADR 0005 갱신은 T19, 비용(화면 열 때마다 구간 수만큼 호출)은 사람 확인. 아키텍처 §13.4. | 사람 확인 필요 |
 | 2026-11-19 | T16 | 앱이 결과 화면을 다시 열 때 저장된 최신 일정을 읽는 GET이 없다(지금 웹은 POST로 재생성). | T16은 새 API를 정하지 않고 기존 동작(입력 복원 + POST 재생성)을 계약으로 둔다. 다시 열 때마다 계산 비용이 문제가 되면 T22에서 공유 결과 읽기와 같은 방식의 소유자용 GET을 추가하고 아키텍처 §13.2를 갱신한다. | 채택 |
 
+| 2026-11-19 | T18 | 작업표 갱신과 브랜치는? | 실행 지시가 보호 파일(`docs/tasks.md`) 수정·commit/push/PR 생성을 금지하므로 기존 T18 진행중/claude 상태를 그대로 두고 워크플로가 브랜치·PR을 만든다. | 채택 |
+| 2026-11-19 | T18 | `DELETE /api/account`도 쿠키 세션을 받아야 하나("기존 모든 사용자 API가 Bearer로 동작")? | 새 API는 앱 전용이라 Bearer만 받는다. 웹 탈퇴는 T25까지 기존 서버 액션 `withdraw`를 쓴다. 기존 사용자 API는 모두 Bearer와 쿠키를 받는다. [T18 결정](decisions/T18-mobile-session-tokens.md). | 채택 |
+| 2026-11-19 | T18 | `GOOGLE_MOBILE_CLIENT_IDS`가 비어 있으면? | 모든 앱 로그인을 401 `INVALID_GOOGLE_TOKEN`으로 거부한다(다른 앱용 토큰을 받지 않기 위해). 배포 전에 사람이 실제 iOS·Android(필요하면 웹) 클라이언트 ID를 넣는다(위 T16 `aud` 행). | 사람 확인 필요 |
+| 2026-11-19 | T18 | `GET /api/trips/[id]` 응답 형식을 바꿔도 되나? | 상태 코드·`error`·성공 본문 `{ id }`는 그대로 두고 다른 API와 같은 `code`와 `Cache-Control: private, no-store`를 추가한다. 예외는 500 `INTERNAL`로 숨긴다(이전에는 처리되지 않은 예외). | 채택 |
 | 2026-11-19 | T17 | 앱·디자인 토큰 구현과 보호 작업표 갱신도 이번 작업인가? | 원격 develop 9512b21과 같은 t17-local에서 진행한다. 실행 지시가 보호 작업표 수정·commit/push/PR 생성을 금지하므로 기존 T17 진행중 상태를 유지한다. T16 구조의 네 워크스페이스를 만들되 Expo 앱·토큰 값·번들 검사는 T20 범위로 남긴다. 앱·토큰에는 README·package.json만 두며 루트 명령은 --workspaces --if-present로 실제 스크립트를 실행한다. 서버는 기존 경로에서 core를 재내보내고 환경 파일은 apps/server/.env.local로 옮겨 사용한다. [T17 결정](decisions/T17-npm-workspaces.md). | 채택 |
 
 ## T15A 남은 구조 문제와 사람 결정 항목

@@ -455,7 +455,7 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. 앱·토큰 값과 §13.2–13.8의 모바일 동작은 T18–T25 **계획**이다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). 앱·토큰 값과 나머지 모바일 동작은 T19–T25 **계획**이다.
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
 결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
@@ -468,9 +468,9 @@ npm workspaces(`"workspaces": ["apps/*", "packages/*"]`). 루트 `lint`·`typech
 ```text
 apps/
   server/                  @travel/server. Next.js API·공유 페이지·기존 웹 화면(T25까지)
-    src/app/api/           기존 API, session·account(T18)·itinerary/shapes(T19)는 후속
+    src/app/api/           기존 API, session·account(T18 구현), itinerary/shapes(T19)는 후속
     src/app/share/         공유 열람 페이지
-    src/{lib,places,travel-time,services,repositories,itineraries,trips,settings,results,sharing}/
+    src/{lib,places,travel-time,services,repositories,itineraries,trips,settings,results,sharing,sessions}/
                            HTTP·서비스·저장소·제공자·조립, 서버 포트 유지
     migrations/, scripts/, tests/   기존 SQL·실행기·서버 테스트
   mobile/                  @travel/mobile. T17은 package.json·README만, 아래는 T20 이후 계획
@@ -534,7 +534,7 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `GET /api/places` | `?query=&regionCode=` | `{ places: PlaceSummary[], attribution }` | 400, 401, 502/503 `PROVIDER_*`, 500 |
 | `GET /api/places/[id]` (`id`=Google 장소 ID) | `?timeZone=&date=…` 또는 `?fields=location` | `{ place: PlaceDetails \| PlaceLocation, attribution }` | 400, 401, 404, 502/503, 500 |
 | `POST /api/trips` | `TripDraft` | 201 `{ id }` | 400 `INVALID_INPUT` + `fields`, 401, 403, 413, 415, 500 |
-| `GET /api/trips/[id]` | — | `{ id }` (처리기 모듈 없이 라우트가 직접 인증. T18이 `RequestAuthenticator`로 전환, §13.3) | 401, 403, 404 |
+| `GET /api/trips/[id]` | — | `{ id }` (T18: `trips/http.ts`의 `tripAccessHandler` + `RequestAuthenticator`, `private, no-store`, §13.3) | 401, 403, 404, 500 |
 | `GET /api/trips/[id]/settings` | — | `SettingsView` (`{ snapshot, calculation }`) | 401, 403, 404, 409 `INCOMPLETE_TRIP`(초 단위 시각 등 저장 형식 불일치), 500 |
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
 | `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (`status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
@@ -555,11 +555,14 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 
 앱은 `Array.isArray(fields)`로 나눈다. 목록이면 해당 입력 화면으로 안내하고, 객체면 필드 옆에 메시지를 보여 준다.
 앱은 `code`로 분기하고 `error`는 사용자에게 그대로 보여 준다. 같은 409라도 `INCOMPLETE_TRIP`(입력 보완), `STALE_INPUT`(다시 불러오기),
-`RESULT_UNAVAILABLE`(입력 완성·동선 재생성)을 구분해야 하기 때문이다. 코드 목록은 core `contracts/errors.ts` 하나에 둔다(T18 구현).
-T18이 T20보다 먼저 끝나므로 앱은 처음부터 `code`로 분기한다.
+`RESULT_UNAVAILABLE`(입력 완성·동선 재생성)을 구분해야 하기 때문이다. 코드 목록은 core `contracts/errors.ts`(`API_ERROR_CODES`) 하나에 둔다.
+**T18 구현:** 서버의 모든 오류 응답은 `lib/http.ts`의 `apiError(status, code, error, fields?)`(접근 실패는 `accessError`, 제공자 장애는 `providerError`)로 만든다.
+생활 설정의 409는 상태만으로 원인을 알 수 없으므로 `SettingsError`가 `code`를 가진다(동시 편집 `STALE_INPUT`, 그 밖의 저장 형식 불일치 `INCOMPLETE_TRIP`).
+앱은 처음부터 `code`로 분기한다.
 
-```ts
-// 계획(T18): core/contracts/errors.ts
+```typescript
+// T18: 문서의 목록과 core/contracts/errors.ts의 실제 export가 같아야 한다.
+import type * as CoreErrors from '../packages/core/src/contracts/errors';
 export type ApiErrorCode =
   | 'UNAUTHENTICATED' | 'INVALID_GOOGLE_TOKEN' | 'FORBIDDEN' | 'NOT_FOUND' | 'METHOD_NOT_ALLOWED'
   | 'INVALID_JSON' | 'INVALID_INPUT' | 'UNSUPPORTED_MEDIA_TYPE' | 'PAYLOAD_TOO_LARGE'
@@ -567,6 +570,10 @@ export type ApiErrorCode =
   | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_INVALID_RESPONSE' | 'INTERNAL';
 export type ApiErrorFields = readonly string[] | Record<string, string>;
 export type ApiError = { code: ApiErrorCode; error: string; fields?: ApiErrorFields };
+type SameType<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+export const documentedApiErrors: [
+  SameType<ApiErrorCode, CoreErrors.ApiErrorCode>, SameType<ApiErrorFields, CoreErrors.ApiErrorFields>, SameType<ApiError, CoreErrors.ApiError>,
+] = [true, true, true];
 ```
 
 ### 13.3 모바일 세션 토큰
@@ -585,19 +592,39 @@ export type ApiError = { code: ApiErrorCode; error: string; fields?: ApiErrorFie
 | 전환 기간 (T18–T25) | `Authorization` 헤더가 있으면 Bearer만 검사하고 실패면 401(쿠키로 넘어가지 않음). 헤더가 없으면 Auth.js 쿠키 세션. T25가 쿠키 경로와 Auth.js를 지운다 |
 | 공유 토큰 | 별개. 공유 토큰은 읽기 전용 GET만 허용하고 세션으로 승격되지 않는다(T14) |
 
-```ts
-// 계획(T18): apps/server/src/lib/auth/
-export interface RequestAuthenticator { userId(request: Request): Promise<string | undefined> }
-export interface GoogleIdTokenVerifier { verify(idToken: string): Promise<{ googleId: string; email: string } | null> }
-export interface MobileSessionStore {
-  issue(userId: string, tokenHash: string, expiresAt: string): Promise<void>;
-  userIdFor(tokenHash: string): Promise<string | null>;   // 만료 제외
-  revoke(tokenHash: string): Promise<void>;
-}
+**T18 구현 위치(`apps/server/src/lib/auth/`):**
+
+| 파일 | 책임 |
+|---|---|
+| `ports.ts` | 포트 타입만: `RequestAuthenticator`, `GoogleIdTokenVerifier`, `MobileSessionStore`, `IssuedSession` (런타임 코드 없음) |
+| `google-id-token.ts` | `JoseGoogleIdTokenVerifier`(`jose`의 원격 JWKS, RS256·`iss`·`aud`·`exp` 60초 오차·`email_verified`). 토큰 문제는 `null`(401), 키를 못 읽으면 `GoogleKeysUnavailableError`(503). 허용 `aud`가 비어 있으면 모든 토큰을 거부 |
+| `mobile-sessions.ts` | `MobileSessionService`(ID 토큰 → `upsertGoogleUser` → 불투명 토큰 발급, 로그아웃) |
+| `request-authenticator.ts` | `readBearer`(헤더 없음/형식 오류/토큰), `SessionRequestAuthenticator`(헤더가 있으면 Bearer만, 없으면 선택적 쿠키 함수) |
+| `session-store.ts` | `PostgresMobileSessionStore`(마이그레이션 `007_mobile_sessions.sql`) |
+| `server.ts` | 조립: `requestAuthenticator`(Bearer + Auth.js 쿠키, 6개 모듈과 `GET /api/trips/[id]`), `bearerAuthenticator`(Bearer만, `/api/account`) |
+| `../opaque-token.ts` | 43자 난수 토큰 생성·형식 검사·SHA-256 해시. 공유 링크(T14)와 같은 규칙 하나 |
+
+HTTP는 `apps/server/src/sessions/http.ts`(`sessionHandlers`: POST·DELETE `/api/session`, `accountHandlers`: DELETE `/api/account`)와
+조립 `sessions/server.ts`에 있다. 허용 `aud`는 환경 변수 `GOOGLE_MOBILE_CLIENT_IDS`(쉼표 구분)다.
+`/api/account`는 쿠키 세션을 받지 않는다. 웹 탈퇴는 T25까지 기존 서버 액션 `withdraw`를 쓴다.
+
+```typescript
+// T18: 인증 포트(lib/auth/ports.ts). 구현과 문서가 같은 export를 사용한다.
+export type { RequestAuthenticator, GoogleIdTokenVerifier, GoogleIdentity, MobileSessionStore, IssuedSession } from '../apps/server/src/lib/auth/ports';
+import type {
+  RequestAuthenticator as Authenticator, GoogleIdTokenVerifier as Verifier, MobileSessionStore as SessionStore,
+} from '../apps/server/src/lib/auth/ports';
+export const documentedAuthPorts = {
+  userId: (authenticator: Authenticator, request: Request): Promise<string | undefined> => authenticator.userId(request),
+  verify: (verifier: Verifier, idToken: string): Promise<{ googleId: string; email: string } | null> => verifier.verify(idToken),
+  issue: (store: SessionStore, userId: string, tokenHash: string, expiresAt: string): Promise<void> => store.issue(userId, tokenHash, expiresAt),
+  userIdFor: (store: SessionStore, tokenHash: string): Promise<string | null> => store.userIdFor(tokenHash), // 만료 제외
+  revoke: (store: SessionStore, tokenHash: string): Promise<void> => store.revoke(tokenHash),
+};
 ```
 
-T18 검증: 가짜 RS256 키와 JWKS 픽스처(T15 `google-doubles.mjs`와 같은 방식)로 서명·발급자·대상·만료 실패를 각각 401로 확인하고,
-기존 403 소유권 테스트를 모두 Bearer 경로로도 실행한다(요구사항 §5 주의).
+T18 검증: 가짜 RS256 키와 JWKS 픽스처(`apps/server/tests/helpers/google-id-tokens.ts`, 실제 원격 JWKS 로더에 가짜 fetch)로 서명·발급자·대상·만료 실패를 각각 401로 확인하고,
+기존 403 소유권 테스트를 모두 Bearer 경로로도 실행한다(요구사항 §5 주의, `apps/server/tests/bearer-ownership.test.ts`).
 직접 인증 라우트 `GET /api/trips/[id]`도 같은 검사를 받는다: 유효 Bearer + 본인 여행 200, 잘못된 토큰(형식 오류·없음·만료·폐기) 401, 다른 소유자 여행 403.
 또 `apps/server/src/app/api/` 아래 라우트가 Auth.js 라우트 외에는 `apps/server/src/auth.ts`를 import하지 않는지 구조 테스트로 확인한다.
 

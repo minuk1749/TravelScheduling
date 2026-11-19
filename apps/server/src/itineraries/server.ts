@@ -1,4 +1,4 @@
-import { auth } from '../auth';
+import { requestAuthenticator } from '../lib/auth/server';
 import { tripOwner } from '../lib/auth/store';
 import { createDatabasePool } from '../lib/db';
 import { placeProvider } from '../places/server';
@@ -13,7 +13,7 @@ const db = () => pool ??= createDatabasePool();
 
 /** Composition root. Nothing connects at import; providers are built per authorized request. */
 export const handlers = itineraryHandlers({
-  userId: async () => (await auth())?.user?.id,
+  userId: request => requestAuthenticator.userId(request),
   findOwner: tripOwner,
   generator: () => {
     const travel = createGoogleTravelTimeProvider();

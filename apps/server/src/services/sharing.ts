@@ -1,16 +1,16 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { hashOpaqueToken, newOpaqueToken } from '../lib/opaque-token';
 import { isShareToken, ShareUnavailableError, type ShareRepository, type SharedItinerary } from '../sharing/model';
 import { displayInput } from '../results/model';
 import type { ItineraryPlaces } from './itinerary/types';
 import { displayPlaces, tripPlaceRefs } from './itinerary/display-places';
 
-export const hashShareToken = (token: string) => createHash('sha256').update(token).digest('hex');
+export const hashShareToken = hashOpaqueToken;
 
 export class SharingService {
   constructor(private readonly repository: ShareRepository, private readonly places: () => Pick<ItineraryPlaces, 'details'>) {}
 
   async rotate(tripId: string, ownerId: string): Promise<string | null> {
-    const token = randomBytes(32).toString('base64url');
+    const token = newOpaqueToken();
     return await this.repository.rotate(tripId, ownerId, hashShareToken(token)) ? token : null;
   }
 
