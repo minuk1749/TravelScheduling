@@ -70,7 +70,14 @@ jobs:
             $T set "$id" "상태=진행중" "담당=$owner" "PR="
             git add docs/tasks.md
             git commit -q -m "$id 시작 (이슈 #$num)"
-            for k in 1 2 3; do git pull -q --rebase origin develop && git push -q origin develop && break; sleep $((k * 5)); done
+            for k in 1 2 3; do
+              if git pull -q --rebase origin develop && git push -q origin develop; then break; fi
+              if [ "$k" = 3 ]; then
+                echo "::error::작업 $id 배정을 develop에 반영하지 못해 이슈 #$num 구현을 시작하지 않습니다."
+                exit 1
+              fi
+              sleep $((k * 5))
+            done
 
             if [ "$owner" = claude ]; then
               gh workflow run agent-claude.yml --ref develop -f issue="$num"
