@@ -8,6 +8,7 @@
 - 작업 상태와 담당: `docs/tasks.md` (`develop` 브랜치 기준)
 - 설계 결정 기록: `docs/decisions/` (결정, 이유, 대안). **새 기록의 파일 이름은 작업 ID로 시작한다: `T12-제목.md`, `R3-제목.md`.** 작업이 동시에 진행되므로 순번(NNNN)을 쓰면 번호가 겹친다. 기존 `0001`–`0008`은 그대로 둔다.
 - 에이전트의 질문과 가정: `docs/questions.md`
+- 디자인 기준: `docs/design.md` (앱 화면 작업은 색·글자·간격·구성 요소·화면 상태를 이 문서에서 가져온다. 값을 화면 코드에 직접 쓰지 않고 토큰 모듈을 통해 쓴다)
 - 아키텍처: `docs/architecture.md` (T7A에서 작성. 이후 모든 작업은 이 문서의 구조와 인터페이스를 따르고, 바꿔야 하면 문서와 결정 기록을 같은 PR에서 갱신한다)
 
 ## 브랜치
@@ -95,7 +96,8 @@
 
 ## 코드 규칙
 - TypeScript strict. Node 24.
-- `package.json`에 다음 스크립트를 유지한다: `lint`, `typecheck`, `build`, `test`. E2E가 있으면 `test:e2e`(Playwright).
+- 루트 `package.json`에 다음 스크립트를 유지한다: `lint`, `typecheck`, `build`, `test`. 모노레포 전환(T17) 후에는 이 스크립트가 모든 패키지(서버·앱·공용)를 실행한다. E2E가 있으면 `test:e2e`.
+- 앱(React Native)은 TypeScript strict, Expo. 공용 패키지(`scheduler`, `fare`, 공용 DTO·검증)는 Node·DB·네트워크·React Native에 의존하지 않는다.
 - 테스트용 DB는 환경 변수 `DATABASE_URL`(PostgreSQL 16)을 사용한다.
 - 스케줄러(`src/scheduler/`)는 외부 API나 DB에 의존하지 않는 순수 함수로 유지한다.
 - 세부 코드 품질 기준(객체지향 원칙, 파일 크기, 최적화)은 `.github/agent/prompts/quality.md`를 따른다. 위 "작업 원칙"과 충돌하면 작업 원칙이 우선한다.

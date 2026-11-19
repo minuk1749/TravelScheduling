@@ -17,6 +17,9 @@
       },
       "T13A": {
         "effort": "xhigh"
+      },
+      "T17": {
+        "effort": "xhigh"
       }
     },
     "review": {
@@ -31,7 +34,8 @@
       "T12": "claude-opus-5-5",
       "T14": "claude-opus-5-5",
       "R": "claude-opus-5-5",
-      "T8A": "claude-opus-5-5"
+      "T8A": "claude-opus-5-5",
+      "T17": "claude-opus-5-5"
     },
     "exec_review": [
       "T7A",
@@ -39,13 +43,16 @@
       "T12",
       "T14",
       "T15",
-      "R"
+      "R",
+      "T17",
+      "T20"
     ],
     "refactor": "claude-opus-5-5",
     "implement": {
       "default": "claude-opus-5-5",
       "tasks": {
-        "T15": "claude-sonnet-5-5"
+        "T15": "claude-sonnet-5-5",
+        "T26": "claude-sonnet-5-5"
       }
     }
   }
