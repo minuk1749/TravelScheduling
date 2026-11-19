@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: write
+      # statusCheckRollup은 커밋 정보라 contents 읽기가 필요하다(작업 권한이 상위 기본값을 덮어쓴다)
+      contents: read
       checks: read
       statuses: read
       issues: write
@@ -56,8 +58,7 @@ jobs:
                 gh issue comment "$CLOSED" --body "작업 이슈가 이미 닫혀 있어 재개할 작업이 없습니다."; exit 0
               fi
               if pr_open "$pr"; then
-                # 검사 상태(statusCheckRollup)는 Actions 토큰으로 읽을 수 없어(Resource not accessible by integration) 사용자 토큰으로 읽는다
-                legacy=$(GH_TOKEN="${USER_PAT:-$GH_TOKEN}" gh pr view "$pr" --json statusCheckRollup --jq '
+                legacy=$(gh pr view "$pr" --json statusCheckRollup --jq '
                   [.statusCheckRollup[] | select(.workflowName == "agent-review")] as $jobs
                   | any($jobs[]; .name == "test" and .conclusion == "SUCCESS")
                     and ([$jobs[] | select(.name == "review") | [.status, .conclusion]] == [["COMPLETED", "SKIPPED"]])')
