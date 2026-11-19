@@ -7,18 +7,23 @@
     },
     "tasks": {
       "T7A": {
+        "model": "gpt-6-astra",
         "effort": "xhigh"
       },
       "T12": {
+        "model": "gpt-6-astra",
         "effort": "xhigh"
       },
       "T8A": {
+        "model": "gpt-6-astra",
         "effort": "xhigh"
       },
       "T13A": {
+        "model": "gpt-6-astra",
         "effort": "xhigh"
       },
       "T17": {
+        "model": "gpt-6-astra",
         "effort": "xhigh"
       }
     },
