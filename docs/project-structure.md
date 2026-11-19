@@ -34,6 +34,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `packages/core/src/fare/` | **순수 계산.** 도시 프로필 타입, 택시 요금 추정·동일 출발 시각의 준비 재사용 | `Temporal` | DB, 네트워크 |
 | `apps/server/src/places/` | 장소 포트(`index.ts`), Google 어댑터, 좌표 캐시, 입력 검증, 영업시간 변환, HTTP 핸들러, 조립(`server.ts`) | `scheduler` 타입, `auth` | 이름·영업시간 등 상세 저장(약관) |
 | `apps/server/src/travel-time/` | 이동시간 포트(`index.ts`), Google 어댑터, 캐시, 검증, 조립(`server.ts`) | `scheduler` 타입 | 이동수단 선택(스케줄러 책임), 택시 요금 계산(`fare` 책임) |
+| `apps/server/src/route-shapes/`, `services/route-shapes.ts` | T19 소유자 경로 모양 HTTP·조립·저장소 포트, 저장 구간별 좌표·모양 조회 서비스 | 인증, 저장소·장소·경로 모양 포트, core DTO | 서비스의 SQL·구체 Google 의존, 모양 저장 |
 | `apps/server/src/components/` | T10 입력·장소 검색·프로필, T11 생활 설정 폼/필드/미리보기 | 브라우저용 검증·계산, HTTP | DB·비밀 키 |
 | `apps/server/src/trips/` | T10 입력 검증 재내보내기·생성 HTTP·서버 조립 | 인증, 여행 생성·도시 프로필 저장소 | 전체 동선 생성 |
 | `apps/server/src/settings/` | 저장소 포트(`model.ts`)·서비스·HTTP·조립, core 설정 DTO·검증·계산 재내보내기 | scheduler 공개 함수, 저장소 포트, 인증 | 전체 경로 생성 중복 구현 |
@@ -125,3 +126,11 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - 웹 화면은 T25에서 지운다. 공유 링크용 읽기 전용 웹 페이지(`/share/[token]`)만 남긴다.
 
 T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 TS 원본 하위 경로를 export하고 Next가 변환한다. core 빌드는 JS·선언 파일을 생성한다. 구조 검사는 패키지 export를 따라 순환·클라이언트 서버 접근을 검사한다.
+
+## T19 구간 경로 모양 연결
+
+- GET `/api/trips/[id]/itinerary/shapes?inputHash=` → `route-shapes/http.ts`(인증·소유권·해시 검증) → `RouteShapeService` → `PostgresRouteShapeRepository`·`PlaceProvider.location`·`RouteShapeProvider`.
+- `repositories/route-shapes.ts`는 소유자·최신 저장 해시·현재 입력을 read-only repeatable-read 트랜잭션으로 읽고 `shared-itinerary.ts`의 기존 복원을 재사용한다. 스키마·저장 동작은 바꾸지 않는다.
+- `travel-time/shapes.ts`는 이동시간과 분리된 포트, `google-shapes.ts`는 polyline 전용 어댑터다. 기존 이동시간 어댑터와 `google-client.ts`의 HTTP·요청 옵션·오류 정규화를 공유한다. 모양 캐시는 없다.
+- DTO는 `packages/core/src/contracts/route-shapes.ts`. 서비스는 DAY·AIRPORT 구간 순서를 유지하고 요청당 최대 4개 구간을 처리한다. 좌표만 요청 안에서 중복 조회를 합치며 모양 응답은 재사용하지 않는다.
+- T18 병행 작업과의 인증 연결·검증 범위는 [T19 결정](decisions/T19-route-shapes.md), 저장 정책은 [ADR 0005](decisions/0005-travel-time-provider-and-cache.md)를 따른다.

@@ -603,19 +603,27 @@ T18 검증: 가짜 RS256 키와 JWKS 픽스처(T15 `google-doubles.mjs`와 같�
 
 ### 13.4 구간 경로 모양 전달
 
+- T19 구현: `route-shapes/http.ts` → `services/route-shapes.ts` → `repositories/route-shapes.ts`·`PlaceProvider.location`·`travel-time/shapes.ts`의 `RouteShapeProvider`.
+  구체 Google 모양 어댑터는 `travel-time/google-shapes.ts`이며 기존 이동시간 어댑터와 `google-client.ts`의 HTTP·시간 옵션만 공유한다.
+  [T19 결정](decisions/T19-route-shapes.md)에 오류 우선순위·동시성·인증 연결을 기록한다.
+- T19 시작 기준 develop에는 T18 인증 구현이 아직 없다. HTTP의 `userId(request)`는 T18 계약을 받지만 조립은 현재 Auth.js 쿠키를 사용하며,
+  Authorization 헤더가 있는 요청은 쿠키로 우회하지 않고 401이다. T18 통합 때 `route-shapes/server.ts`에도 공통 RequestAuthenticator를 주입한다.
 - `GET /api/trips/[id]/itinerary/shapes?inputHash=` (T19). 인증·소유권 → 최신 저장 일정과 현재 입력 해시를 한 읽기 트랜잭션으로 조회
   (공유 결과 읽기 `shared-itinerary.ts`와 같은 방식) → 요청 해시·저장 해시·현재 해시가 다르면 409 `STALE_INPUT`, 결과가 없으면 409 `RESULT_UNAVAILABLE`.
+  inputHash는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.
 - 대상 구간은 저장된 `comparisons`(DAY·AIRPORT) 전부이고, 키는 `date`·`kind`·`from`·`to`(장소 ID)다. 좌표는 기존 좌표 캐시(`PlaceProvider.location`)로 얻는다.
 - 각 구간을 `computeRoutes`로 요청한다. 수단은 `selected.mode`(TAXI는 DRIVE), 출발은 저장된 `departure` instant(TRANSIT만 시간표에 전달, DRIVE는 `TRAFFIC_UNAWARE`, §4).
-  field mask는 `routes.polyline.encodedPolyline` 하나다. 동시 요청 수는 서버가 제한한다.
+  field mask는 `routes.polyline.encodedPolyline` 하나다. 요청당 최대 4개 구간 작업을 실행하고 응답은 저장 구간 순서대로 돌려준다.
+  좌표 조회는 Google 장소 ID별로 합친다. 실패하면 새 구간 실행을 중단하고 이미 실행 중인 작업이 끝난 뒤 전체 요청을 실패시킨다.
 - **저장하지 않는다.** DB·서버 캐시·앱 디스크 어디에도 남기지 않고, 앱은 결과 화면이 열려 있는 동안 메모리에만 둔다.
-  Google Maps Platform 약관상 장소 ID·제한된 좌표 외 콘텐츠 저장을 허용받지 못했기 때문이다(ADR 0003·0005와 같은 판단, T19가 최신 약관을 확인해 ADR 0005를 갱신).
+  Google Maps Platform 약관상 장소 ID·제한된 좌표 외 콘텐츠 저장을 허용받지 못했기 때문이다(ADR 0003·0005와 같은 판단, T19에서 2026-11-19 정책을 확인해 ADR 0005를 갱신).
 - 경로가 없으면 `{ status: 'NONE' }`으로 구분한다(빈 문자열·빈 배열로 숨기지 않음). 장애·쿼터 초과는 `TravelProviderError` → 502/503으로 요청 전체를 실패시키고
   부분 성공을 돌려주지 않는다. 앱은 실패하면 직선으로 대신 그리고 다시 시도할 수 있게 한다.
+  장소가 삭제되어 좌표 조회가 null인 경우에도 해당 구간은 `NONE`이다. 빈 polyline·잘못된 제공자 응답은 `NONE`이 아니라 `INVALID_RESPONSE`다.
 - 공유 열람 페이지는 마커만 그리며 이 API를 쓰지 않는다.
 
 ```ts
-// 계획(T19): core/contracts/route-shapes.ts, 서버 포트는 travel-time 모듈
+// 구현(T19): packages/core/src/contracts/route-shapes.ts, 서버 포트는 travel-time/shapes.ts
 export type LegShape = {
   date: string; kind: 'DAY' | 'AIRPORT'; from: string; to: string; mode: 'TRANSIT' | 'WALK' | 'TAXI';
   shape: { status: 'OK'; encodedPolyline: string } | { status: 'NONE' };

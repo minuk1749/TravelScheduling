@@ -1,17 +1,12 @@
 import {
-  TravelProviderError, type Location, type MatrixRequest, type ProviderMode,
+  TravelProviderError, type MatrixRequest, type ProviderMode,
   type RouteRequest, type TravelAlternatives, type TravelEstimate, type TravelMatrix, type TravelTimeProvider,
 } from './index';
 import { matrixRequest, routeRequest } from './validation';
+import { GoogleRoutesClient, invalid, object, options, waypoint } from './google-client';
 
 export const MATRIX_FIELDS = 'originIndex,destinationIndex,status,condition,duration,distanceMeters,travelAdvisory.transitFare';
 export const ROUTE_FIELDS = 'routes.duration,routes.distanceMeters,routes.travelAdvisory.transitFare';
-
-function invalid(): never { throw new TravelProviderError('INVALID_RESPONSE'); }
-function object(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid();
-  return value as Record<string, unknown>;
-}
 
 function estimate(data: Record<string, unknown>, mode: ProviderMode): TravelEstimate {
   if (typeof data.duration !== 'string' || !/^\d+(?:\.\d{1,9})?s$/.test(data.duration)) return invalid();
@@ -34,35 +29,11 @@ function estimate(data: Record<string, unknown>, mode: ProviderMode): TravelEsti
   return { durationSeconds, distanceMeters, fare };
 }
 
-function waypoint(location: Location) { return { location: { latLng: location.coordinates } }; }
-function options(mode: ProviderMode, departure: string) {
-  return {
-    travelMode: mode, languageCode: 'ko', units: 'METRIC',
-    // WALK and traffic-unaware DRIVE do not depend on a timetable.
-    ...(mode === 'TRANSIT' ? { departureTime: departure } : {}),
-    ...(mode === 'DRIVE' ? { routingPreference: 'TRAFFIC_UNAWARE' } : {}),
-  };
-}
-
 /** Server-only Routes adapter. No response persistence; fetcher injection keeps tests offline. */
 export class GoogleTravelTimeProvider implements TravelTimeProvider {
-  constructor(private readonly apiKey: string, private readonly fetcher: typeof fetch = fetch) {}
-
-  private async request(path: string, fields: string, body: unknown): Promise<unknown> {
-    if (!this.apiKey) throw new TravelProviderError('UNAVAILABLE');
-    try {
-      const response = await this.fetcher(`https://routes.googleapis.com/${path}`, {
-        method: 'POST', body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': this.apiKey, 'X-Goog-FieldMask': fields },
-        cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) throw new TravelProviderError('UNAVAILABLE');
-      try { return await response.json(); }
-      catch { return invalid(); }
-    } catch (error) {
-      if (error instanceof TravelProviderError) throw error;
-      throw new TravelProviderError('UNAVAILABLE');
-    }
+  private readonly client: GoogleRoutesClient;
+  constructor(apiKey: string, fetcher: typeof fetch = fetch) {
+    this.client = new GoogleRoutesClient(apiKey, fetcher);
   }
 
   async matrix(input: MatrixRequest): Promise<TravelMatrix> {
@@ -78,7 +49,7 @@ export class GoogleTravelTimeProvider implements TravelTimeProvider {
         const origins = locations.slice(row, row + size);
         for (let column = 0; column < locations.length; column += size) {
           const destinations = locations.slice(column, column + size);
-          const data = await this.request('distanceMatrix/v2:computeRouteMatrix', MATRIX_FIELDS, {
+          const data = await this.client.request('distanceMatrix/v2:computeRouteMatrix', MATRIX_FIELDS, {
             origins: origins.map(value => ({ waypoint: waypoint(value) })),
             destinations: destinations.map(value => ({ waypoint: waypoint(value) })),
             ...options(mode, departure),
@@ -110,7 +81,7 @@ export class GoogleTravelTimeProvider implements TravelTimeProvider {
     const { from, to, modes, departure } = routeRequest(input);
     const result: TravelAlternatives = {};
     for (const mode of modes) {
-      const data = object(await this.request('directions/v2:computeRoutes', ROUTE_FIELDS, {
+      const data = object(await this.client.request('directions/v2:computeRoutes', ROUTE_FIELDS, {
         origin: waypoint(from), destination: waypoint(to), ...options(mode, departure), computeAlternativeRoutes: false,
       }));
       if (data.error !== undefined) return invalid();

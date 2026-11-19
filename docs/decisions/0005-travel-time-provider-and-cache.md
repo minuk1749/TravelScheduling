@@ -49,3 +49,21 @@ TRAFFIC_UNAWARE는 현재 교통을 반영하지 않는다.
   Google 반복 호출 0회를 필수로 유지할지와 함께 사람이 결정할 후속 사항이다.
 
 검증 및 T12 인계: [T9 인계](../t9-handoff.md), [자동 테스트](../../apps/server/tests/travel-time.test.ts).
+
+## T19 추가: 경로 모양은 저장하지 않음 (2026-11-19)
+
+- [Routes 정책](https://developers.google.com/maps/documentation/routes/policies)의 저장·캐시 제한과
+  [서비스별 약관 §19.2–19.3](https://cloud.google.com/maps-platform/terms/maps-service-terms)을 다시 확인했다.
+  명시적 허용 범위 밖의 콘텐츠 저장은 제한되며, §19.3은 위도·경도의 최대 30일 임시 캐시를 다룬다.
+  이 예외가 encoded polyline 전체의 저장도 허용한다고 확대 해석하지 않는다. 따라서 **모양은 DB·디스크·서버 캐시에 저장하지 않는다.**
+- `GoogleRouteShapeProvider`는 캐시 장식자 없이 매번 조회한다. HTTP fetch는 `no-store`, API 응답은 `private, no-store`다.
+  앱은 결과 화면이 열린 동안 표시용 메모리에만 유지하고 닫거나 결과가 바뀌면 버린다(T22 구현 책임).
+  Google 지도 위에서 표시하며 SDK 귀속을 유지한다. EEA 등 적용 계약 차이는 실제 배포 시 사람이 확인한다.
+- [computeRoutes 계약](https://developers.google.com/maps/documentation/routes/reference/rest/v2/TopLevel/computeRoutes)에 따라
+  `routes.polyline.encodedPolyline`만 요청하고 `ENCODED_POLYLINE`·`HIGH_QUALITY`를 지정한다.
+  대안 경로는 요청하지 않는다. 빈 routes는 경로 없음, 비어 있거나 손상된 polyline은 제공자 응답 오류다.
+- 시간·거리·요금 제공자와 모양 포트를 분리하되 HTTP·오류 정규화·수단별 출발 시각 옵션은 공유한다.
+  기존 T9 행렬/구간·캐시 계약은 유지한다. 합성 픽스처로 반복 호출·최소 필드·오류 구분을 검증한다.
+
+대안: polyline을 일정 JSONB 또는 메모리 TTL 캐시에 보관하는 방식은 명시적 허용 근거를 확인하지 못해 채택하지 않았다.
+구현·검증: [T19 결정](T19-route-shapes.md), [제공자 테스트](../../apps/server/tests/route-shapes-provider.test.ts).
