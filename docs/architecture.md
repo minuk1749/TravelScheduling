@@ -26,8 +26,8 @@ packages/core/                 @travel/core (플랫폼과 무관한 순수 로�
   src/contracts/               trips/settings/results/itinerary/places/travel-time/sharing DTO·검증
   src/presentation/            결과 표시 변환·한국어 라벨
   tests/                       기존 scheduler·fare 순수 함수 검사
-apps/mobile/                   @travel/mobile, T20 앱 구현 전 예약 워크스페이스
-packages/design-tokens/         @travel/design-tokens, T20 토큰 구현 전 예약 워크스페이스
+apps/mobile/                   @travel/mobile, T20 Expo·로그인·보호 라우트·API·보안 저장소
+packages/design-tokens/         @travel/design-tokens, T20 플랫폼 독립 값·문서 일치 검사
 docs/, scripts/agent/, .github/ 저장소 공통 문서·자동화 (루트 유지)
 ```
 
@@ -455,7 +455,7 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). 앱·토큰 값과 나머지 모바일 동작은 T19–T25 **계획**이다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API와 T20 앱 골격·토큰·로그인까지 구현했으며 나머지 화면은 T21–T25 **계획**이다.
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
 결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
@@ -473,9 +473,9 @@ apps/
     src/{lib,places,travel-time,services,repositories,itineraries,trips,settings,results,sharing,sessions}/
                            HTTP·서비스·저장소·제공자·조립, 서버 포트 유지
     migrations/, scripts/, tests/   기존 SQL·실행기·서버 테스트
-  mobile/                  @travel/mobile. T17은 package.json·README만, 아래는 T20 이후 계획
+  mobile/                  @travel/mobile. T20 Expo SDK 58 앱
     app/                   expo-router 화면 라우트
-    src/{api,auth,map,theme,components,screens}/
+    src/{api,auth,theme,components,screens,navigation}/  map은 T22 계획
     assets/fonts/, tests/  Pretendard·jest-expo 컴포넌트 검사
 packages/
   core/                    @travel/core
@@ -484,7 +484,7 @@ packages/
     src/contracts/         공용 DTO·오류 클래스·입력 검증·설정 계산
     src/presentation/      결과 표시 변환
     tests/                 scheduler·fare 검사
-  design-tokens/           @travel/design-tokens. T17은 package.json·README만, 값은 T20
+  design-tokens/           @travel/design-tokens. T20 src/index.ts·문서 일치 검사
 ```
 
 | 패키지 | 책임 | 의존해도 되는 것 | 의존하면 안 되는 것 |
@@ -591,6 +591,18 @@ export const documentedApiErrors: [
 | 소유권 연결 | 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)가 받는 `userId()`를 `userId(request)`로 바꾸고, 각 `server.ts`가 같은 `RequestAuthenticator`를 주입한다. 처리기를 거치지 않고 `auth()`를 직접 부르는 API 라우트 `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 `RequestAuthenticator.userId(request)`로 바꾼다. 그러면 API 라우트 중 `apps/server/src/auth.ts`를 참조하는 것은 Auth.js 라우트뿐이고, 나머지 참조(웹 화면 `apps/server/src/app/page.tsx`·`apps/server/src/app/actions.ts`)와 함께 T25에서 지운다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다 |
 | 전환 기간 (T18–T25) | `Authorization` 헤더가 있으면 Bearer만 검사하고 실패면 401(쿠키로 넘어가지 않음). 헤더가 없으면 Auth.js 쿠키 세션. T25가 쿠키 경로와 Auth.js를 지운다 |
 | 공유 토큰 | 별개. 공유 토큰은 읽기 전용 GET만 허용하고 세션으로 승격되지 않는다(T14) |
+
+**T20 앱 구현:** `apps/mobile/src/auth/session-manager.ts`가 복원·로그인·로그아웃·만료를 관리한다.
+`native-runtime.ts`가 Google/SecureStore 어댑터를 `runtime.ts` 조립 함수에 전달하고, 루트 레이아웃은 글꼴 로드 후
+`AuthProvider`와 `navigation/root-navigator.tsx`를 연다. `Stack.Protected`는 비로그인 `/login`과 로그인 `/(app)`을 구분하며 이전 보호 화면 기록도 제거한다.
+Google ID 토큰 → 기존 POST `/api/session` → SecureStore 저장 완료 → `내 여행` 첫 화면 순서다.
+`src/api/client.ts`는 설정한 서버 origin의 `/api/` 요청에만 Bearer를 넣고, 쿠키·리다이렉트 전달을 금지하며 15초 제한을 둔다.
+401은 본문 해석 전에 해당 요청 토큰을 삭제한다. 늦게 도착한 이전 토큰의 401로 새 세션을 지우지 않는다.
+복원·요청 전 만료 검사와 잘못된 저장 데이터 제거, 저장소 오류의 접근 차단·삭제 재시도도 같은 관리자에 있다.
+로그아웃은 서버 응답과 관계없이 기기 저장소·Google 로그인 상태를 비우며, 서버 폐기 실패는 로그인 화면에 표시한다.
+SDK가 `webClientId`를 사용하므로 서버의 허용 aud(`GOOGLE_MOBILE_CLIENT_IDS`)에 실제 발급 대상인 Web ID도 포함한다.
+요구사항의 iOS/Android ID 예시와 실제 SDK 설정의 차이·채택 가정은 [질문](questions.md#t20-앱-골격과-로그인-가정),
+대안·검증은 [T20 결정](decisions/T20-mobile-shell-and-auth.md), 환경 설정은 [앱 README](../apps/mobile/README.md)에 기록한다.
 
 **T18 구현 위치(`apps/server/src/lib/auth/`):**
 
@@ -708,6 +720,13 @@ export type ResultMapProps = {
 - 검사: 같은 패키지의 테스트가 `docs/design.md`의 2–4·8절 값을 읽어 토큰 값과 같은지 비교한다(T20).
 - 앱: `apps/mobile/src/theme/`가 토큰을 React Native 스타일로 바꾸고 Pretendard(`apps/mobile/assets/fonts/`)를 등록한다. 화면은 theme 이름만 쓰고 hex를 직접 쓰지 않는다.
 - 공유 열람 페이지(T24): 서버가 같은 토큰을 CSS 변수로 바꿔 쓴다.
+
+T20 구현 완료: `colors`, `legColors`, `typography`, `spacing`, `radius`, `size`, `motion`을 export하며 범위값은 `min/max`로 보존한다.
+`tests/design.test.ts`가 각 문서 행의 색·수치를 추출해 역할별로 비교한다(구성 요소 §5 포함).
+앱의 `theme/index.ts`는 글꼴 크기×-0.01 자간과 tabular 숫자를 적용하고 `theme/fonts.ts`는 번들에 포함한 Pretendard 1.3.9 Regular/SemiBold를 등록한다.
+화면 전환은 `components/screen-transition.tsx`의 24pt/280ms ease-out 페이드, 버튼은 0.97배/90ms다.
+`useReducedMotion`은 OS 설정 변경을 구독하며 켜져 있으면 이동을 없앤다. 루트 `build`는 iOS·Android export와 토큰 JS/선언 파일을 생성한다.
+서버와 Expo의 React 패치가 달라 Metro/Jest 앱 해석기는 모든 네이티브 의존성의 React를 앱 사본으로 맞춘다.
 
 ### 13.8 T25에서 지울 웹 전용 코드
 

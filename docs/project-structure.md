@@ -5,15 +5,15 @@
 
 ## 기술과 검증 명령
 
-npm workspaces · Next.js App Router · TypeScript strict · Node 24 · PostgreSQL 16(`pg`) · Auth.js(Google) · `Temporal`(시간대) · `node:test` + `tsx`
+npm workspaces · Next.js App Router · Expo SDK 58/expo-router · TypeScript strict · Node 24 · PostgreSQL 16(`pg`) · Auth.js(Google) · `Temporal`(시간대) · `node:test` + `tsx` · `jest-expo`
 
 ```bash
 npm ci                 # 의존성 설치
 npm run migrate        # DB 스키마 적용 (DATABASE_URL 필요)
 npm run lint           # 구현된 모든 워크스페이스 ESLint
-npm run typecheck      # 서버 Next 타입 + 공용 strict 타입 검사
-npm run build          # 서버 빌드·PWA 검사 + core JS·선언 파일 생성
-npm test               # 서버·core 테스트 전체 (DB 테스트는 DATABASE_URL 필요, PWA 테스트는 build 먼저)
+npm run typecheck      # 앱·서버 Next 타입 + 공용 strict 타입 검사
+npm run build          # 앱 iOS·Android export + 서버/PWA + core·토큰 JS/선언 파일
+npm test               # 앱·서버·core·토큰 전체 (DB는 DATABASE_URL 필요, PWA는 build 먼저)
 ```
 
 CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순서로 실행한다.
@@ -44,7 +44,10 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `packages/core/src/contracts/` | 공용 DTO·검증·설정 계산. `trips/`, `settings/`, `results/`, `itinerary.ts`, `places.ts`, `travel-time.ts`, `sharing.ts`, `errors.ts`(T18 오류 `code` 목록) | core 내부, Temporal | 서버 포트, Node·DB·네트워크·React·React Native |
 | `packages/core/src/presentation/` | 표시 변환·한국어 라벨 | core DTO, Temporal | 화면 프레임워크·I/O |
 | `apps/server/src/scheduler/`, `fare/`와 기존 공용 모듈 경로 | `@travel/core` 재내보내기, 기존 호출 지점 유지 | core의 공개 하위 경로 | 계산·검증 복사본 |
-| `apps/mobile/`, `packages/design-tokens/` | T17 예약 워크스페이스(package.json·README), 실제 앱·토큰 값은 T20 | 앱은 core·design-tokens, 토큰은 외부 의존 없음 | 앱→서버 import, 토큰→플랫폼 의존 |
+| `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, 공통 버튼·상태·전환 | 앱 auth·theme, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장 |
+| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리 | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
+| `apps/mobile/src/theme/`, `assets/fonts/` | 디자인 값의 RN 스타일 변환, Pretendard 400/600, 동작 줄이기 | design-tokens, React Native·expo-font | 화면별 색·수치 복제 |
+| `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·움직임 값, 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
 
 결과 화면(T13)은 아래 T13 연결 절을 따른다.
 
@@ -57,6 +60,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - **시간:** 모든 시각은 IANA 시간대와 함께 다룬다. 현지 날짜·시각 문자열과 오프셋이 있는 instant를 구분한다.
 - **요청 인증(T18):** 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)와 `GET /api/trips/[id]`(`trips/http.ts`의 `tripAccessHandler`)는 `userId(request)`를 주입받는다. 각 `server.ts`가 `lib/auth/server.ts`의 `requestAuthenticator`를 넘긴다: `Authorization` 헤더가 있으면 Bearer 세션만(실패 401), 없으면 Auth.js 쿠키. 그 뒤 `authorizeTrip`·저장소 owner 조건은 그대로다. API 라우트 중 `src/auth.ts`를 import하는 것은 Auth.js 라우트뿐이다.
 - **모바일 로그인(T18):** 앱 → `POST /api/session { idToken }` → `MobileSessionService` → `JoseGoogleIdTokenVerifier`(Google JWKS, `GOOGLE_MOBILE_CLIENT_IDS`) → `upsertGoogleUser` → `mobile_sessions`(해시·30일) → `{ token, expiresAt }`. 로그아웃 `DELETE /api/session`, 탈퇴 `DELETE /api/account`(Bearer 전용, `users` cascade로 모든 세션 삭제). 상세: [T18 결정](decisions/T18-mobile-session-tokens.md).
+- **앱 연결(T20):** 루트 글꼴 로드 → `native-runtime.ts`가 Google/SecureStore를 `runtime.ts`에 주입 → `SessionManager.restore` → `Stack.Protected` 로그인/첫 화면. API가 401을 받으면 해당 요청의 세션만 지우며, 늦은 이전 세션 응답으로 새 로그인을 지우지 않는다. 로그아웃은 서버 실패에도 기기 토큰을 지운다. 저장소 오류는 접근을 막고 삭제 재시도를 제공한다. SDK의 Web ID를 서버 허용 aud 목록에 포함하는 설정은 [앱 README](../apps/mobile/README.md), 결정·검증은 [T20 결정](decisions/T20-mobile-shell-and-auth.md).
 - **생활 설정:** `/trips/[id]/settings` → GET/PUT `/api/trips/[id]/settings` → LivingSettingsService → LivingSettingsRepository. 여행 생성 성공 화면에서 진입한다. 설정 변경 즉시 scheduler의 시간창을 다시 계산하며 고정 시각 충돌을 표시한다. 입력 중 결과는 TIME_WINDOWS이며 저장 후 T12 POST로 전체 동선을 재계산한다.
 
 ## 중요한 설계 이유
