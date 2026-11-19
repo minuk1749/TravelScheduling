@@ -4,7 +4,7 @@
 
 - T11은 `/trips/[id]/settings`, `GET/PUT /api/trips/[id]/settings`를 추가한다.
   `PUT` 본문은 `{ revision, settings }`. 소유자·기간·시간대·고정 항목은 요청에서 받지 않는다.
-  응답은 `{ snapshot, calculation }`이며 타입은 [model.ts](../../src/settings/model.ts)에 있다.
+  응답은 `{ snapshot, calculation }`이며 타입은 [model.ts](../../apps/server/src/settings/model.ts)에 있다.
 - 기본 나가는/들어오는 시각, 기본 끼니, 식사 시간대, 택시 정책과 날짜별 덮어쓰기를 저장한다.
   날짜별 null/행 없음은 기본값 상속, `mealSlots: []`는 식사 없음이다.
   끼니 수는 기존 코어의 0/1/2/3 → 없음/점심/점심·저녁/아침·점심·저녁을 사용한다.

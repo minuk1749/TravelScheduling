@@ -5,13 +5,13 @@
 - `/trips/new`는 여행 → 항공 → 숙소 → 장소의 4단계 클라이언트 폼이다. 입력은 메모리에만 두고
   완료 시 인증된 `POST /api/trips`로 한 번에 저장한다. 입력 페이지 자체는 정적 공개 화면이며
   검색·프로필 조회·저장은 인증이 필요하다. 홈의 생성 링크는 로그인 사용자에게 표시한다.
-- [공유 검증기](../../src/trips/input.ts)는 단계별 클라이언트 검사와 전체 서버 검사를 수행한다.
+- [공유 검증기](../../apps/server/src/trips/input.ts)는 단계별 클라이언트 검사와 전체 서버 검사를 수행한다.
   요청에서 ownerId와 Google 상세 필드를 버리고, 소유자는 세션에서 가져온다.
   현지 항공 일시는 여행 IANA 시간대와 Temporal `disambiguation: reject`로 검증한다.
 - T10 생성 DTO `TripDraft`는 Google ID 기반이다. 기존 아키텍처의 `TripInputs`는 DB UUID와
   생활 설정까지 포함하는 **후속 스케줄러 입력 스냅샷** 계약으로 유지한다. 생성 DTO를 그대로
   `saveInputs`나 스케줄러에 전달하지 않는다.
-- [생성 저장소](../../src/repositories/trip-inputs.ts)는 여행과 항공·숙소·장소 연결을 한 트랜잭션으로
+- [생성 저장소](../../apps/server/src/repositories/trip-inputs.ts)는 여행과 항공·숙소·장소 연결을 한 트랜잭션으로
   저장하며, places에는 Google ID만 쓴다. 이름·주소·영업시간·검색 결과는 저장하지 않는다.
   코어/UI `WISH`는 DB `WISHLIST`로 변환한다. 기존 여행 수정·로드는 T11/T12에서 구현한다.
 - 기간은 1–31일, 도착 항공은 첫날·출발 항공은 마지막 날, 숙소는 모든 숙박일을 겹침 없이

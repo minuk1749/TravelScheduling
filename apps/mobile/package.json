@@ -1,0 +1,13 @@
+{
+  "name": "@travel/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@travel/core": "0.1.0",
+    "@travel/design-tokens": "0.1.0"
+  }
+}

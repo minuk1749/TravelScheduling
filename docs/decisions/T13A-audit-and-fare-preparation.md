@@ -33,6 +33,6 @@
 
 ## 검증
 
-[전체 점검 목록과 전후 측정](../t13a-audit.md), [행렬 회귀](../../tests/fare-matrix.test.ts),
-[계층 검사](../../tests/architecture-layers.test.ts), [HTTP 정책](../../tests/http-policy.test.ts).
+[전체 점검 목록과 전후 측정](../t13a-audit.md), [행렬 회귀](../../apps/server/tests/fare-matrix.test.ts),
+[계층 검사](../../apps/server/tests/architecture-layers.test.ts), [HTTP 정책](../../apps/server/tests/http-policy.test.ts).
 기존 스케줄러·API·UI·DB 검사는 공개 동작 보존을 검증한다.

@@ -3,62 +3,40 @@
 기준: 2026-11-19, T13A 시작 시 원격 `develop`의 `f0b4239`.
 [요구사항](requirements.md)의 확정/추천/미정 구분은 그대로 유지한다.
 T1–T13/T12B의 현재 연결과 T13A 정리를 기술한다. §7–8은 T7A 당시의 점검 기록이며,
-현재 결과 UI와 전체 점검은 §9–10, 공유는 §11, 최종 점검(T15A, 기준 `ee500de`)은 §12를 따른다. 모바일 앱 전환 후 구조(T16 계획)는 §13이다. 구조나 계약 변경은 관련 문서와 결정 기록을 함께 갱신한다.
+현재 결과 UI와 전체 점검은 §9–10, 공유는 §11, 최종 점검(T15A, 기준 `ee500de`)은 §12를 따른다. 모바일 앱 전환 후 구조(T16 계획, T17 패키지 이동 완료)는 §13이다. 구조나 계약 변경은 관련 문서와 결정 기록을 함께 갱신한다.
 
 ## 1. 폴더 구조와 모듈 경계
 
 ```text
-src/
-  app/                         현재: App Router, 홈/manifest, 서버 액션
-    api/auth/[...nextauth]/     현재: Auth.js HTTP 진입점
-    api/trips/[id]/             현재: 소유권 확인 후 { id }만 반환
-    api/trips/[id]/itinerary/   현재 T12: 인증·소유권 확인 후 동선 생성 POST
-    trips/[id]/result/          현재 T13: 지도·타임라인·비교·제약 편집
-    api/trips/[id]/constraints/ 현재 T13: 제약 GET/PUT
-    trips/[id]/settings/        현재 T11: 생활 설정·시간창/고정 시각 충돌 미리보기
-    api/trips/[id]/settings/    현재 T11: 소유자 설정 GET/PUT
-    trips/new/                  현재 T10: 여행·항공·숙소·장소 입력
-    api/trips/                  현재 T10: 인증된 생성 POST
-    api/city-profiles/          현재 T10: 인증된 프로필 GET
-    api/places/                 현재 T8: 인증된 한국어 검색·상세·좌표 조회
-  components/service-worker.tsx  현재: 프로덕션 서비스워커 등록
-  auth.ts                      현재: Google 공급자, JWT/세션 콜백 구성
-  lib/
-    http.ts                    현재 T13A: private/no-store JSON·Origin 공통 정책. T15A: isCrossSiteRequest
-    db.ts                      현재: 명시적 PostgreSQL Pool 팩터리
-    migrations.ts              현재 T8A: 적용 이력·기존 DB 검증·트랜잭션 실행기
-    auth/                      현재: 인증 포트/콜백, 권한, SQL 저장소
-  scheduler/
-    index.ts                   현재: 시간창·식사 슬롯, 공개 export
-    placement.ts               현재: 고정/필수 배치, 지리적 순서, 삽입·2-opt
-    placement-types.ts         현재 T13A: 배치 입출력 계약
-    route-evaluation.ts        현재 T13A: 단일 경로의 시간·수단·고정 순서 평가
-    transport.ts               현재: 정책·수동 지정에 따른 이동수단 선택
-    capacity.ts                현재: 실제 배치 기반 수용량·추천 검증
-  fare/index.ts                현재: 도시 프로필 타입, 순수 택시 요금 계산
-  places/                      현재 T8: 장소 포트·좌표 캐시·Google 어댑터·HTTP 처리
-  travel-time/                 현재 T9: 이동시간 포트·선택적 캐시·Google 어댑터·서버 팩터리
-  trips/                       현재 T10: 공유 입력 검증·HTTP 처리·서버 팩터리
-  repositories/                현재 T10/T11: 여행 생성·장소 ID 저장·프로필 조회·생활 설정 수정. T12: 입력 스냅샷(trip-snapshot.ts), 일정 저장(itineraries.ts). T15A: details 형식(itinerary-details.ts)
-  services/itinerary/           현재 T12: 날짜별 앵커·시간창 조립, 장소·이동시간 조회, 재조회 루프, 비교·효율 요약
-  itineraries/                 현재 T12: 동선 생성 HTTP 처리(http.ts)와 조립(server.ts)
-  settings/                    현재: 설정 검증·계산·서비스·HTTP·조립, model.ts에 저장소 포트
-  results/                     현재 T13: 제약 DTO·검증·표시 변환·HTTP·조립
-  repositories/living-settings.ts 현재 T11: 설정 읽기·잠금/revision/원자적 수정
-migrations/                    현재: 001 인증 → 002 여행 → 003 심야 시간대 → 004 DB 기반 정비 → 005 일정 저장 필드 → 006 구간 고정
-public/                        현재: 온라인 전용 sw.js, 아이콘
-tests/                         현재: node:test + tsx, SQL/HTTP/순수 함수 검사
-scripts/verify-pwa.mjs          현재: 빌드 산출물 검사
-scripts/migrate.ts              현재 T8A: npm run migrate 진입점
-docs/decisions/                설계 결정과 대안
+apps/server/                   @travel/server (Next.js, T25까지 기존 웹 화면도 유지)
+  src/app/                     화면·서버 액션·인증/여행/장소/설정/동선/제약/공유 API
+  src/components/, auth.ts     기존 웹 UI·Auth.js 구성
+  src/lib/                     HTTP 정책, DB 풀, 마이그레이션 실행기, 인증
+  src/{places,travel-time}/     제공자 포트·캐시·Google 어댑터·HTTP·조립
+  src/{services,repositories}/ 서비스·SQL 저장소
+  src/{itineraries,trips,settings,results,sharing}/ HTTP·조립·서버 포트와 core 재내보내기
+  src/{scheduler,fare}/         기존 호출 지점용 core 재내보내기만 (계산 구현 없음)
+  migrations/                  기존 001–006 SQL (내용·체크섬 유지)
+  public/                      온라인 전용 sw.js·아이콘 (T25까지)
+  scripts/                     migrate.ts, verify-pwa.mjs, benchmark-itinerary.ts
+  tests/                       HTTP·SQL·웹 UI·구조 검사, Playwright
+packages/core/                 @travel/core (플랫폼과 무관한 순수 로직)
+  src/scheduler/               시간창·식사 슬롯·방문 배치·수단 선택·수용량
+  src/fare/                    도시 프로필 타입·택시 요금 계산
+  src/contracts/               trips/settings/results/itinerary/places/travel-time/sharing DTO·검증
+  src/presentation/            결과 표시 변환·한국어 라벨
+  tests/                       기존 scheduler·fare 순수 함수 검사
+apps/mobile/                   @travel/mobile, T20 앱 구현 전 예약 워크스페이스
+packages/design-tokens/         @travel/design-tokens, T20 토큰 구현 전 예약 워크스페이스
+docs/, scripts/agent/, .github/ 저장소 공통 문서·자동화 (루트 유지)
 ```
 
 | 경계 | 책임과 허용 의존성 | 경계 밖의 일 |
 |---|---|---|
-| `src/app`, `src/auth.ts` | 세션 확인, 입력 검증, HTTP/화면 변환, 서버 서비스 호출 | 스케줄링 알고리즘, 브라우저에서 DB/비밀 키 접근 |
-| 인증 코어 | [AuthStore](../src/lib/auth/callbacks.ts)와 `authorizeTrip` 콜백에만 의존 | Google/SQL 구현을 콜백에 직접 결합 |
-| `src/scheduler` | 호출자가 제공한 시간창·행렬만 계산. 런타임 의존성은 내부 모듈과 Temporal | DB, fetch, 공급자 호출, 환경 변수, 현재 시각·난수 읽기 |
-| `src/fare` | 프로필·거리·주행시간·출발 instant·시간대에서 추정 요금 산출 | 요금표 조사, DB 조회, 환율 조회 |
+| `apps/server/src/app`, `apps/server/src/auth.ts` | 세션 확인, 입력 검증, HTTP/화면 변환, 서버 서비스 호출 | 스케줄링 알고리즘, 브라우저에서 DB/비밀 키 접근 |
+| 인증 코어 | [AuthStore](../apps/server/src/lib/auth/callbacks.ts)와 `authorizeTrip` 콜백에만 의존 | Google/SQL 구현을 콜백에 직접 결합 |
+| `packages/core/src/scheduler` | 호출자가 제공한 시간창·행렬만 계산. 런타임 의존성은 내부 모듈과 Temporal | DB, fetch, 공급자 호출, 환경 변수, 현재 시각·난수 읽기 |
+| `packages/core/src/fare` | 프로필·거리·주행시간·출발 instant·시간대에서 추정 요금 산출 | 요금표 조사, DB 조회, 환율 조회 |
 | 일정 서비스 (T12) | 저장소/제공자 포트 주입, 좌표·영업시간 조회, 순수 함수 호출 순서, 재검증 | HTTP 객체를 코어에 전달, 고정 제약의 임의 해제, SQL |
 | 제공자 | 외부 응답/단위 정규화, 캐시, 네트워크 실패 구분 | 정책에 맞는 이동수단 선택, 사용자 입력 변경 |
 | 저장소 | SQL, 트랜잭션, 행→도메인 변환, 소유 데이터 연쇄 삭제 | 스케줄러 실행, 외부 API 호출 |
@@ -68,7 +46,7 @@ docs/decisions/                설계 결정과 대안
 `index → placement/transport`가 연결된다. `placement-types.ts`의 타입 참조는 런타임 의존이 아니다. 전역 가변 캐시를 코어에 넣지 않는다.
 `ReadonlyMap`/readonly 배열 입력을 바꾸지 않고 결과를 새로 반환한다.
 
-현재 SQL 구현은 [auth/store.ts](../src/lib/auth/store.ts)에 있다. 새 저장소는 같은 `pg` 풀을
+현재 SQL 구현은 [auth/store.ts](../apps/server/src/lib/auth/store.ts)에 있다. 새 저장소는 같은 `pg` 풀을
 주입받는 방식으로 추가하고 기존 인증 저장소 이동은 별도 작업에서 필요할 때 결정한다.
 풀은 서버 프로세스에서 재사용하고 종료 시 닫는다. 빌드·모듈 import 시 연결하지 않는다.
 
@@ -129,9 +107,9 @@ flowchart TD
 
 ## 3. 현재 핵심 인터페이스
 
-실제 정의는 [scheduler/index.ts](../src/scheduler/index.ts),
-[placement.ts](../src/scheduler/placement.ts), [capacity.ts](../src/scheduler/capacity.ts),
-[transport.ts](../src/scheduler/transport.ts), [fare/index.ts](../src/fare/index.ts)를 따른다.
+실제 정의는 [scheduler/index.ts](../packages/core/src/scheduler/index.ts),
+[placement.ts](../packages/core/src/scheduler/placement.ts), [capacity.ts](../packages/core/src/scheduler/capacity.ts),
+[transport.ts](../packages/core/src/scheduler/transport.ts), [fare/index.ts](../packages/core/src/fare/index.ts)를 따른다.
 이 문서의 TypeScript 블록은 한 모듈로 합쳐 실제 export와 함께 strict 타입 검사한다.
 
 ```typescript
@@ -140,8 +118,8 @@ import {
   type DayWindowInput, type DayWindowResult, type MealSlot, type MealWindows,
   type TimeWindow, type ScheduleInput, type ScheduleResult, type CapacityResult,
   type Visit, type TaxiPolicy, type RouteOptions,
-} from '../src/scheduler';
-import { estimateTaxiFare, type CityProfile } from '../src/fare';
+} from '@travel/core/scheduler';
+import { estimateTaxiFare, type CityProfile } from '@travel/core/fare';
 
 export const schedulerContract: {
   calculateDayWindow(input: DayWindowInput): DayWindowResult;
@@ -185,12 +163,12 @@ export const fareProvider: FareProvider = { estimateTaxiFare };
 // T8: 구현과 문서가 같은 계약을 사용한다. location은 캐시 가능한 좌표 조회다.
 export type {
   PlaceProvider, PlaceSearchRequest, PlaceDetailsRequest, PlaceSummary, PlaceDetails, PlaceLocation,
-} from '../src/places';
+} from '../apps/server/src/places';
 
 export type {
   Money, Location, ProviderMode, TravelEstimate, TravelAlternatives,
   TravelRequest, MatrixRequest, RouteRequest, TravelMatrix, TravelTimeProvider,
-} from '../src/travel-time';
+} from '../apps/server/src/travel-time';
 ```
 
 장소 검색은 한국어 요청이며 이름의 한국어 표기가 없는 경우를 허용한다. 내부 `Location.id`는
@@ -212,7 +190,7 @@ API는 `GET /api/places?query=도쿄&regionCode=JP`,
 응답은 `{places, attribution}` 또는 `{place, attribution}`이며 공급자 attribution도 전달한다.
 세부 통합과 UI 표시 책임은 [T8 인계](t8-handoff.md)를 따른다.
 
-T9 [이동시간 제공자](../src/travel-time/index.ts)는 기존 matrix/route 계약을 구현한다.
+T9 [이동시간 제공자](../apps/server/src/travel-time/index.ts)는 기존 matrix/route 계약을 구현한다.
 `matrix`는 고유 장소 ID(최대 100개)의 방향성 행렬이며 대각선도 Google 응답을 따른다.
 `GoogleTravelTimeProvider`는 `computeRouteMatrix`를 TRANSIT 10×10, WALK/DRIVE 25×25로
 분할하고 응답 인덱스로 복원한다. 수단별 경로 없음은 해당 키 생략, 요금 없음은 null이다.
@@ -222,13 +200,13 @@ TRANSIT 요금의 units/nanos를 통화와 함께 숫자로 변환하고 WALK/DR
 출발 시각을 보내지 않는다. 서비스 요청에는 항상 IANA 시간대와 오프셋 있는 instant가 필요하다.
 주행시간에 택시 호출 대기를 추가하지 않는다. 초→분, 미터→km 및 DRIVE→TAXI 변환은 T12 책임이다.
 
-[캐시](../src/travel-time/cache.ts)는 인스턴스별로 요청 종류/정규화한 instant/시간대/모드/방향/ID/좌표를
+[캐시](../apps/server/src/travel-time/cache.ts)는 인스턴스별로 요청 종류/정규화한 instant/시간대/모드/방향/ID/좌표를
 키에 담고, 명시적으로 TTL을 설정했을 때만 완료 응답을 보관한다(최대 24시간, 기본 32개 요청).
 행렬 장소와 모드 순서만 정규화하며 시각·좌표를 반올림하지 않는다. 만료 타이머·용량 초과로
 삭제하고 오류는 보관하지 않는다. 동시 요청은 합치되 반환 결과는 복제하며 dispose 후 재사용할 수 없다.
 행렬과 구간 캐시는 서로 재사용하지 않아 재조회 의미를 보존한다.
 
-Google 기본 [서버 팩터리](../src/travel-time/server.ts)는 `GOOGLE_ROUTES_API_KEY`를 호출 시 읽고
+Google 기본 [서버 팩터리](../apps/server/src/travel-time/server.ts)는 `GOOGLE_ROUTES_API_KEY`를 호출 시 읽고
 완료 응답 캐시를 끈다. Google의 시간·거리·요금 보관 허용을 확인하지 못했기 때문이다.
 같은 진행 중 요청만 합치고 완료 후 순차 반복에는 외부 호출이 있다. 따라서 T9의 반복 호출 0회
 기준은 캐시 허용 제공자에 대해서만 자동 검증되며 Google 기본 연결에서는 **미충족/사람 확인 필요**다.
@@ -241,24 +219,24 @@ Google 기본 [서버 팩터리](../src/travel-time/server.ts)는 `GOOGLE_ROUTES
 export type {
   PlaceRef, TripInputs, TripLoad, ItineraryResult, LegComparison, EfficiencySummary, RouteAlternatives,
   ItineraryRepository, CityProfileSource, ItineraryPlaces, ItineraryDependencies, GenerateOutcome, SaveOutcome,
-} from '../src/services/itinerary';
-export { ItineraryService, ItineraryInputError, MAX_ROUTE_ATTEMPTS, MEAL_MINUTES } from '../src/services/itinerary';
+} from '../apps/server/src/services/itinerary';
+export { ItineraryService, ItineraryInputError, MAX_ROUTE_ATTEMPTS, MEAL_MINUTES } from '../apps/server/src/services/itinerary';
 ```
 
-위 저장소 계약은 서버 내부에서만 사용한다. [입력 스냅샷](../src/repositories/trip-snapshot.ts)은
+위 저장소 계약은 서버 내부에서만 사용한다. [입력 스냅샷](../apps/server/src/repositories/trip-snapshot.ts)은
 SQL time·JSONB·`WISHLIST`를 검증·변환하고 누락 필드를 `INCOMPLETE`로 돌려준다(초가 0이 아닌 시각도 포함).
 행 순서를 고정해 같은 입력은 같은 SHA-256 `inputHash`를 갖는다. `TripInputs`의 장소는 `places.id`와
 Google ID를 함께 갖는 `PlaceRef`이며 ownerId는 담지 않는다(소유권은 HTTP 처리기가 먼저 확인한다).
-[일정 저장](../src/repositories/itineraries.ts)은 `trips` 행을 `FOR UPDATE`로 잠근 뒤 같은 트랜잭션에서
-입력 해시를 다시 계산하고, 다르면 아무것도 쓰지 않고 `STALE`을 반환한다. T11 [생활 설정 저장소](../src/repositories/living-settings.ts)도
+[일정 저장](../apps/server/src/repositories/itineraries.ts)은 `trips` 행을 `FOR UPDATE`로 잠근 뒤 같은 트랜잭션에서
+입력 해시를 다시 계산하고, 다르면 아무것도 쓰지 않고 `STALE`을 반환한다. T11 [생활 설정 저장소](../apps/server/src/repositories/living-settings.ts)도
 같은 `trips` 행을 `FOR UPDATE`로 잠그므로 설정 수정과 일정 저장이 직렬화된다. 상세는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md).
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.
 
 T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisions/0006-trip-input-creation.md)에 기록한다.
-[TripDraft 검증기](../src/trips/input.ts)는 클라이언트 단계 검사와 서버 전체 검사에 공용이며,
-[HTTP 처리기](../src/trips/http.ts)는 인증·JSON·동일 출처·필드 오류를 확인한다.
-[여행 생성 저장소](../src/repositories/trip-inputs.ts)는 세션 ownerId만 받아 트랜잭션으로 저장한다.
-[프로필 저장소](../src/repositories/city-profiles.ts)는 SQL numeric/time/JSONB를 정규화한다.
+[TripDraft 검증기](../apps/server/src/trips/input.ts)는 클라이언트 단계 검사와 서버 전체 검사에 공용이며,
+[HTTP 처리기](../apps/server/src/trips/http.ts)는 인증·JSON·동일 출처·필드 오류를 확인한다.
+[여행 생성 저장소](../apps/server/src/repositories/trip-inputs.ts)는 세션 ownerId만 받아 트랜잭션으로 저장한다.
+[프로필 저장소](../apps/server/src/repositories/city-profiles.ts)는 SQL numeric/time/JSONB를 정규화한다.
 이 생성 계약과 별개로 loadInputs/saveItinerary는 T12 저장소가 구현하며, 기존 여행 수정(saveInputs)은 T11 범위다.
 UI는 Google Maps와 제공자 attribution을 표시하며 외부 링크는 http/https만 허용한다.
 입력 이름과 검색 결과는 화면 메모리에만 존재한다. 새로고침 시 미저장 입력 복구는 제공하지 않는다.
@@ -266,11 +244,11 @@ UI는 Google Maps와 제공자 attribution을 표시하며 외부 링크는 http
 ### T11 생활 설정 계약
 
 [ADR 0007](decisions/0007-living-settings.md)에 설정 상속·동시 편집·재계산 범위를 기록한다.
-[타입](../src/settings/model.ts)의 `LivingSettings`는 기본 시각·식사 슬롯/시간대·택시 정책과
+[타입](../apps/server/src/settings/model.ts)의 `LivingSettings`는 기본 시각·식사 슬롯/시간대·택시 정책과
 날짜별 nullable 덮어쓰기다. `GET/PUT /api/trips/[id]/settings`는 세션 소유권을 확인한다.
 PUT은 `{ revision, settings }`, 응답은 `{ snapshot, calculation }`이다.
-[서비스](../src/settings/service.ts)는 [공유 검증](../src/settings/input.ts)과
-[계산](../src/settings/calculate.ts)을 호출하고 [저장소](../src/repositories/living-settings.ts)가
+[서비스](../apps/server/src/settings/service.ts)는 [공유 검증](../apps/server/src/settings/input.ts)과
+[계산](../apps/server/src/settings/calculate.ts)을 호출하고 [저장소](../apps/server/src/repositories/living-settings.ts)가
 여행 행 잠금 뒤 소유권·revision을 다시 검사해 기본값/날짜별 행만 원자적으로 저장한다.
 기존 고정 방문과 결과는 수정하지 않는다. 읽기는 repeatable read 스냅샷이다.
 날짜별 0끼와 null 상속은 구별하며 기존 날짜 행의 created_at은 유지한다.
@@ -287,9 +265,9 @@ T12 생성 API를 호출해 전체 동선도 검증하며, 화면에서 두 검�
 
 결정 근거: [ADR 0002](decisions/0002-time-storage-and-error-contracts.md),
 [ADR 0004](decisions/0004-database-migrations-and-timestamps.md).
-스키마 원본은 [001](../migrations/001_auth.sql), [002](../migrations/002_travel_model.sql),
-[003](../migrations/003_city_profile_night_hours.sql), [004](../migrations/004_database_foundations.sql) 순서다.
-`DATABASE_URL`을 설정하고 `npm run migrate`로 준비한다. [실행기](../src/lib/migrations.ts)는
+스키마 원본은 [001](../apps/server/migrations/001_auth.sql), [002](../apps/server/migrations/002_travel_model.sql),
+[003](../apps/server/migrations/003_city_profile_night_hours.sql), [004](../apps/server/migrations/004_database_foundations.sql) 순서다.
+`DATABASE_URL`을 설정하고 `npm run migrate`로 준비한다. [실행기](../apps/server/src/lib/migrations.ts)는
 `schema_migrations(version, checksum, applied_at, origin)`과 SQL 파일의 SHA-256을 대조하여
 미적용 파일만 순서대로 실행한다. 이력 없는 기존 DB는 001/001–002/001–003 중 어느 스키마인지
 검증용 임시 스키마의 열·타입·기본값·제약조건과 비교해 기존 이력을 등록한다. 임시 스키마는
@@ -297,7 +275,7 @@ T12 생성 API를 호출해 전체 동선도 검증하며, 화면에서 두 검�
 이관 시 DB `CREATE` 권한과 앱 쓰기 중지가 필요하다. 정상 이력 이후에는 임시 스키마가 필요 없다.
 현재 스키마에 대한 트랜잭션 advisory lock으로 동시 실행을 직렬화하고, 한 실행의 모든 SQL과
 이력을 함께 커밋하거나 롤백한다. SQL 파일 자체에 트랜잭션 제어를 넣지 않는다.
-테스트와 CI는 동일 실행기로 격리 스키마를 준비하며 [통합 테스트](../tests/migrations.test.ts)는 CLI도 실행한다.
+테스트와 CI는 동일 실행기로 격리 스키마를 준비하며 [통합 테스트](../apps/server/tests/migrations.test.ts)는 CLI도 실행한다.
 
 모든 사용자 소유 테이블(`users`, `trips`, `day_settings`, `flights`, `lodgings`, `trip_places`,
 `itineraries`, `day_plans`, `stops`, `legs`)에 `created_at/updated_at timestamptz NOT NULL DEFAULT now()`가 있다.
@@ -305,7 +283,7 @@ T12 생성 API를 호출해 전체 동선도 검증하며, 화면에서 두 검�
 공유 `places`의 `updated_at`은 `BEFORE UPDATE` 트리거가 `statement_timestamp()`로 갱신한다.
 동일 값 UPDATE와 UPSERT도 갱신하며 자식 수정이 부모 시각을 바꾸지는 않는다. 따라서 `trips.updated_at`만으로
 입력 버전이나 stale 여부를 판단하지 않는다. `city_profiles.updated_at`은 요금 출처의 갱신일로 계속 호출자가 관리한다.
-모든 FK 열은 기존 PK/UNIQUE 또는 새 인덱스의 첫 열로 포함되며 [카탈로그 검사](../tests/database-foundations.test.ts)가 검증한다.
+모든 FK 열은 기존 PK/UNIQUE 또는 새 인덱스의 첫 열로 포함되며 [카탈로그 검사](../apps/server/tests/database-foundations.test.ts)가 검증한다.
 
 최신 일정은 `itineraries.generation bigint GENERATED ALWAYS AS IDENTITY`의 가장 큰 값이다.
 `SELECT ... FROM itineraries WHERE trip_id = $1 ORDER BY generation DESC LIMIT 1`을 사용하며
@@ -325,7 +303,7 @@ T12 생성 API를 호출해 전체 동선도 검증하며, 화면에서 두 검�
 | 날짜별 null 설정 | 여행 기본값 상속. `meal_slots: []`는 끼니 없음이며 null과 다름 |
 | `meal_slots`, `meal_windows` JSONB | 슬롯 집합과 `{start,end}` 검증. 현재 SQL 테스트의 `["11:30","14:00"]` 형태도 변환 필요 |
 | 슬롯 집합 → T5의 `mealCount` | `[]/[LUNCH]/[LUNCH,DINNER]/[BREAKFAST,LUNCH,DINNER]`만 수로 직접 변환 가능. `[DINNER]` 등을 길이만 세어 점심으로 바꾸지 않음. 변환 규칙은 scheduler의 `mealCountForSlots` 하나이며 T11 `countForSlots`(거부 시 RangeError)와 T12 일정 생성(필드 오류)이 함께 쓴다. 임의 조합은 거부 |
-| `stops`/`legs` SQL | T12의 [005](../migrations/005_itinerary_details.sql)가 stop 종류·식사 슬롯, leg 양 끝점·출발/도착 instant·요금, 일정 `details` JSONB를 추가. 사용자 구간 이동수단 고정 입력은 T13에서 보완 |
+| `stops`/`legs` SQL | T12의 [005](../apps/server/migrations/005_itinerary_details.sql)가 stop 종류·식사 슬롯, leg 양 끝점·출발/도착 instant·요금, 일정 `details` JSONB를 추가. 사용자 구간 이동수단 고정 입력은 T13에서 보완 |
 
 시간은 여행의 IANA 시간대를 항상 함께 전달한다. 현지 입력은 `Temporal`의
 `disambiguation: 'reject'`로 변환해 DST에서 존재하지 않거나 두 번 나타나는 시각을 거부한다.
@@ -370,17 +348,17 @@ T12는 캐시 만료/네트워크 실패를 영업 종료나 이동 불가와 �
 
 | 작업 | 코드/문서 차이 또는 결함 | T7A 처리와 후속 담당 | 검증 |
 |---|---|---|---|
-| T1 | README의 정적 홈·T2/T3 예정 설명은 현재 인증/스키마와 다름. DB 테스트가 읽기 전용이라는 설명도 오래됨 | 현재 구조를 이 문서와 README에 정정. 테스트는 격리 스키마를 만들고 지움 | [PWA](../tests/pwa.test.ts), [SW](../tests/service-worker.test.ts), [DB](../tests/db.test.ts) |
-| T2 | 다른 사용자 403은 순수 권한 함수 검사. 실제 Google OAuth 브라우저 흐름은 미검증 | 현재 보장 범위를 명시. 실제 로그인·로그아웃은 사람 확인 | [인증](../tests/auth.test.ts) |
-| T2/T3 | 탈퇴 SQL 테스트에서 flights/lodgings/trip_places/stops 삭제 검증 누락 | 해당 행을 생성하고 모든 소유 테이블 삭제·공유 places 보존을 검사하도록 보강 | [여행 모델](../tests/travel-model.test.ts) |
-| T3 | 스키마/SQL 테스트는 있고 여행 저장소·생성/수정 API는 없음. GET은 `{id}`만 반환 | 후속 저장소 계약 정의, T10/T12 구현. 기존 T2 nullable 여행도 명시적으로 처리 | [SQL 모델](../tests/travel-model.test.ts), 문서 계약 타입 검사 |
-| T3/T5/T6 | `WISHLIST/WISH`, 슬롯 집합/mealCount, 현지 time/instant, JSONB 창 모양 불일치. 아직 연결하는 코드 없음 | §5에 명시적 변환과 미완성 입력 처리 규칙 기록. T10–T12 연결 때 회귀 테스트 추가 | [SQL 모델](../tests/travel-model.test.ts), [T5](../tests/scheduler.test.ts), [T6](../tests/scheduler-placement.test.ts) |
+| T1 | README의 정적 홈·T2/T3 예정 설명은 현재 인증/스키마와 다름. DB 테스트가 읽기 전용이라는 설명도 오래됨 | 현재 구조를 이 문서와 README에 정정. 테스트는 격리 스키마를 만들고 지움 | [PWA](../apps/server/tests/pwa.test.ts), [SW](../apps/server/tests/service-worker.test.ts), [DB](../apps/server/tests/db.test.ts) |
+| T2 | 다른 사용자 403은 순수 권한 함수 검사. 실제 Google OAuth 브라우저 흐름은 미검증 | 현재 보장 범위를 명시. 실제 로그인·로그아웃은 사람 확인 | [인증](../apps/server/tests/auth.test.ts) |
+| T2/T3 | 탈퇴 SQL 테스트에서 flights/lodgings/trip_places/stops 삭제 검증 누락 | 해당 행을 생성하고 모든 소유 테이블 삭제·공유 places 보존을 검사하도록 보강 | [여행 모델](../apps/server/tests/travel-model.test.ts) |
+| T3 | 스키마/SQL 테스트는 있고 여행 저장소·생성/수정 API는 없음. GET은 `{id}`만 반환 | 후속 저장소 계약 정의, T10/T12 구현. 기존 T2 nullable 여행도 명시적으로 처리 | [SQL 모델](../apps/server/tests/travel-model.test.ts), 문서 계약 타입 검사 |
+| T3/T5/T6 | `WISHLIST/WISH`, 슬롯 집합/mealCount, 현지 time/instant, JSONB 창 모양 불일치. 아직 연결하는 코드 없음 | §5에 명시적 변환과 미완성 입력 처리 규칙 기록. T10–T12 연결 때 회귀 테스트 추가 | [SQL 모델](../apps/server/tests/travel-model.test.ts), [T5](../packages/core/tests/scheduler.test.ts), [T6](../packages/core/tests/scheduler-placement.test.ts) |
 | T3/T12/T13 | stop 종류·식사 슬롯, leg 시각/끝점, 사용자 구간 고정 입력, 추천 상세 저장 필드 부족 | 현재 저장 성공으로 주장하지 않음. T12/T13 스키마 보완 범위로 인계 | 스키마 대조, 문서 계약 타입 검사 |
-| T4 | 순수 추정/프로필 스키마만 존재. 실제 10개 도시/환율/저장소 없음. SQL numeric/time과 요금 입력 표현이 다름 | 변환 규칙 기록. 실제 요금표 T4D, 제공자 연결·환율/효율 요약 T12에서 구현 | [요금](../tests/fare.test.ts), [심야 SQL](../tests/travel-model.test.ts) |
-| T5 | 식사 결과는 예약 시간창이며 식당과 자동 결합하지 않음. 공항 이동은 호출자가 합산 | 기존 가정을 명시하고 T12 입력 조립 책임으로 유지 | [시간창](../tests/scheduler.test.ts) |
-| T6 | 대표 시각 행렬만 사용, 실제 출발 시각 재조회·구간 대안·전체 효율 없음 | T9/T12로 인계. 순수 계산에서 외부 호출 금지 | [배치](../tests/scheduler-placement.test.ts), 의존 경계 검사 |
-| T6/T7 | 방문 없는 날의 숙소 간 이동이 시간창보다 길어도 실패 진단이 없어 `OK` 추천 | **결함 수정**: 최종 경로 시간창 실패를 issues에 전달. 창이 없는 필수 이동도 충돌. 정확한 경계/경유 성공은 유지 | [수용량](../tests/scheduler-capacity.test.ts)의 `overlong daily transfer`, `no available window` 회귀 |
-| T7 | “최대 N”은 최적해가 아닌 검증된 휴리스틱 조합. 시간 합은 하한이며 CONFLICT는 탐색 실패 | 구현 변경 없이 의미를 보존하고 API/화면 계약에 명시 | [수용량](../tests/scheduler-capacity.test.ts)의 재현·같은 N 재선택·성능·입력 불변성 |
+| T4 | 순수 추정/프로필 스키마만 존재. 실제 10개 도시/환율/저장소 없음. SQL numeric/time과 요금 입력 표현이 다름 | 변환 규칙 기록. 실제 요금표 T4D, 제공자 연결·환율/효율 요약 T12에서 구현 | [요금](../packages/core/tests/fare.test.ts), [심야 SQL](../apps/server/tests/travel-model.test.ts) |
+| T5 | 식사 결과는 예약 시간창이며 식당과 자동 결합하지 않음. 공항 이동은 호출자가 합산 | 기존 가정을 명시하고 T12 입력 조립 책임으로 유지 | [시간창](../packages/core/tests/scheduler.test.ts) |
+| T6 | 대표 시각 행렬만 사용, 실제 출발 시각 재조회·구간 대안·전체 효율 없음 | T9/T12로 인계. 순수 계산에서 외부 호출 금지 | [배치](../packages/core/tests/scheduler-placement.test.ts), 의존 경계 검사 |
+| T6/T7 | 방문 없는 날의 숙소 간 이동이 시간창보다 길어도 실패 진단이 없어 `OK` 추천 | **결함 수정**: 최종 경로 시간창 실패를 issues에 전달. 창이 없는 필수 이동도 충돌. 정확한 경계/경유 성공은 유지 | [수용량](../packages/core/tests/scheduler-capacity.test.ts)의 `overlong daily transfer`, `no available window` 회귀 |
+| T7 | “최대 N”은 최적해가 아닌 검증된 휴리스틱 조합. 시간 합은 하한이며 CONFLICT는 탐색 실패 | 구현 변경 없이 의미를 보존하고 API/화면 계약에 명시 | [수용량](../packages/core/tests/scheduler-capacity.test.ts)의 재현·같은 N 재선택·성능·입력 불변성 |
 
 폴더 이동, 코어 추상화 재작성, 신규 API/DB 열/패키지 추가는 수행하지 않았다.
 이슈 없는 구현을 설계 문서에 맞추기 위한 리팩터링도 하지 않았다.
@@ -389,7 +367,7 @@ T12는 캐시 만료/네트워크 실패를 영업 종료나 이동 불가와 �
 
 | T7A 완료 항목 | 자동 검사와 근거 |
 |---|---|
-| 구조·경계·흐름·핵심 인터페이스·시간대·오류 문서 | [architecture.test.ts](../tests/architecture.test.ts): 문서 구성/실제 소스·테스트·ADR 링크, TypeScript 계약 블록 strict 검사, 코어 의존 경계 |
+| 구조·경계·흐름·핵심 인터페이스·시간대·오류 문서 | [architecture.test.ts](../apps/server/tests/architecture.test.ts): 문서 구성/실제 소스·테스트·ADR 링크, TypeScript 계약 블록 strict 검사, 코어 의존 경계 |
 | 차이 목록과 결함만 수정 | §7에 T1–T7 추적, 수용량 회귀 테스트와 전체 소유 데이터 삭제 SQL 검사. 범위는 diff로도 확인 |
 | 주요 결정 기록 | ADR 0001/0002 링크 및 결정·이유·대안의 문서 검사 |
 | 기존 동작 보존 | `npm run lint`, `npm run typecheck`, `npm run build`, `npm test` |
@@ -403,16 +381,16 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
 
 이 절은 T11/T12에서 후속 연결로 남겼던 결과 화면·전체 재계산·구간 수동 지정의 현재 구현을 보완한다.
 
-- `/trips/[id]/result`와 [결과 컴포넌트](../src/components/itinerary/index.tsx)가 지도/타임라인/비교/초과 선택을 연결한다.
-- [공유 DTO](../src/results/model.ts), [검증](../src/results/input.ts), [표시 변환](../src/results/presentation.ts)은 브라우저/서버 공용이며 DB·네트워크에 의존하지 않는다.
-- [결과 서비스](../src/services/itinerary/editing.ts)는 ConstraintRepository와 장소 제공자 포트만 사용한다. [HTTP](../src/results/http.ts)가 인증·소유권·동일 출처·오류를 처리하고 server.ts가 구체 구현을 조립한다.
-- [저장소](../src/repositories/itinerary-constraints.ts)는 여행 행 잠금 아래 소유권과 전체 입력 해시를 재검사하고 방문/수단 제약을 원자적으로 저장한다.
+- `/trips/[id]/result`와 [결과 컴포넌트](../apps/server/src/components/itinerary/index.tsx)가 지도/타임라인/비교/초과 선택을 연결한다.
+- [공유 DTO](../apps/server/src/results/model.ts), [검증](../apps/server/src/results/input.ts), [표시 변환](../apps/server/src/results/presentation.ts)은 브라우저/서버 공용이며 DB·네트워크에 의존하지 않는다.
+- [결과 서비스](../apps/server/src/services/itinerary/editing.ts)는 ConstraintRepository와 장소 제공자 포트만 사용한다. [HTTP](../apps/server/src/results/http.ts)가 인증·소유권·동일 출처·오류를 처리하고 server.ts가 구체 구현을 조립한다.
+- [저장소](../apps/server/src/repositories/itinerary-constraints.ts)는 여행 행 잠금 아래 소유권과 전체 입력 해시를 재검사하고 방문/수단 제약을 원자적으로 저장한다.
 - GET `/api/trips/[id]/constraints`는 `{ input, revision, places }`, PUT은 `{ revision, constraints: { visits, legModes } }`를 받고 `{ input, revision }`을 반환한다. revision은 동선 입력 해시다. 누락/중복/다른 여행 ID·기간 밖 날짜·DST 모호 시각을 거부한다.
-- 방문 제약은 기존 trip_places에, 구간 제약은 [006](../migrations/006_itinerary_constraints.sql)의 trips.leg_modes에 저장한다. 후자는 날짜·출발/도착 장소 ID·수동 수단 배열이다. 장소 이름/귀속 정보는 실시간 응답에만 포함한다.
-- [일상 구간 적용](../src/services/itinerary/constraints.ts)은 기존 짐 속성을 유지하고, 공항 이동은 기존 transfer 선택에 fixedMode를 전달한다. 입력 해시에 수단 제약도 포함된다.
+- 방문 제약은 기존 trip_places에, 구간 제약은 [006](../apps/server/migrations/006_itinerary_constraints.sql)의 trips.leg_modes에 저장한다. 후자는 날짜·출발/도착 장소 ID·수동 수단 배열이다. 장소 이름/귀속 정보는 실시간 응답에만 포함한다.
+- [일상 구간 적용](../apps/server/src/services/itinerary/constraints.ts)은 기존 짐 속성을 유지하고, 공항 이동은 기존 transfer 선택에 fixedMode를 전달한다. 입력 해시에 수단 제약도 포함된다.
 - PUT 성공 뒤 기존 POST `/api/trips/[id]/itinerary`로 재검증한다. POST 응답에 inputHash를 추가해 다른 입력으로 생성된 결과 표시를 막는다. 생성 실패 시 저장한 제약은 유지된다. 화면 재접속은 입력을 복원하고 버튼으로 재생성한다.
-- 생활 설정 저장 뒤 [전체 검증](../src/components/living-settings/itinerary-preview.tsx)도 기존 POST를 호출한다. 입력 중 TIME_WINDOWS 미리보기는 전체 검증과 구분한다.
-- [지도 어댑터](../src/components/itinerary/google-map.ts)는 브라우저 전용 Maps 키/지도 ID로 고급 마커를 표시한다. 지도 로딩 실패에도 장소 목록에서 편집할 수 있다.
+- 생활 설정 저장 뒤 [전체 검증](../apps/server/src/components/living-settings/itinerary-preview.tsx)도 기존 POST를 호출한다. 입력 중 TIME_WINDOWS 미리보기는 전체 검증과 구분한다.
+- [지도 어댑터](../apps/server/src/components/itinerary/google-map.ts)는 브라우저 전용 Maps 키/지도 ID로 고급 마커를 표시한다. 지도 로딩 실패에도 장소 목록에서 편집할 수 있다.
 
 이 결정의 이유·대안·검증은 [T13 ADR](decisions/T13-result-ui-and-constraints.md)에 기록한다. T12B의 날짜별 짐 처리 모듈은 변경하지 않는다.
 
@@ -432,10 +410,10 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
   저장소 모듈의 기존 타입 export도 유지해 호출 지점의 호환성을 보존한다.
 - `lib/http.ts`는 캐시 금지 JSON과 Origin 비교만 공유한다. 기존 endpoint별 입력 크기,
   Content-Type/Sec-Fetch-Site 검사, 인증 순서와 400/401/403/404/409/500 계약은 바꾸지 않는다.
-- 구조 검사: [계층](../tests/architecture-layers.test.ts), [전체 소스 의존 그래프](../tests/helpers/source-graph.ts).
+- 구조 검사: [계층](../apps/server/tests/architecture-layers.test.ts), [전체 소스 의존 그래프](../apps/server/tests/helpers/source-graph.ts).
   클라이언트 코드의 전이 의존까지 검사하되 타입 import와 공개 빌드 상수 `NODE_ENV`는 구별한다.
-- 성능 회귀: [요금 행렬](../tests/fare-matrix.test.ts). 시간 비율 대신 행렬별 준비 1회와
-  단일 변환 동등성을 검사한다. [오프라인 벤치마크](../scripts/benchmark-itinerary.ts)의 전후 중앙값과
+- 성능 회귀: [요금 행렬](../apps/server/tests/fare-matrix.test.ts). 시간 비율 대신 행렬별 준비 1회와
+  단일 변환 동등성을 검사한다. [오프라인 벤치마크](../apps/server/scripts/benchmark-itinerary.ts)의 전후 중앙값과
   전체 결과 해시는 점검 문서에 남긴다. Google/DB 네트워크 지연을 측정한 결과는 아니다.
 
 HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 기존 동작은 유지한다.
@@ -444,16 +422,16 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 - 소유자 POST `/api/trips/[id]/share`는 `{ path: "/share/{token}" }`를 반환한다.
   세션·여행 소유권·동일 출처를 검사하며 재발급은 이전 링크를 무효화한다.
-- 공개 GET `/api/share/[token]` → [SharingService](../src/services/sharing.ts) →
-  [ShareRepository](../src/sharing/model.ts) → [SQL 구현](../src/repositories/sharing.ts).
+- 공개 GET `/api/share/[token]` → [SharingService](../apps/server/src/services/sharing.ts) →
+  [ShareRepository](../apps/server/src/sharing/model.ts) → [SQL 구현](../apps/server/src/repositories/sharing.ts).
   `load`는 입력 스냅샷·결과, 미준비 `UNAVAILABLE`, 잘못된 토큰 `null`을 구분한다.
   표시 입력 축소와 장소 참조 목록은 서비스가 계산한다(T15A).
 - 기존 `trips.share_token`에 256비트 난수 토큰의 SHA-256 해시를 저장한다. 스키마 변경은 없다.
   재발급 UPDATE도 owner_id를 검사하고, 장소 조회 후 유효성을 재확인한다.
-- [결과 읽기](../src/repositories/shared-itinerary.ts)는 itineraries/day_plans/stops/legs를
+- [결과 읽기](../apps/server/src/repositories/shared-itinerary.ts)는 itineraries/day_plans/stops/legs를
   고정 개수 쿼리로 복원한다. REPEATABLE READ 트랜잭션 안에서 입력 해시를 비교하고
   최신 generation만 선택한다. 이전 결과·현재 입력 혼합은 409로 거부한다.
-- [표시 정보 조회](../src/services/itinerary/display-places.ts)는 편집·공유 서비스에서 재사용하며
+- [표시 정보 조회](../apps/server/src/services/itinerary/display-places.ts)는 편집·공유 서비스에서 재사용하며
   Google 장소 ID별로 중복 요청을 제거한다. 이름·귀속 정보의 영속 저장은 추가하지 않는다.
 - 공개 응답은 `SharedItinerary`의 표시용 `ResultDisplayView`와 계산 결과만 포함한다.
   원본 여행 설정·사용자 정보·revision은 제외한다. 공유 화면은 편집 콜백 없이 기존
@@ -467,19 +445,19 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 [최종 점검 목록](t15a-audit.md)에 T13A와 같은 체크리스트·300줄 초과 파일·남은 문제를 기록했다.
 이유와 대안은 [T15A 결정](decisions/T15A-final-audit.md)을 따른다. 공개 API·스키마·화면 동작은 바꾸지 않았다.
 
-- [details 형식](../src/repositories/itinerary-details.ts)이 `itineraries.details` JSONB의 타입·인코더·레거시 판정을
+- [details 형식](../apps/server/src/repositories/itinerary-details.ts)이 `itineraries.details` JSONB의 타입·인코더·레거시 판정을
   한 곳에서 정의한다. 일정 저장과 공유 결과 읽기가 함께 사용한다.
-- `ShareRepository.load`는 `TripInputs`와 결과를 돌려준다. [공유 서비스](../src/services/sharing.ts)가
+- `ShareRepository.load`는 `TripInputs`와 결과를 돌려준다. [공유 서비스](../apps/server/src/services/sharing.ts)가
   `displayInput`으로 공개 입력을 줄이고 `tripPlaceRefs`(편집 서비스와 공용)로 장소 참조를 만든다.
 - `lib/http.isCrossSiteRequest`는 설정·공유 쓰기가 이미 하던 Origin + `Sec-Fetch-Site` 검사를 합친 것이다.
   나머지 쓰기 경계의 정책 통일은 [질문](questions.md)의 사람 결정 항목이다.
-- [여행 생성](../src/repositories/trip-inputs.ts)은 자식 테이블당 INSERT 1회다. 장소 upsert는 잠금 순서를 위해 정렬된 행별 실행을 유지한다.
+- [여행 생성](../apps/server/src/repositories/trip-inputs.ts)은 자식 테이블당 INSERT 1회다. 장소 upsert는 잠금 순서를 위해 정렬된 행별 실행을 유지한다.
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 시작 원격 `develop` 3c9cb12. 이 절은 T17–T25가 따를 **계획**이며 아직 코드는 바뀌지 않았다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. 앱·토큰 값과 §13.2–13.8의 모바일 동작은 T18–T25 **계획**이다.
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
-결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
+결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
 
 ### 13.1 모노레포 폴더 구조와 패키지 책임
@@ -489,28 +467,24 @@ npm workspaces(`"workspaces": ["apps/*", "packages/*"]`). 루트 `lint`·`typech
 
 ```text
 apps/
-  server/                  Next.js. API 라우트와 공유 열람 페이지(/share/[token])만. 지금의 src/ 대부분
-    src/app/api/           기존 라우트 + T18 session·account, T19 itinerary/shapes
-    src/app/share/         공유 열람 페이지 (T25 뒤 남는 유일한 웹 화면)
+  server/                  @travel/server. Next.js API·공유 페이지·기존 웹 화면(T25까지)
+    src/app/api/           기존 API, session·account(T18)·itinerary/shapes(T19)는 후속
+    src/app/share/         공유 열람 페이지
     src/{lib,places,travel-time,services,repositories,itineraries,trips,settings,results,sharing}/
-                           HTTP 처리·서비스·저장소·제공자 어댑터·조립(server.ts). 포트(저장소·제공자 인터페이스)는 서버에 남김
-    migrations/, scripts/migrate.ts, tests/   서버·DB·HTTP 테스트와 T25 HTTP 종단 시나리오
-  mobile/                  Expo(TypeScript strict, expo-router)
-    app/                   화면 라우트: (auth)/login, trips/new, trips/[id]/settings, trips/[id]/result, trips/[id]/required, account
-    src/api/               API 클라이언트(서버 주소 설정값, Bearer 첨부, 401 → 로그인)
-    src/auth/              네이티브 Google 로그인, 보안 저장소의 세션 토큰
-    src/map/               지도 어댑터(Google·가짜), 순수 함수(경로 해독·구간 색·도심 밖·패널 스냅)
-    src/theme/             design-tokens → React Native 스타일, Pretendard 글꼴 등록
-    src/components/, src/screens/   화면과 구성 요소
-    assets/fonts/          Pretendard(OFL)
-    tests/                 jest-expo 컴포넌트·순수 함수 테스트
+                           HTTP·서비스·저장소·제공자·조립, 서버 포트 유지
+    migrations/, scripts/, tests/   기존 SQL·실행기·서버 테스트
+  mobile/                  @travel/mobile. T17은 package.json·README만, 아래는 T20 이후 계획
+    app/                   expo-router 화면 라우트
+    src/{api,auth,map,theme,components,screens}/
+    assets/fonts/, tests/  Pretendard·jest-expo 컴포넌트 검사
 packages/
-  core/                    @travel/core. 순수 로직
-    src/scheduler/         지금의 src/scheduler
-    src/fare/              지금의 src/fare
-    src/contracts/         앱과 서버가 같이 쓰는 DTO 타입·오류 클래스·입력 검증
-    src/presentation/      지금의 results/presentation (표시 변환, 한국어 라벨)
-  design-tokens/           @travel/design-tokens. docs/design.md의 색·글자·간격·모서리·크기·움직임 값만
+  core/                    @travel/core
+    src/scheduler/         순수 일정 계산
+    src/fare/              순수 요금 계산
+    src/contracts/         공용 DTO·오류 클래스·입력 검증·설정 계산
+    src/presentation/      결과 표시 변환
+    tests/                 scheduler·fare 검사
+  design-tokens/           @travel/design-tokens. T17은 package.json·README만, 값은 T20
 ```
 
 | 패키지 | 책임 | 의존해도 되는 것 | 의존하면 안 되는 것 |
@@ -518,22 +492,31 @@ packages/
 | `packages/design-tokens` | 디자인 값(hex 문자열, pt 숫자, ms, 이징 계수). 플랫폼 변환 없음 | 없음 | 다른 모든 패키지, React, React Native, CSS |
 | `packages/core` | scheduler·fare 순수 계산, 공용 DTO·입력 검증·표시 변환 | `@js-temporal/polyfill` | Node 내장 모듈(`node:*`), `pg`, `fetch`·환경 변수, React, React Native, Next, `apps/*` |
 | `apps/server` | HTTP 계약·인증·소유권, 서비스·저장소·Google 어댑터, 공유 열람 페이지 | core, design-tokens(공유 페이지), `next`, `pg`, `jose`, T25 전까지 `next-auth` | `apps/mobile`, React Native |
-| `apps/mobile` | 화면, API 클라이언트, 세션 보관, 지도 어댑터 | core, design-tokens, `expo`·`react-native`·`react-native-maps`·`expo-secure-store`·네이티브 Google 로그인 | `apps/server`(타입 포함), `pg`, Google 서버 키, 웹 화면 코드(`src/components`) |
+| `apps/mobile` | 화면, API 클라이언트, 세션 보관, 지도 어댑터 | core, design-tokens, `expo`·`react-native`·`react-native-maps`·`expo-secure-store`·네이티브 Google 로그인 | `apps/server`(타입 포함), `pg`, Google 서버 키, 웹 화면 코드(`apps/server/src/components`) |
 
-T17이 옮길 공용 코드(DTO와 포트가 섞인 파일은 나눈다):
+T17에서 옮긴 공용 코드(아래 서버 경로는 호환용 재내보내기와 서버 포트를 유지):
 
-| 지금 위치 | core로 가는 것 | 서버에 남는 것 |
+| 서버 호환 경로 | core로 이동한 것 | 서버에 남는 것 |
 |---|---|---|
-| `src/scheduler/`, `src/fare/` | 전부 | 없음 |
-| `src/trips/input.ts` | `TripDraft`, `parseTripDraft`, `TripInputError` | 없음 (`http.ts`·`server.ts`는 서버) |
-| `src/settings/input.ts`, `calculate.ts`, `model.ts` | 검증, 시간창 계산, `LivingSettings`·`SettingsView` 등 DTO, `SettingsError` | `LivingSettingsStore` 포트, `service.ts`·`http.ts`·`server.ts` |
-| `src/results/model.ts`, `input.ts`, `presentation.ts` | 전부 | `http.ts`·`server.ts` |
-| `src/sharing/model.ts` | `SharedItinerary`, `isShareToken` | `ShareRepository` 포트, `SharedSnapshot`, `ShareUnavailableError` |
-| `src/services/itinerary/types.ts` | `TripInputs`, `PlaceRef`, `ItineraryResult`, `LegComparison`, `EfficiencySummary`, `RouteAlternatives` 등 결과 DTO | `ItineraryRepository`·`CityProfileSource`·`ItineraryDependencies` 포트, `ItineraryInputError` |
-| `src/places/index.ts`, `src/travel-time/index.ts` | `PlaceSummary`·`PlaceDetails`·`Money`·`ProviderMode` 등 DTO 타입 | `PlaceProvider`·`TravelTimeProvider` 포트, 오류 클래스, 어댑터 |
+| `apps/server/src/scheduler/`, `apps/server/src/fare/` | 전부 | 없음 |
+| `apps/server/src/trips/input.ts` | `TripDraft`, `parseTripDraft`, `TripInputError` | 없음 (`http.ts`·`server.ts`는 서버) |
+| `apps/server/src/settings/input.ts`, `calculate.ts`, `model.ts` | 검증, 시간창 계산, `LivingSettings`·`SettingsView` 등 DTO, `SettingsError` | `LivingSettingsStore` 포트, `service.ts`·`http.ts`·`server.ts` |
+| `apps/server/src/results/model.ts`, `input.ts`, `presentation.ts` | 전부 | `http.ts`·`server.ts` |
+| `apps/server/src/sharing/model.ts` | `SharedItinerary`, `isShareToken` | `ShareRepository` 포트, `SharedSnapshot`, `ShareUnavailableError` |
+| `apps/server/src/services/itinerary/types.ts` | `TripInputs`, `PlaceRef`, `ItineraryResult`, `LegComparison`, `EfficiencySummary`, `RouteAlternatives` 등 결과 DTO | `ItineraryRepository`·`CityProfileSource`·`ItineraryDependencies` 포트, `ItineraryInputError` |
+| `apps/server/src/places/index.ts`, `apps/server/src/travel-time/index.ts` | `PlaceSummary`·`PlaceDetails`·`Money`·`ProviderMode` 등 DTO 타입 | `PlaceProvider`·`TravelTimeProvider` 포트, 오류 클래스, 어댑터 |
 
 서버의 기존 경로는 옮긴 core 모듈을 다시 export해 호출 지점과 기존 테스트 import를 유지한다(T17 "동작 변경 없음").
-`tests/architecture*.test.ts`의 순수 코어 검사는 `packages/core` 전체로 넓힌다.
+`apps/server/tests/architecture*.test.ts`는 `packages/core/src` 전체의 정적·동적 import, 타입 의존, I/O·환경·암묵적 시각 접근과 패키지 간 순환을 검사한다.
+`@travel/core`는 하위 경로 export(`scheduler`, `fare`, `contracts/*`, `presentation`)로 TypeScript 원본을 제공한다.
+Next는 `transpilePackages`로 이를 컴파일하고, core 자체 `build`는 `dist`에 JS·선언 파일을 만든다. 선행 빌드 없이 typecheck·test가 가능하다.
+core 소스 타입 검사는 ES 표준 라이브러리와 `types: []`만 사용하며, Node 타입은 테스트용 tsconfig에서만 추가한다.
+`architecture-workspaces.test.ts`는 모든 루트 명령의 전체 워크스페이스 실행·실패 전파, 패키지 의존 경계, 재내보내기의 함수·오류 클래스 동일성을 검사한다.
+`migrate`는 서버만 구현하며 루트 위임도 기존 마이그레이션 통합 테스트가 직접 실행한다.
+
+T17에는 실행할 앱·토큰 소스가 없어 두 예약 패키지에 성공만 반환하는 스크립트를 넣지 않는다.
+T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 자동 실행한다. Expo 설치·화면·토큰 값·기기 번들은 T20의 완료 기준이다.
+개발 환경 파일은 `apps/server/.env.local`에 두고(`cp .env.example apps/server/.env.local`), CLI·테스트는 기존대로 프로세스 환경 변수를 사용한다.
 
 ### 13.2 앱 ↔ 서버 API 계약
 
@@ -598,7 +581,7 @@ export type ApiError = { code: ApiErrorCode; error: string; fields?: ApiErrorFie
 | 폐기 | 로그아웃 `DELETE /api/session`이 해당 해시 행 삭제. 앱은 응답과 관계없이 보안 저장소의 토큰을 지운다 |
 | 탈퇴 | `DELETE /api/account` → 기존 `deleteUser` → FK cascade로 여행 데이터와 **모든** 세션 삭제 |
 | 앱 저장 | `expo-secure-store`(iOS Keychain, Android Keystore)에 `{ token, expiresAt }`. AsyncStorage·로그에 쓰지 않음. 401을 받으면 지우고 로그인 화면으로 |
-| 소유권 연결 | 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)가 받는 `userId()`를 `userId(request)`로 바꾸고, 각 `server.ts`가 같은 `RequestAuthenticator`를 주입한다. 처리기를 거치지 않고 `auth()`를 직접 부르는 API 라우트 `src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 `RequestAuthenticator.userId(request)`로 바꾼다. 그러면 API 라우트 중 `src/auth.ts`를 참조하는 것은 Auth.js 라우트뿐이고, 나머지 참조(웹 화면 `src/app/page.tsx`·`src/app/actions.ts`)와 함께 T25에서 지운다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다 |
+| 소유권 연결 | 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)가 받는 `userId()`를 `userId(request)`로 바꾸고, 각 `server.ts`가 같은 `RequestAuthenticator`를 주입한다. 처리기를 거치지 않고 `auth()`를 직접 부르는 API 라우트 `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 `RequestAuthenticator.userId(request)`로 바꾼다. 그러면 API 라우트 중 `apps/server/src/auth.ts`를 참조하는 것은 Auth.js 라우트뿐이고, 나머지 참조(웹 화면 `apps/server/src/app/page.tsx`·`apps/server/src/app/actions.ts`)와 함께 T25에서 지운다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다 |
 | 전환 기간 (T18–T25) | `Authorization` 헤더가 있으면 Bearer만 검사하고 실패면 401(쿠키로 넘어가지 않음). 헤더가 없으면 Auth.js 쿠키 세션. T25가 쿠키 경로와 Auth.js를 지운다 |
 | 공유 토큰 | 별개. 공유 토큰은 읽기 전용 GET만 허용하고 세션으로 승격되지 않는다(T14) |
 
@@ -616,7 +599,7 @@ export interface MobileSessionStore {
 T18 검증: 가짜 RS256 키와 JWKS 픽스처(T15 `google-doubles.mjs`와 같은 방식)로 서명·발급자·대상·만료 실패를 각각 401로 확인하고,
 기존 403 소유권 테스트를 모두 Bearer 경로로도 실행한다(요구사항 §5 주의).
 직접 인증 라우트 `GET /api/trips/[id]`도 같은 검사를 받는다: 유효 Bearer + 본인 여행 200, 잘못된 토큰(형식 오류·없음·만료·폐기) 401, 다른 소유자 여행 403.
-또 `src/app/api/` 아래 라우트가 Auth.js 라우트 외에는 `src/auth.ts`를 import하지 않는지 구조 테스트로 확인한다.
+또 `apps/server/src/app/api/` 아래 라우트가 Auth.js 라우트 외에는 `apps/server/src/auth.ts`를 import하지 않는지 구조 테스트로 확인한다.
 
 ### 13.4 구간 경로 모양 전달
 
@@ -694,22 +677,22 @@ export type ResultMapProps = {
 ### 13.8 T25에서 지울 웹 전용 코드
 
 T25 전까지는 앱 화면을 옮길 때 참고하는 기준 구현으로 남긴다. 앱 코드는 이 파일들을 import하지 않는다.
-경로는 T17 이동 전 기준이며 T17이 옮기면 새 경로로 이 목록을 갱신한다.
+경로는 T17 이동 후 기준이다. 삭제 전까지 기존 웹 동작과 테스트를 유지한다.
 
-- 웹 화면·로그인: `src/app/page.tsx`, `src/app/actions.ts`, `src/app/manifest.ts`, `src/app/trips/new/page.tsx`,
-  `src/app/trips/[id]/settings/page.tsx`, `src/app/trips/[id]/result/page.tsx`, `src/app/api/auth/[...nextauth]/route.ts`, `src/auth.ts`
-- 웹 컴포넌트: `src/components/trip-input-form.tsx`, `src/components/place-picker.tsx`, `src/components/city-profile-card.tsx`,
-  `src/components/living-settings/`, `src/components/itinerary/index.tsx`, `src/components/itinerary/visit-editor.tsx`,
-  `src/components/itinerary/share-controls.tsx`, `src/components/service-worker.tsx`
-- PWA: `public/sw.js`, `public/icon-192.png`, `public/icon-512.png`, `scripts/verify-pwa.mjs`(와 `build` 스크립트의 호출),
-  `next.config.ts`의 `/sw.js` 헤더, `src/app/layout.tsx`의 manifest·서비스워커 등록 부분(레이아웃 자체는 공유 페이지용으로 남김)
-- 테스트: `tests/pwa.test.ts`, `tests/service-worker.test.ts`, `tests/trip-input-ui.test.ts`, `tests/living-settings-ui.test.ts`,
-  `tests/result-ui.test.ts`(공유 화면이 쓰는 표시 검사는 `tests/sharing-ui.test.ts`에 남김), `tests/e2e/trip-input.spec.ts`,
-  `tests/e2e/living-settings.spec.ts`, `tests/e2e/result.spec.ts`, `tests/helpers/e2e-places.ts`,
-  `tests/e2e/journey.spec.ts`(Bearer HTTP 종단 시나리오로 교체)
+- 웹 화면·로그인: `apps/server/src/app/page.tsx`, `apps/server/src/app/actions.ts`, `apps/server/src/app/manifest.ts`, `apps/server/src/app/trips/new/page.tsx`,
+  `apps/server/src/app/trips/[id]/settings/page.tsx`, `apps/server/src/app/trips/[id]/result/page.tsx`, `apps/server/src/app/api/auth/[...nextauth]/route.ts`, `apps/server/src/auth.ts`
+- 웹 컴포넌트: `apps/server/src/components/trip-input-form.tsx`, `apps/server/src/components/place-picker.tsx`, `apps/server/src/components/city-profile-card.tsx`,
+  `apps/server/src/components/living-settings/`, `apps/server/src/components/itinerary/index.tsx`, `apps/server/src/components/itinerary/visit-editor.tsx`,
+  `apps/server/src/components/itinerary/share-controls.tsx`, `apps/server/src/components/service-worker.tsx`
+- PWA: `apps/server/public/sw.js`, `apps/server/public/icon-192.png`, `apps/server/public/icon-512.png`, `apps/server/scripts/verify-pwa.mjs`(와 `build` 스크립트의 호출),
+  `apps/server/next.config.ts`의 `/sw.js` 헤더, `apps/server/src/app/layout.tsx`의 manifest·서비스워커 등록 부분(레이아웃 자체는 공유 페이지용으로 남김)
+- 테스트: `apps/server/tests/pwa.test.ts`, `apps/server/tests/service-worker.test.ts`, `apps/server/tests/trip-input-ui.test.ts`, `apps/server/tests/living-settings-ui.test.ts`,
+  `apps/server/tests/result-ui.test.ts`(공유 화면이 쓰는 표시 검사는 `apps/server/tests/sharing-ui.test.ts`에 남김), `apps/server/tests/e2e/trip-input.spec.ts`,
+  `apps/server/tests/e2e/living-settings.spec.ts`, `apps/server/tests/e2e/result.spec.ts`, `apps/server/tests/helpers/e2e-places.ts`,
+  `apps/server/tests/e2e/journey.spec.ts`(Bearer HTTP 종단 시나리오로 교체)
 - 의존성: `next-auth`. `@googlemaps/js-api-loader`·`@types/google.maps`는 공유 페이지 지도가 쓰므로 남긴다.
 
-남기는 것: 공유 열람 페이지 `src/app/share/[token]/page.tsx`와 표시 컴포넌트 `src/components/itinerary/shared.tsx`, `src/components/itinerary/map.tsx`,
-`src/components/itinerary/google-map.ts`, `src/components/itinerary/timeline.tsx`, `src/components/itinerary/diagnostics.tsx`,
-스타일 `src/app/trips/[id]/result/result.css`(T24가 공유 페이지 쪽으로 옮김), 웹 OAuth를 뺀 모든 API 라우트,
-Google 신원 확인 `src/lib/auth/callbacks.ts`와 사용자 SQL `src/lib/auth/store.ts`(T18 모바일 로그인이 재사용).
+남기는 것: 공유 열람 페이지 `apps/server/src/app/share/[token]/page.tsx`와 표시 컴포넌트 `apps/server/src/components/itinerary/shared.tsx`, `apps/server/src/components/itinerary/map.tsx`,
+`apps/server/src/components/itinerary/google-map.ts`, `apps/server/src/components/itinerary/timeline.tsx`, `apps/server/src/components/itinerary/diagnostics.tsx`,
+스타일 `apps/server/src/app/trips/[id]/result/result.css`(T24가 공유 페이지 쪽으로 옮김), 웹 OAuth를 뺀 모든 API 라우트,
+Google 신원 확인 `apps/server/src/lib/auth/callbacks.ts`와 사용자 SQL `apps/server/src/lib/auth/store.ts`(T18 모바일 로그인이 재사용).

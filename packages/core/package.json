@@ -1,0 +1,25 @@
+{
+  "name": "@travel/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "exports": {
+    "./scheduler": "./src/scheduler/index.ts",
+    "./scheduler/*": "./src/scheduler/*.ts",
+    "./fare": "./src/fare/index.ts",
+    "./contracts/*": "./src/contracts/*.ts",
+    "./presentation": "./src/presentation/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1"
+  }
+}
