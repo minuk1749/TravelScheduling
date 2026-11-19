@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
+import { API_ERROR_CODES } from '@travel/core/contracts/errors';
 import { itineraryHandlers, type ItineraryGenerator } from '../src/itineraries/http';
 import { ItineraryInputError } from '../src/services/itinerary';
 import { tripHandlers } from '../src/trips/http';
@@ -58,21 +59,38 @@ test('existing error responses match the documented fields contract', async () =
   }
 });
 
-test('every API route that authenticates directly is planned for RequestAuthenticator with Bearer checks', async () => {
+test('T18: only the Auth.js route imports auth.ts; every user API module authenticates through RequestAuthenticator', async () => {
   const session = await section('13.3');
   const ownership = session.split('\n').find(line => line.startsWith('| 소유권 연결 |'));
-  assert.ok(ownership, 'Missing ownership row');
+  assert.ok(ownership?.includes('`apps/server/src/app/api/trips/[id]/route.ts`'), 'Ownership row must name the converted direct route');
   const routes = (await readdir(path.join(root, 'apps/server/src/app/api'), { recursive: true }))
     .map(entry => path.posix.join('apps/server/src/app/api', entry.split(path.sep).join('/')))
-    .filter(file => file.endsWith('/route.ts') && !file.includes('[...nextauth]'));
-  const direct: string[] = [];
+    .filter(file => file.endsWith('/route.ts'));
+  assert.ok(routes.includes('apps/server/src/app/api/trips/[id]/route.ts'));
   for (const file of routes) {
-    if (/from '(?:\.\.\/)+auth'/.test(await readFile(path.join(root, file), 'utf8'))) direct.push(file);
+    const imports = /from '(?:\.\.\/)+auth'/.test(await readFile(path.join(root, file), 'utf8'));
+    assert.equal(imports, file.includes('[...nextauth]'), `${file} must not authenticate with Auth.js directly`);
   }
-  assert.ok(direct.includes('apps/server/src/app/api/trips/[id]/route.ts'), 'Expected the direct-auth trip route');
-  for (const file of direct) assert.ok(ownership.includes(`\`${file}\``), `Direct auth route not planned: ${file}`);
+  for (const name of ['trips', 'places', 'itineraries', 'settings', 'results', 'sharing']) {
+    const source = await readFile(path.join(root, `apps/server/src/${name}/server.ts`), 'utf8');
+    assert.doesNotMatch(source, /from '\.\.\/auth'/, name);
+    assert.match(source, /requestAuthenticator\.userId\(request\)/, `${name} must pass the request to RequestAuthenticator`);
+  }
 
   const verification = session.split('\n').find(line => line.startsWith('직접 인증 라우트'));
   assert.ok(verification, 'Missing T18 verification for direct-auth routes');
   for (const term of ['`GET /api/trips/[id]`', '200', '401', '403']) assert.ok(verification.includes(term), `Verification misses ${term}`);
+});
+
+test('T18: error responses carry a documented machine-readable code alongside the unchanged error/fields', async () => {
+  const responses = [
+    await itinerary(async () => ({ status: 'INCOMPLETE', fields: ['cityCode'] })),
+    await itinerary(async () => ({ status: 'STALE' })),
+    await itinerary(async () => { throw new ItineraryInputError({ lodgings: '숙소' }); }),
+  ];
+  const body = await Promise.all(responses.map(response => response.json() as Promise<Record<string, unknown>>));
+  assert.deepEqual(body.map(item => item.code), ['INCOMPLETE_TRIP', 'STALE_INPUT', 'INCOMPLETE_TRIP']);
+  assert.deepEqual(body[0], { code: 'INCOMPLETE_TRIP', error: '일정을 만들기 전에 여행 정보를 보완해 주세요.', fields: ['cityCode'] });
+  const contract = await section('13.2');
+  for (const code of API_ERROR_CODES) assert.ok(contract.includes(`'${code}'`), `Undocumented code ${code}`);
 });

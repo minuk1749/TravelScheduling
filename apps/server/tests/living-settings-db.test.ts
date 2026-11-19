@@ -39,7 +39,7 @@ test('T11 DB round trip, atomic rollback, ownership, stale update and fixed cons
       await assert.rejects(repository.load(id, 'other'), denied(403));
       await assert.rejects(repository.load('not-a-uuid', owner), denied(404));
       await assert.rejects(repository.save(id, 'other', saved.snapshot.revision, draft), denied(403));
-      await assert.rejects(repository.save(id, owner, initial.revision, draft), denied(409));
+      await assert.rejects(repository.save(id, owner, initial.revision, draft), error => denied(409)(error) && (error as SettingsError).code === 'STALE_INPUT');
       const invalid = structuredClone(draft); invalid.taxiPolicy = 'PREFER'; invalid.days.push(invalid.days[0]);
       await assert.rejects(repository.save(id, owner, saved.snapshot.revision, invalid));
       assert.deepEqual((await repository.load(id, owner)), saved.snapshot); // parent + children rolled back
@@ -63,7 +63,7 @@ test('T11 DB round trip, atomic rollback, ownership, stale update and fixed cons
       await client.query(`UPDATE trips SET meal_windows=jsonb_set(meal_windows, '{LUNCH}', '["11:30","14:00"]') WHERE id=$1`, [id]);
       assert.deepEqual((await repository.load(id, owner)).settings.mealWindows.LUNCH, { start: '11:30', end: '14:00' });
       await client.query(`UPDATE trips SET default_meal_slots='["DINNER"]' WHERE id=$1`, [id]);
-      await assert.rejects(repository.load(id, owner), denied(409));
+      await assert.rejects(repository.load(id, owner), error => denied(409)(error) && (error as SettingsError).code === 'INCOMPLETE_TRIP');
     } finally { await pool.end(); }
   });
 });

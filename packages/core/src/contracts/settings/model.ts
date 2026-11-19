@@ -1,4 +1,5 @@
 import type { MealSlot, MealWindows, TaxiPolicy, DayWindowResult } from '../../scheduler';
+import type { ApiErrorCode } from '../errors';
 
 export type MealCount = 0 | 1 | 2 | 3;
 export interface LivingSettings {
@@ -25,7 +26,16 @@ export interface SettingsCalculation {
   conflicts: { date: string | null; visitId?: string; message: string }[];
 }
 export interface SettingsView { snapshot: SettingsSnapshot; calculation: SettingsCalculation }
+const DEFAULT_CODES: Readonly<Record<number, ApiErrorCode>> = {
+  400: 'INVALID_JSON', 401: 'UNAUTHENTICATED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 405: 'METHOD_NOT_ALLOWED',
+  409: 'INCOMPLETE_TRIP', 413: 'PAYLOAD_TOO_LARGE', 415: 'UNSUPPORTED_MEDIA_TYPE',
+};
+/** `code` defaults by status; a 409 caused by a concurrent edit passes `STALE_INPUT` explicitly. */
 export class SettingsError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  readonly code: ApiErrorCode;
+  constructor(readonly status: number, message: string, code?: ApiErrorCode) {
+    super(message);
+    this.code = code ?? DEFAULT_CODES[status] ?? 'INTERNAL';
+  }
 }
 

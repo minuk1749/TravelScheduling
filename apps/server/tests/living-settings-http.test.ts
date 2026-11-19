@@ -16,7 +16,7 @@ class MemorySettingsStore implements LivingSettingsStore {
   }
   async save(id: string, owner: string, expected: string, settings: LivingSettings) {
     const current = await this.load(id, owner);
-    if (current.revision !== expected) throw new SettingsError(409, '변경 충돌');
+    if (current.revision !== expected) throw new SettingsError(409, '변경 충돌', 'STALE_INPUT');
     this.snapshot = { ...current, settings: structuredClone(settings), revision: String(++this.writes) };
     return structuredClone(this.snapshot);
   }
@@ -35,7 +35,9 @@ test('T11 authenticated settings round trip returns recalculated conflicts, reta
   const result = await saved.json(); assert.equal(result.calculation.conflicts.find((c: { visitId?: string }) => c.visitId)?.visitId, 'fixed-museum');
   assert.deepEqual(result.snapshot.fixedVisits, settingsSnapshot.fixedVisits);
   assert.deepEqual((await (await handle(request(), 'trip')).json()).snapshot, result.snapshot);
-  assert.equal((await handle(request(body), 'trip')).status, 409); assert.equal(store.writes, 1);
+  // T18: the real service's revision check (not the store) rejects the stale edit with STALE_INPUT before writing.
+  const stale = await handle(request(body), 'trip');
+  assert.equal(stale.status, 409); assert.equal((await stale.json()).code, 'STALE_INPUT'); assert.equal(store.writes, 1);
   result.snapshot.settings.days = [];
   const corrected = await handle(request({ revision: result.snapshot.revision, settings: result.snapshot.settings }), 'trip');
   assert.equal((await corrected.json()).calculation.conflicts.filter((c: { visitId?: string }) => c.visitId).length, 0);

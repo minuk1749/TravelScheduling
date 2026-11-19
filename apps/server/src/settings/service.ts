@@ -15,7 +15,7 @@ export class LivingSettingsService {
       throw new TripInputError({ request: '설정과 변경 확인 번호가 필요합니다.' });
     }
     const current = await this.store.load(id, ownerId);
-    if (current.revision !== raw.revision) throw new SettingsError(409, '다른 화면에서 입력이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.');
+    if (current.revision !== raw.revision) throw new SettingsError(409, '다른 화면에서 입력이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.', 'STALE_INPUT');
     const settings = parseSettings(raw.settings, current);
     // Validate calculation before writing; conflicts are domain results and never move fixed visits.
     calculateSettings(current, settings);

@@ -26,8 +26,10 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `apps/server/src/services/itinerary/` | **동선 생성 서비스(T12).** 날짜별 앵커·짐 구간(`day-plan.ts`), 시간창·자정을 넘는 공항 이동 반영·행렬(`days.ts`), 공항 이동 조회(`transfers.ts`), 장소 조회(`places.ts`), 단위·요금 변환과 구간 조회(`routes.ts`), 실제 출발 시각 재조회 루프(`verification.ts`), 비교·효율 요약(`efficiency.ts`), 포트·결과 타입(`types.ts`) | `scheduler`, `fare`, `places`·`travel-time`의 포트 타입 | SQL, HTTP 객체, 구체 Google 어댑터, 환경 변수 |
 | `apps/server/src/itineraries/` | 동선 생성 HTTP 처리(`http.ts`: 인증·소유권·오류 변환)와 구체 구현 조립(`server.ts`) | 서비스, 저장소, 각 모듈 `server.ts` | 스케줄링 계산 |
 | `apps/server/src/repositories/` | 여행 생성(`trip-inputs.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 일정 저장(`itineraries.ts`)과 details 형식(`itinerary-details.ts`), 생활 설정/제약 읽기·원자적 수정 | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
-| `apps/server/src/auth.ts`, `apps/server/src/lib/auth/` | Google 로그인, 세션, 여행 소유권 확인(`authorizeTrip`), 인증 SQL(`store.ts`) | `lib/db` | 화면 |
-| `apps/server/src/lib/http.ts` | 공통 private/no-store JSON 응답과 Origin 비교, 설정·공유 쓰기용 교차 사이트 검사(`isCrossSiteRequest`) | 표준 Request/Response | DB·인증·도메인 오류 정책 |
+| `apps/server/src/auth.ts`, `apps/server/src/lib/auth/` | 웹 Google 로그인(Auth.js, T25까지), 여행 소유권 확인(`authorizeTrip`), 인증 SQL(`store.ts`). **T18:** 포트(`ports.ts`), Google ID 토큰 검증(`google-id-token.ts`), 모바일 세션 발급·폐기(`mobile-sessions.ts`), Bearer/쿠키 요청 인증(`request-authenticator.ts`), 세션 SQL(`session-store.ts`), 조립(`server.ts`: `requestAuthenticator`·`bearerAuthenticator`) | `lib/db`, `lib/opaque-token`, `jose` | 화면, 도메인 서비스 |
+| `apps/server/src/sessions/` | T18 `POST`·`DELETE /api/session`, `DELETE /api/account` HTTP(`http.ts`)와 조립(`server.ts`) | `lib/auth`, `lib/http` | SQL 직접 작성 |
+| `apps/server/src/lib/http.ts` | 공통 private/no-store JSON 응답, 오류 본문(`apiError`·`accessError`·`providerError`: `{ code, error, fields? }`), Origin 비교, 설정·공유 쓰기용 교차 사이트 검사(`isCrossSiteRequest`) | 표준 Request/Response, core `contracts/errors` 타입 | DB·인증·도메인 오류 정책 |
+| `apps/server/src/lib/opaque-token.ts` | 43자 불투명 토큰 생성·형식 검사·SHA-256 해시(공유 링크·모바일 세션 공통) | `node:crypto` | DB |
 | `apps/server/src/lib/db.ts` | PostgreSQL 연결 풀 팩터리(명시적 생성) | `pg` | 모듈 import 시 연결 |
 | `apps/server/src/lib/migrations.ts`, `apps/server/scripts/migrate.ts`, `apps/server/migrations/*.sql` | 스키마 적용과 이력(`schema_migrations`) | `pg` | 앱 실행 경로 |
 | `packages/core/src/scheduler/` | **순수 계산.** 하루 시간창·식사 슬롯(`index.ts`), 방문 배치·순서(`placement.ts`), 배치 계약(`placement-types.ts`), 단일 경로 평가(`route-evaluation.ts`), 이동수단 선택(`transport.ts`), 수용량·추천(`capacity.ts`) | 내부 모듈, `Temporal`, `fare`의 타입 | DB, 네트워크, 환경 변수, 현재 시각·난수 |
@@ -38,7 +40,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `apps/server/src/trips/` | T10 입력 검증 재내보내기·생성 HTTP·서버 조립 | 인증, 여행 생성·도시 프로필 저장소 | 전체 동선 생성 |
 | `apps/server/src/settings/` | 저장소 포트(`model.ts`)·서비스·HTTP·조립, core 설정 DTO·검증·계산 재내보내기 | scheduler 공개 함수, 저장소 포트, 인증 | 전체 경로 생성 중복 구현 |
 | `apps/server/tests/`, `packages/core/tests/` | 순수 함수·SQL·HTTP·구조 검사. `fixtures/`(가짜 외부 응답), `helpers/database.ts` | 모든 모듈 | 실제 Google 키 |
-| `packages/core/src/contracts/` | 공용 DTO·검증·설정 계산. `trips/`, `settings/`, `results/`, `itinerary.ts`, `places.ts`, `travel-time.ts`, `sharing.ts` | core 내부, Temporal | 서버 포트, Node·DB·네트워크·React·React Native |
+| `packages/core/src/contracts/` | 공용 DTO·검증·설정 계산. `trips/`, `settings/`, `results/`, `itinerary.ts`, `places.ts`, `travel-time.ts`, `sharing.ts`, `errors.ts`(T18 오류 `code` 목록) | core 내부, Temporal | 서버 포트, Node·DB·네트워크·React·React Native |
 | `packages/core/src/presentation/` | 표시 변환·한국어 라벨 | core DTO, Temporal | 화면 프레임워크·I/O |
 | `apps/server/src/scheduler/`, `fare/`와 기존 공용 모듈 경로 | `@travel/core` 재내보내기, 기존 호출 지점 유지 | core의 공개 하위 경로 | 계산·검증 복사본 |
 | `apps/mobile/`, `packages/design-tokens/` | T17 예약 워크스페이스(package.json·README), 실제 앱·토큰 값은 T20 | 앱은 core·design-tokens, 토큰은 외부 의존 없음 | 앱→서버 import, 토큰→플랫폼 의존 |
@@ -50,8 +52,10 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - **계층:** 화면/API → 서비스 → 저장소·제공자(포트) → 순수 코어(`scheduler`, `fare`). 의존은 이 방향으로만 흐른다. 코어가 제공자를 호출하는 역방향 의존은 없다.
 - **포트와 어댑터:** 외부 API는 `PlaceProvider`, `TravelTimeProvider` 인터페이스 뒤에 있다. Google 구현과 캐시 구현이 같은 인터페이스를 따르고, 캐시는 실제 제공자를 감싼다(`CachedPlaceProvider(new GooglePlaceProvider(key))`).
 - **조립 지점:** 구체 구현을 고르는 곳은 각 모듈의 `server.ts` 하나다. 모듈 import 시점에는 연결·네트워크 작업을 하지 않고, 처음 쓸 때 만든다. 테스트는 같은 인터페이스에 가짜 구현을 넣는다.
-- **오류:** 입력 오류(`*InputError`)와 제공자 장애(`*ProviderError`)를 구분한다. 장애를 빈 결과나 null로 숨기지 않는다.
+- **오류:** 입력 오류(`*InputError`)와 제공자 장애(`*ProviderError`)를 구분한다. 장애를 빈 결과나 null로 숨기지 않는다. 응답 본문은 `{ code, error, fields? }`이며 `code`는 core `contracts/errors.ts`의 목록만 쓴다(T18).
 - **시간:** 모든 시각은 IANA 시간대와 함께 다룬다. 현지 날짜·시각 문자열과 오프셋이 있는 instant를 구분한다.
+- **요청 인증(T18):** 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)와 `GET /api/trips/[id]`(`trips/http.ts`의 `tripAccessHandler`)는 `userId(request)`를 주입받는다. 각 `server.ts`가 `lib/auth/server.ts`의 `requestAuthenticator`를 넘긴다: `Authorization` 헤더가 있으면 Bearer 세션만(실패 401), 없으면 Auth.js 쿠키. 그 뒤 `authorizeTrip`·저장소 owner 조건은 그대로다. API 라우트 중 `src/auth.ts`를 import하는 것은 Auth.js 라우트뿐이다.
+- **모바일 로그인(T18):** 앱 → `POST /api/session { idToken }` → `MobileSessionService` → `JoseGoogleIdTokenVerifier`(Google JWKS, `GOOGLE_MOBILE_CLIENT_IDS`) → `upsertGoogleUser` → `mobile_sessions`(해시·30일) → `{ token, expiresAt }`. 로그아웃 `DELETE /api/session`, 탈퇴 `DELETE /api/account`(Bearer 전용, `users` cascade로 모든 세션 삭제). 상세: [T18 결정](decisions/T18-mobile-session-tokens.md).
 - **생활 설정:** `/trips/[id]/settings` → GET/PUT `/api/trips/[id]/settings` → LivingSettingsService → LivingSettingsRepository. 여행 생성 성공 화면에서 진입한다. 설정 변경 즉시 scheduler의 시간창을 다시 계산하며 고정 시각 충돌을 표시한다. 입력 중 결과는 TIME_WINDOWS이며 저장 후 T12 POST로 전체 동선을 재계산한다.
 
 ## 중요한 설계 이유

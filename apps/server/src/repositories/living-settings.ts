@@ -72,7 +72,7 @@ export class LivingSettingsRepository implements LivingSettingsStore {
     return this.transaction(true, async client => {
       await client.query('SELECT id FROM trips WHERE id::text=$1 FOR UPDATE', [id]);
       const current = await readSnapshot(client, id, ownerId);
-      if (current.revision !== expectedRevision) throw new SettingsError(409, '다른 화면에서 입력이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.');
+      if (current.revision !== expectedRevision) throw new SettingsError(409, '다른 화면에서 입력이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.', 'STALE_INPUT');
       await client.query(`UPDATE trips SET default_departure_time=$2, default_return_time=$3,
         default_meal_slots=$4::jsonb, meal_windows=$5::jsonb, taxi_policy=$6 WHERE id=$1`,
       [id, settings.departureTime, settings.returnTime, JSON.stringify(settings.mealSlots), JSON.stringify(settings.mealWindows), settings.taxiPolicy]);

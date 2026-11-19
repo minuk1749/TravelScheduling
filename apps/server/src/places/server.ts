@@ -1,4 +1,4 @@
-import { auth } from '../auth';
+import { requestAuthenticator } from '../lib/auth/server';
 import { CachedPlaceProvider } from './cache';
 import { GooglePlaceProvider } from './google';
 import { placeHandlers } from './http';
@@ -9,6 +9,6 @@ export const placeProvider = (): CachedPlaceProvider =>
   // Lazy creation keeps build/import independent of credentials and network access.
   provider ??= new CachedPlaceProvider(new GooglePlaceProvider(process.env.GOOGLE_PLACES_API_KEY ?? ''));
 export const handlers = placeHandlers({
-  userId: async () => (await auth())?.user?.id,
+  userId: request => requestAuthenticator.userId(request),
   provider: placeProvider,
 });
