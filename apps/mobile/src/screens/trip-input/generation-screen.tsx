@@ -5,6 +5,7 @@ import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen } from '../../components/input/form-layout';
 import { colors, text } from '../../theme';
+import { CapacityFlow } from '../capacity/capacity-flow';
 import { errorMessage } from './presentation';
 
 type Generation = { status: 'loading' } | { status: 'ready'; result: GeneratedTrip } | { status: 'error'; message: string };
@@ -25,6 +26,10 @@ export function GenerationScreen() {
   }, [api, id, attempt]);
 
   const openTrip = () => router.dismissTo({ pathname: '/trips/[id]', params: { id } });
+  if (generation.status === 'ready' && generation.result.status === 'OVER_CAPACITY') {
+    return <CapacityFlow key={id} tripId={id} initial={generation.result} back={openTrip}
+      editConditions={() => router.replace({ pathname: '/trips/[id]/settings', params: { id } })} />;
+  }
   return <FormScreen title="동선 만들기" back={openTrip} footer={<>
     {generation.status !== 'loading' && <ActionButton label="다시 계산" onPress={() => {
       setGeneration({ status: 'loading' }); setAttempt(value => value + 1);
@@ -43,7 +48,6 @@ export function GenerationScreen() {
 }
 
 function GenerationStatus({ result }: { result: GeneratedTrip }) {
-  if (result.status === 'OVER_CAPACITY') return <Text style={text.body}>◷ 시간이 부족해요</Text>;
   if (result.status === 'CONFLICT') return <FormError message="고정 조건이나 이동 시간을 다시 확인해 주세요." />;
   return <Text accessibilityLiveRegion="polite" style={text.body}>✓ 동선을 저장했어요</Text>;
 }

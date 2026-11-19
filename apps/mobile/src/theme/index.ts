@@ -27,4 +27,5 @@ export const layout = StyleSheet.create({
   footer: { paddingHorizontal: spacing.screen, paddingTop: spacing.buttonTop, paddingBottom: spacing.buttonBottom },
   status: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.screen, gap: spacing.section },
   error: { ...text.body, color: colors.red.text },
+  dimmed: { opacity: 0.55 },
 });

@@ -6,17 +6,18 @@ import { calculateSettings } from '@travel/core/contracts/settings/calculate';
 import { parseSettings } from '@travel/core/contracts/settings/input';
 import type { SettingsView } from '@travel/core/contracts/settings/model';
 import { REASONS } from '@travel/core/presentation';
-import { useTripApi } from '../../api/trips';
+import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { SmallButton, type Errors, type FocusRequest } from '../../components/input/fields';
 import { FormCard, FormError, FormScreen, form } from '../../components/input/form-layout';
 import { colors, text } from '../../theme';
+import { CapacityFlow } from '../capacity/capacity-flow';
 import { LivingFields, TaxiFields } from './living-fields';
 import { errorMessage, fieldErrors } from './presentation';
 import { useTripResource } from './use-trip-resource';
 
 type Operation = { status: 'idle' | 'saving' | 'calculating' }
-  | { status: 'calculated'; result: ItineraryResult }
+  | { status: 'calculated'; result: GeneratedTrip }
   | { status: 'calculation-error'; message: string };
 
 export function SettingsScreen() {
@@ -98,6 +99,9 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
     }
     await recalculate();
   }
+  if (operation.status === 'calculated' && operation.result.status === 'OVER_CAPACITY') {
+    return <CapacityFlow tripId={tripId} initial={operation.result} back={reload} editConditions={reload} />;
+  }
   return <FormScreen title="하루 생활" subtitle={snapshot.timeZone} back={busy ? () => {} : back} footer={<>
     {saved && <Text accessibilityLiveRegion="polite" style={text.body}>✓ 생활 설정을 저장했어요</Text>}
     <FormError message={error} />
@@ -121,8 +125,6 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
 
 function RecalculationSummary({ status }: { status: ItineraryResult['status'] }) {
   if (status === 'CONFLICT') return <FormError message="고정 항목이나 이동 조건이 충돌해요. 고정 조건은 유지했어요." />;
-  if (status === 'OVER_CAPACITY') return <Text accessibilityLiveRegion="polite"
-    style={[text.body, { color: colors.amber.text }]}>◷ 전체 동선에 시간이 부족해요</Text>;
   return <Text accessibilityLiveRegion="polite" style={[text.body, { color: colors.green.text }]}>
     ✓ 이동시간과 영업시간까지 검증했어요
   </Text>;

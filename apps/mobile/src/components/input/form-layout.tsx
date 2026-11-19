@@ -1,16 +1,17 @@
-import type { PropsWithChildren, ReactNode } from 'react';
+import type { ComponentRef, PropsWithChildren, ReactNode, Ref } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, layout, motion, radius, size, spacing, text } from '../../theme';
 import { useReducedMotion } from '../../theme/use-reduced-motion';
 
-export function FormScreen({ title, subtitle, back, footer, children }: PropsWithChildren<{
-  title: string; subtitle?: string; back(): void; footer?: ReactNode;
+export function FormScreen({ title, subtitle, back, backDisabled, scrollRef, footer, children }: PropsWithChildren<{
+  title: string; subtitle?: string; back(): void; backDisabled?: boolean; scrollRef?: Ref<ComponentRef<typeof ScrollView>>; footer?: ReactNode;
 }>) {
   return <SafeAreaView style={layout.screen}>
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.bar}>
-        <Pressable accessibilityRole="button" accessibilityLabel="뒤로" onPress={back} style={styles.back}>
+        <Pressable accessibilityRole="button" accessibilityLabel="뒤로" disabled={backDisabled}
+          accessibilityState={{ disabled: backDisabled }} onPress={back} style={styles.back}>
           <Text style={text.date}>‹</Text>
         </Pressable>
         <View style={styles.flex}>
@@ -18,7 +19,7 @@ export function FormScreen({ title, subtitle, back, footer, children }: PropsWit
           {subtitle && <Text style={text.secondary}>{subtitle}</Text>}
         </View>
       </View>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>{children}</ScrollView>
+      <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>{children}</ScrollView>
       {footer && <View style={styles.footer}>{footer}</View>}
     </KeyboardAvoidingView>
   </SafeAreaView>;
