@@ -4,6 +4,19 @@ import { routeRequest } from './validation';
 
 export const SHAPE_FIELDS = 'routes.polyline.encodedPolyline';
 
+function isCompletePolyline(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.length) return false;
+  let components = 0, continued = false;
+  for (let index = 0; index < value.length; index++) {
+    const chunk = value.charCodeAt(index) - 63;
+    if (chunk < 0 || chunk > 63) return false;
+    // Each component ends when bit 0x20 clears; each point needs latitude and longitude.
+    continued = (chunk & 0x20) !== 0;
+    if (!continued) components++;
+  }
+  return !continued && components % 2 === 0;
+}
+
 /** No cache wrapper: every call fetches a fresh display-only polyline. */
 export class GoogleRouteShapeProvider implements RouteShapeProvider {
   private readonly client: GoogleRoutesClient;
@@ -26,7 +39,7 @@ export class GoogleRouteShapeProvider implements RouteShapeProvider {
     if (!Array.isArray(routes)) return invalid();
     if (!routes.length) return null;
     const encodedPolyline = object(object(routes[0]).polyline).encodedPolyline;
-    if (typeof encodedPolyline !== 'string' || !encodedPolyline.length || !/^[?-~]+$/.test(encodedPolyline)) return invalid();
+    if (!isCompletePolyline(encodedPolyline)) return invalid();
     return { encodedPolyline };
   }
 }

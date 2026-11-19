@@ -55,6 +55,23 @@ test('T19 no-route is null; malformed or empty geometry is a provider error', as
   await assert.rejects(provider.shape(request), TravelProviderError);
 });
 
+for (const geometry of ['_', '?', '??_', '?_', '_?', encodedPolyline.slice(0, -1), `${encodedPolyline}?`]) {
+  test(`T19 incomplete polyline ${JSON.stringify(geometry)} is INVALID_RESPONSE`, async () => {
+    const provider = new GoogleRouteShapeProvider('fixture', async () =>
+      Response.json({ routes: [{ polyline: { encodedPolyline: geometry } }] }));
+    await assert.rejects(provider.shape(request), error => error instanceof TravelProviderError
+      && error.kind === 'INVALID_RESPONSE');
+  });
+}
+
+test('T19 complete coordinate pairs preserve zero deltas and multi-chunk components', async () => {
+  for (const geometry of ['??', '????', '?^', '_@?', encodedPolyline]) {
+    const provider = new GoogleRouteShapeProvider('fixture', async () =>
+      Response.json({ routes: [{ polyline: { encodedPolyline: geometry } }] }));
+    assert.deepEqual(await provider.shape(request), { encodedPolyline: geometry });
+  }
+});
+
 test('T19 quotas, HTTP and network failures are typed errors, never missing shapes', async () => {
   for (const status of [400, 403, 429, 500, 503]) {
     const provider = new GoogleRouteShapeProvider('fixture', async () => new Response('private detail', { status }));
