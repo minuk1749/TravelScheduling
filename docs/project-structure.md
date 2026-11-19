@@ -107,3 +107,10 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - `services/itinerary/display-places.ts`는 편집·공유 조회의 실시간 표시 정보 조회와 장소 참조 목록(`tripPlaceRefs`)을 공유한다.
 - 공유 저장소는 입력 스냅샷과 결과만 돌려주고, 공개 입력 축소(`results/model.displayInput`)는 SharingService가 한다(T15A).
 - 계약과 검증: [T14 결정](decisions/T14-read-only-sharing.md), [아키텍처 §11](architecture.md#11-t14-읽기-전용-공유).
+
+## 모바일 앱 전환 계획 (T16–T26, 2026-11-19)
+
+- PWA 화면을 React Native(Expo) 앱으로 바꾼다. 서버 API·DB·순수 코어는 유지하고, 화면과 로그인 방식(앱용 Bearer 세션 토큰)만 바꾼다. 작업 목록과 완료 기준: [요구사항 §5](requirements.md).
+- 화면은 [디자인 기준](design.md)을 따른다. 색·글자·간격 값은 앱의 토큰 모듈 한 곳에만 둔다.
+- 새 폴더 구조(모노레포)는 T16이 정하고 T17이 옮긴다. 옮긴 뒤 이 문서의 모듈 표를 새 경로로 갱신한다.
+- 웹 화면은 T25에서 지운다. 공유 링크용 읽기 전용 웹 페이지(`/share/[token]`)만 남긴다.
