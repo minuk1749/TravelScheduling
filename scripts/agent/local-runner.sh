@@ -238,12 +238,17 @@ still_assigned() {
 }
 
 review_run_for() { # pr, head
-  local name="agent-review-pr-$1-$2" id workflow ready ids
+  local name="agent-review-pr-$1-$2" id workflow attempt ids
   workflow=$(gh api "repos/$REPO/actions/workflows/agent-review.yml" --jq .id) || return 1
   ids=$(gh api "repos/$REPO/actions/artifacts?name=$name" --jq '.artifacts | sort_by(.created_at) | reverse | .[] | select(.expired == false) | .workflow_run.id') || return 1
   for id in $ids; do
-    ready=$(gh api "repos/$REPO/actions/runs/$id" --jq "select(.workflow_id == $workflow and .event == \"pull_request_target\" and .conclusion == \"success\") | .id") || return 1
-    if [ -n "$ready" ]; then printf '%s\n' "$ready"; return 0; fi
+    attempt=$(gh api "repos/$REPO/actions/runs/$id" --jq "select(.workflow_id == $workflow and .event == \"pull_request_target\" and .conclusion == \"success\") | .run_attempt") || return 1
+    [ -n "$attempt" ] || continue
+    # 이전 규칙에서 Claude 리뷰를 건너뛴 기록은 처리 대상에서 제외한다.
+    if gh api --paginate "repos/$REPO/actions/runs/$id/attempts/$attempt/jobs" --jq '.jobs[] | select(.name == "review") | .conclusion' | grep -x success >/dev/null; then
+      printf '%s\n' "$id"
+      return 0
+    fi
   done
 }
 

@@ -154,7 +154,7 @@ jobs:
 
   review:
     needs: [gate, test]
-    if: needs.test.result == 'success' && needs.test.outputs.passed == 'true' && needs.gate.outputs.owner == 'gpt'
+    if: needs.test.result == 'success' && needs.test.outputs.passed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
@@ -201,7 +201,8 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: |
-            너는 Claude이며 Codex가 구현한 PR #${{ github.event.pull_request.number }}의 작업 ${{ needs.gate.outputs.task }}을 교차 리뷰한다.
+            PR #${{ github.event.pull_request.number }}의 작업 ${{ needs.gate.outputs.task }}에 대해 Claude ${{ needs.gate.outputs.owner == 'claude' && '자체' || '교차' }} 리뷰를 수행한다.
+            구현 세션과 분리된 리뷰다. 구현자의 판단을 그대로 받아들이지 말고 같은 커밋의 변경과 검사 근거로 판정하라.
             기준 문서와 리뷰 지침은 현재 폴더의 develop 버전을 읽어라. 변경 diff는 review-input/changes.diff,
             후보 코드와 테스트는 review-input/pr/, 작성자의 설명은 review-input/pr-body.md에 있다.
             같은 커밋의 Actions 필수 검사가 통과했다. 실제 검사 로그는 review-input/test-tail.log에 있다.
@@ -261,11 +262,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          if [[ "$R_TEST" != success || "$PASSED" != true || ( "$OWNER" = gpt && "$R_REVIEW" != success ) ]]; then exit 0; fi
-          claude=null
-          if [ "$OWNER" = gpt ]; then
-            claude=$(node .github/agent/review-record.mjs review "$RUNNER_TEMP/review/claude-review.json")
-          fi
+          if [[ "$R_TEST" != success || "$PASSED" != true || "$R_REVIEW" != success ]]; then exit 0; fi
+          claude=$(node .github/agent/review-record.mjs review "$RUNNER_TEMP/review/claude-review.json")
           jq -n --argjson pr "$PR" --argjson issue "$ISSUE" --argjson run "$GITHUB_RUN_ID" \
             --argjson attempt "$GITHUB_RUN_ATTEMPT" --arg head "$HEAD_SHA" --arg task "$TASK" \
             --arg owner "$OWNER" --argjson claude "$claude" \
