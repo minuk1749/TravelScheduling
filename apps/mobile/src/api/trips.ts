@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { CityProfile } from '@travel/core/fare';
 import type { ItineraryResult } from '@travel/core/contracts/itinerary';
 import type { PlaceLocation, PlaceSummary } from '@travel/core/contracts/places';
-import type { ResultView } from '@travel/core/contracts/results/model';
+import type { Constraints, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
 import type { LivingSettings, SettingsView } from '@travel/core/contracts/settings/model';
 import type { TripCreation, TripSummary } from '@travel/core/contracts/trips/create';
 import { useRuntime } from '../auth/provider';
@@ -36,14 +36,17 @@ class TripApi {
   savedInput(id: string, signal: AbortSignal) {
     return this.api.request<ResultView>(`${trip(id)}/constraints`, { signal });
   }
+  saveConstraints(id: string, revision: string, constraints: Constraints, signal: AbortSignal) {
+    return this.api.request<ResultSnapshot>(`${trip(id)}/constraints`, { ...json('PUT', { revision, constraints }), signal });
+  }
   settings(id: string, signal: AbortSignal) {
     return this.api.request<SettingsView>(`${trip(id)}/settings`, { signal });
   }
   saveSettings(id: string, revision: string, settings: LivingSettings) {
     return this.api.request<SettingsView>(`${trip(id)}/settings`, json('PUT', { revision, settings }));
   }
-  generate(id: string) {
-    return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST' });
+  generate(id: string, signal?: AbortSignal) {
+    return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST', signal });
   }
 }
 

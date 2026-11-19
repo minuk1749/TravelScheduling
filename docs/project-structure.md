@@ -149,3 +149,8 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 - `GET /api/trips`는 소유한 여행 목록, 기존 `GET /api/trips/[id]/constraints`는 저장한 입력과 장소 표시 정보, 기존 `GET/PUT /api/trips/[id]/settings`는 생활 설정 조회·수정을 담당한다.
 - 앱의 생활 설정 화면은 PUT 성공 후 기존 `POST /api/trips/[id]/itinerary`로 전체 동선을 재검증한다. 계산 요청이 실패하면 저장된 설정을 유지하고 POST만 재시도한다.
 - core의 `contracts/trips/create.ts`, `contracts/results/fixed-visit.ts`, `contracts/settings/defaults.ts`가 생성 계약·고정 조건 검증·기본값을 연결한다. 지도와 주소 검색은 같은 장소 ID 계약을 쓴다. [T21 결정](decisions/T21-mobile-trip-input.md)
+
+## T23 모바일 필수 장소 선택
+
+- 여행 생성 화면과 하루 생활 재계산이 `OVER_CAPACITY`를 받으면 `apps/mobile/src/screens/capacity/`의 선택 화면을 연다. 저장된 장소와 최초 계산을 같은 입력 해시로 맞춘다.
+- 재검증은 `src/api/trips.ts`의 제약 조회·저장과 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 일정으로 표시한다. [T23 결정](decisions/T23-mobile-capacity-selection.md)

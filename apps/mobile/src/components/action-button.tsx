@@ -3,21 +3,22 @@ import { ActivityIndicator, Animated, Pressable, StyleSheet, Text } from 'react-
 import { colors, motion, radius, size, spacing, text } from '../theme';
 import { useReducedMotion } from '../theme/use-reduced-motion';
 
-export function ActionButton({ label, busy = false, secondary = false, onPress }: {
-  label: string; busy?: boolean; secondary?: boolean; onPress(): void;
+export function ActionButton({ label, busy = false, disabled = false, secondary = false, onPress }: {
+  label: string; busy?: boolean; disabled?: boolean; secondary?: boolean; onPress(): void;
 }) {
   const [scale] = useState(() => new Animated.Value(1));
   const reduced = useReducedMotion();
+  const unavailable = busy || disabled;
   const animate = (toValue: number) => Animated.timing(scale, {
     toValue: reduced ? 1 : toValue, duration: motion.press.duration, useNativeDriver: true,
   }).start();
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }}
-        disabled={busy} onPress={onPress} onPressIn={() => animate(motion.press.scale)} onPressOut={() => animate(1)}
-        style={[styles.button, secondary && styles.secondary, busy && styles.disabled]}>
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: unavailable, busy }}
+        disabled={unavailable} onPress={onPress} onPressIn={() => animate(motion.press.scale)} onPressOut={() => animate(1)}
+        style={[styles.button, secondary && styles.secondary, unavailable && styles.disabled]}>
         {busy && <ActivityIndicator color={colors.gray.disabled} />}
-        <Text style={[styles.label, secondary && styles.secondaryLabel, busy && styles.disabledLabel]}>{label}</Text>
+        <Text style={[styles.label, secondary && styles.secondaryLabel, unavailable && styles.disabledLabel]}>{label}</Text>
       </Pressable>
     </Animated.View>
   );
