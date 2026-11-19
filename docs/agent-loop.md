@@ -84,6 +84,12 @@ bash scripts/agent/install-launchd.sh
 - 수동 실행: `refactor-task` 라벨 이슈를 제목 `R번호: 내용`으로 만들고 Actions → agent-claude → 이슈 번호 입력.
 - 끄기: 저장소 변수 `AGENT_REFACTOR=off`.
 
+## Claude 작업이 중간에 실패했을 때
+
+- 새 작업에서 Claude 실행이 실패하거나 시간 초과로 취소되면(사용 한도, 최대 턴 등), 그때까지의 변경을 `wip/<작업>-<실행번호>` 브랜치에 커밋해 두고 `agent-paused` 이슈를 연다.
+- 이슈를 닫아 같은 작업을 다시 실행하면 가장 최근 `wip/` 브랜치에서 develop을 병합한 뒤 이어서 한다. PR을 올리면 그 작업의 `wip/` 브랜치는 지운다.
+- 수정 라운드(이미 PR이 있는 작업)의 중간 실패는 아직 저장하지 않는다.
+
 ## 알려진 제약
 
 - Mac 러너는 저장소 소유자 계정(gh 로그인)으로 PR을 만든다. 그래서 `AGENT_PR_AUTHORS` 기본값에 소유자가 들어 있다.
