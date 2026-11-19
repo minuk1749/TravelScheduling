@@ -40,11 +40,11 @@
 
 ## 검증과 한계
 
-- `tests/sharing-http.test.ts`: 비로그인 읽기, 수정 API의 401, 소유권/Origin,
+- `apps/server/tests/sharing-http.test.ts`: 비로그인 읽기, 수정 API의 401, 소유권/Origin,
   재발급과 느린 제공자 중 재발급, 토큰 형식/해시, 캐시·오류·DTO 범위를 검사한다.
-- `tests/sharing-db.test.ts`: 실제 결과 복원, 정상/초과/충돌, 최신 결과·입력 변경 감지,
+- `apps/server/tests/sharing-db.test.ts`: 실제 결과 복원, 정상/초과/충돌, 최신 결과·입력 변경 감지,
   원자적/동시 재발급, 타인 쓰기 거부, 삭제 후 무효화를 PostgreSQL 16에서 검사한다.
-- `tests/sharing-ui.test.ts`, `tests/e2e/sharing.spec.ts`: 발급·복사·재발급 UI,
+- `apps/server/tests/sharing-ui.test.ts`, `apps/server/tests/e2e/sharing.spec.ts`: 발급·복사·재발급 UI,
   편집 없는 지도·타임라인, 무효 링크, 재시도, 375px와 실제 라우트의 쓰기 405를 검사한다.
 - 이미 전달된 화면·복사본까지 회수할 수는 없다. 재발급 이후 서버 조회를 거부한다.
   실제 Google Maps/Places 표시와 OAuth는 키 없이 목으로 검증하며 사람 확인이 필요하다.
@@ -53,7 +53,7 @@
 
 Node 24.22.3과 임시 Docker PostgreSQL 16에서 `npm run lint`, `npm run typecheck`,
 `npm run build`, `npm test`가 통과했다(전체 150개, 실패/skip 0).
-추가 `npm run test:e2e -- tests/e2e/sharing.spec.ts tests/e2e/result.spec.ts`는 Chromium을
+추가 `npm run test:e2e -- apps/server/tests/e2e/sharing.spec.ts apps/server/tests/e2e/result.spec.ts`는 Chromium을
 설치한 뒤에도 Mac 샌드박스의 `bootstrap_check_in ... Permission denied (1100)`로
 브라우저 시작 단계에서 차단되어 시나리오를 실행하지 못했다. 테스트를 생략 처리하거나
 실행 정책을 우회하지 않았다. 브라우저 실행이 가능한 환경에서 재확인이 필요하다.

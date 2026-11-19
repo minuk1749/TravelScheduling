@@ -63,7 +63,7 @@ PostgreSQL 16의 [트랜잭션 advisory lock](https://www.postgresql.org/docs/16
 
 ## 검증
 
-[마이그레이션 테스트](../../tests/migrations.test.ts)가 빈 DB, 기존 prefix 각각의 데이터 보존,
+[마이그레이션 테스트](../../apps/server/tests/migrations.test.ts)가 빈 DB, 기존 prefix 각각의 데이터 보존,
 두 번 실행, 기존 이력 이후 적용, DDL·DML·이력 롤백/재시도, 잘못된 스키마/체크섬/이력, 동시 실행을 검증한다.
-[기반 스키마 테스트](../../tests/database-foundations.test.ts)가 전체 FK의 카탈로그 인덱스 검사,
+[기반 스키마 테스트](../../apps/server/tests/database-foundations.test.ts)가 전체 FK의 카탈로그 인덱스 검사,
 사용자 소유 테이블의 시각 타입·기본값·트리거/UPSERT와 출처 갱신일 보존, 같은 생성 시각의 최신 일정을 검증한다.

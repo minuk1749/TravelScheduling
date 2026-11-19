@@ -27,4 +27,4 @@
 
 ## 검증
 
-`tests/result-constraints.test.ts`는 실제 일정 서비스와 가짜 외부 제공자로 초과→선택→정상, 희망 날짜·시각·순서 고정, 일상/공항 수단 고정의 반복 계산 유지와 입력 검증을 검사한다. `result-ui.test.ts`는 마커 선택, 비교, 재검증, 저장/생성 실패와 재조회, 충돌 화면을 검사한다. `result-http.test.ts`는 권한/오류 계약을, `result-db.test.ts`는 SQL 영속화·원자성·오래된 해시 거부를 검사한다. `tests/e2e/result.spec.ts`는 375px 실제 브라우저 흐름과 레이아웃을 검사한다. Google 실제 지도/OAuth/요금 출처 검토는 별도 사람 확인이다.
+`apps/server/tests/result-constraints.test.ts`는 실제 일정 서비스와 가짜 외부 제공자로 초과→선택→정상, 희망 날짜·시각·순서 고정, 일상/공항 수단 고정의 반복 계산 유지와 입력 검증을 검사한다. `result-ui.test.ts`는 마커 선택, 비교, 재검증, 저장/생성 실패와 재조회, 충돌 화면을 검사한다. `result-http.test.ts`는 권한/오류 계약을, `result-db.test.ts`는 SQL 영속화·원자성·오래된 해시 거부를 검사한다. `apps/server/tests/e2e/result.spec.ts`는 375px 실제 브라우저 흐름과 레이아웃을 검사한다. Google 실제 지도/OAuth/요금 출처 검토는 별도 사람 확인이다.

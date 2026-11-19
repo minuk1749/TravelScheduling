@@ -41,6 +41,6 @@ T12/T13 저장 연결 시 마이그레이션을 설계하고 테스트한다.
 
 `issues`의 판별 유니언에 새 사유가 추가된다. 현재 프로덕션 소비자는 `checkCapacity`뿐이며
 모든 issue를 실패로 처리하므로 별도 분기 수정은 필요 없다. 후속 UI는 날짜 수준의 시간창
-실패를 표시해야 한다. [수용량 테스트](../../tests/scheduler-capacity.test.ts)가 초과·창 없음·
+실패를 표시해야 한다. [수용량 테스트](../../packages/core/tests/scheduler-capacity.test.ts)가 초과·창 없음·
 정확한 경계·경유해서 들어맞는 경우를 검증한다. 기존 DST·요금 경계 테스트를 유지하고
-[SQL 모델 테스트](../../tests/travel-model.test.ts)는 사용자 소유 테이블 전부의 삭제와 공유 장소 보존을 검사한다.
+[SQL 모델 테스트](../../apps/server/tests/travel-model.test.ts)는 사용자 소유 테이블 전부의 삭제와 공유 장소 보존을 검사한다.

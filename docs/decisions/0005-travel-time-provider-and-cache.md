@@ -4,7 +4,7 @@
 
 ## 결정
 
-- `src/travel-time`에 T7A의 `TravelTimeProvider.matrix/route` 계약을 구현한다. 스케줄러는 변경하지 않는다.
+- `apps/server/src/travel-time`에 T7A의 `TravelTimeProvider.matrix/route` 계약을 구현한다. 스케줄러는 변경하지 않는다.
 - 행렬은 Google `computeRouteMatrix`, 실제 출발 구간은 `computeRoutes`로 조회한다.
   응답의 `travelAdvisory.transitFare`를 Money로 변환한다. 요금이 없으면 null, 경로가 없으면
   해당 수단을 생략한다. DRIVE 요금과 호출 대기는 별도 요금/스케줄러 책임이다.
@@ -48,4 +48,4 @@ TRAFFIC_UNAWARE는 현재 교통을 반영하지 않는다.
 - 시간·거리·요금 캐시가 허용된 다른 제공자/적용 계약: TravelTimeProvider 뒤에 연결할 수 있다.
   Google 반복 호출 0회를 필수로 유지할지와 함께 사람이 결정할 후속 사항이다.
 
-검증 및 T12 인계: [T9 인계](../t9-handoff.md), [자동 테스트](../../tests/travel-time.test.ts).
+검증 및 T12 인계: [T9 인계](../t9-handoff.md), [자동 테스트](../../apps/server/tests/travel-time.test.ts).
