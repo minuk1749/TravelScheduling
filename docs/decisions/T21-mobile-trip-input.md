@@ -6,6 +6,8 @@
 
 인증된 `GET /api/trips`가 내 여행의 식별자·도시·기간을 돌려준다. 상세는 소유자용 제약 GET을, 생활 수정은 기존 설정 GET/PUT을 재사용한다. 여행 생성 뒤 항공·숙소·장소는 저장된 값으로 조회할 수 있다. 완료 기준의 장소 추가·종류·체류시간·고정 및 삭제는 생성 전 초안에 적용하고, 결과 화면의 제약 편집은 T22에서 연결한다.
 
+생활 설정 PUT이 성공하면 기존 일정 생성 POST로 이동시간과 영업시간을 포함해 재검증한다. 계산 요청이 실패하면 저장된 설정을 유지하고 일정 생성만 재시도한다.
+
 직접 입력한 주소는 기존 장소 검색을 사용한다. 지도에서 Google POI를 선택하면 같은 장소 ID 계약을 사용한다. Google Places 표시 이름과 귀속은 화면의 메모리에서만 다룬다. Google Maps SDK 키는 앱별 공개 제한 키를 사용한다. [Maps SDK 설정](https://docs.expo.dev/versions/latest/sdk/map-view/) · [장소 귀속 정책](https://developers.google.com/maps/documentation/places/web-service/policies)
 
 도시 카드는 기존 프로필 항목과 추천 정책을 표시한다. 구간별 이동 시간과 요금은 일정 생성 이후에 제공된다.
@@ -22,4 +24,4 @@
 
 ## 검증
 
-앱의 `trip-creation.test.tsx`와 `place-addition.test.tsx`에서 디자인 §9의 1-1–1-5·2-1–2-6, 입력·저장·재열기, 저장 후 계산 재시도를 목 HTTP와 지도 이벤트로 확인한다. 서버의 `mobile-trip-input.test.ts`에서 초기 설정·고정 조건 원자적 저장과 소유 목록 필터링을 PostgreSQL로 검증한다.
+앱의 `trip-creation.test.tsx`와 `place-addition.test.tsx`에서 디자인 §9의 1-1–1-5·2-1–2-6, 입력·저장·재열기, 저장 후 계산 재시도를 목 HTTP와 지도 이벤트로 확인한다. `settings-recalculation.test.tsx`는 설정 저장과 계산의 요청 순서, 충돌 표시, 계산 실패 후 POST 재시도와 저장 거절 시 계산 생략을 검증한다. 서버의 `mobile-trip-input.test.ts`에서 초기 설정·고정 조건 원자적 저장과 소유 목록 필터링을 PostgreSQL로 검증한다.

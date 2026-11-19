@@ -98,6 +98,7 @@ test('input → save → reopen: trip, lodging, fixed place and settings round t
   await write('기본 귀가 시각', '22:00');
   await press('설정 저장');
   expect(await screen.findByText('✓ 생활 설정을 저장했어요')).toBeVisible();
+  expect(await screen.findByText('✓ 이동시간과 영업시간까지 검증했어요')).toBeVisible();
   await press('뒤로');
   await fireEvent.press(await screen.findByRole('button', { name: '하루 생활 수정' }));
   expect(await screen.findByText('10:00–22:00 · 0끼')).toBeVisible();

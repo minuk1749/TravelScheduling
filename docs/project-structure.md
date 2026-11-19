@@ -147,4 +147,5 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 - `내 여행` → `/trips/new`의 여행 입력·장소 초안 → `POST /api/trips`에서 초기 생활 설정과 고정 조건까지 원자적으로 저장 → `/trips/[id]/generate`에서 기존 일정 생성 요청.
 - `GET /api/trips`는 소유한 여행 목록, 기존 `GET /api/trips/[id]/constraints`는 저장한 입력과 장소 표시 정보, 기존 `GET/PUT /api/trips/[id]/settings`는 생활 설정 조회·수정을 담당한다.
+- 앱의 생활 설정 화면은 PUT 성공 후 기존 `POST /api/trips/[id]/itinerary`로 전체 동선을 재검증한다. 계산 요청이 실패하면 저장된 설정을 유지하고 POST만 재시도한다.
 - core의 `contracts/trips/create.ts`, `contracts/results/fixed-visit.ts`, `contracts/settings/defaults.ts`가 생성 계약·고정 조건 검증·기본값을 연결한다. 지도와 주소 검색은 같은 장소 ID 계약을 쓴다. [T21 결정](decisions/T21-mobile-trip-input.md)

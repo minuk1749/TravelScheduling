@@ -680,6 +680,7 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
 - 보호된 `/trips/new`는 여행·생활과 장소 초안을 메모리에서 편집한다. 최종 버튼으로 `POST /api/trips`를 한 번 호출하며 선택적인 `settings`와 각 방문의 `fixedDate`, `fixedTime`, `fixedOrder`를 함께 저장한다. 날짜·시각은 여행의 IANA 시간대 기준이며 순서는 API에서 0부터 시작한다.
 - core의 `parseTripDraft`, `parseSettings`, `parseFixedVisit`가 앱과 서버의 규칙을 공유한다. 생성 시 최상위 `taxiPolicy`가 기준이며 설정을 생략한 기존 요청에는 기존 기본값을 넣는다. 여행·날짜별 설정·항공편·숙소·장소·고정 조건은 기존 SQL 열을 사용해 한 트랜잭션으로 저장한다.
 - `내 여행`은 인증된 `GET /api/trips`로 도시·기간이 설정된 소유 여행을 열고, 상세 화면은 기존 `GET /api/trips/[id]/constraints`에서 장소·입력을 조회한다. 생활 설정 수정은 별도 화면에서 기존 revision 기반 `GET/PUT /api/trips/[id]/settings`를 사용한다.
+- 앱의 생활 설정 화면은 입력 중 TIME_WINDOWS 미리보기를 표시한다. PUT 성공 후 기존 `POST /api/trips/[id]/itinerary`로 §9의 전체 검증을 실행하고 진행 상태와 결과를 표시한다. 계산 요청에 실패하면 저장된 설정을 유지하고 POST만 재시도할 수 있다.
 - `/trips/[id]/generate`는 기존 `POST /api/trips/[id]/itinerary`를 호출한다. 저장된 여행 ID로 재계산할 수 있다. T22/T23의 상세 결과·수용량 선택 화면은 이 생성 응답에 연결할 수 있다.
 - 주소 직접 입력은 기존 한국어 장소 검색을 사용한다. 지도에서 숙소를 고르면 Google POI의 ID만 쓰기 요청에 보낸다. 검색 결과·지도 표시 이름·귀속은 메모리에서만 사용한다. [T21 결정](decisions/T21-mobile-trip-input.md)
 
