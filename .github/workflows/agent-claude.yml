@@ -4,6 +4,8 @@
 #            Claude PR에 수정 요청이 나왔을 때(모두 자동), 또는 사람이 이슈 번호로 수동 실행.
 # PR은 사용자 토큰(USER_PAT)으로 올리고 owner-claude 라벨을 붙인다 → agent-review가 테스트 후 Codex 리뷰를 요청한다.
 # Claude 단계에는 USER_PAT을 넘기지 않는다.
+# 새 작업이 실패하면(사용 한도, 최대 턴 초과 등) 그때까지의 변경을 wip/<작업>-<실행번호> 브랜치에 저장하고,
+# 같은 작업을 다시 실행하면 가장 최근 wip 브랜치에서 이어서 한다. PR을 올리면 그 작업의 wip 브랜치는 지운다.
 name: agent-claude
 
 on:
@@ -28,7 +30,8 @@ permissions:
 jobs:
   claude:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 최대 400턴(xhigh)을 마칠 수 있도록 여유를 둔다
+    timeout-minutes: 150
     permissions:
       contents: read
       issues: write
@@ -68,6 +71,10 @@ jobs:
           else
             out branch "$(tr 'A-Z' 'a-z' <<<"$id")-$suffix"
             out round 1
+            # 이전 실행이 중단되며 남긴 작업이 있으면 가장 최근 것에서 이어서 한다
+            wip=$(gh api "repos/$GH_REPO/git/matching-refs/heads/wip/$(tr 'A-Z' 'a-z' <<<"$id")-" --jq '.[].ref' | sed 's#^refs/heads/##' | sort -V | tail -1)
+            out wip "$wip"
+            if [ -n "$wip" ]; then echo "::notice::이전 실행의 중단 작업($wip)에서 이어서 한다"; fi
           fi
           gh issue view "$ISSUE" --json body --jq .body > "$RUNNER_TEMP/items.md"
           if [ -n "$PR" ]; then
@@ -76,7 +83,7 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.pr != '' && steps.info.outputs.branch || 'develop' }}
+          ref: ${{ inputs.pr != '' && steps.info.outputs.branch || steps.info.outputs.wip || 'develop' }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/checkout@v5
@@ -87,9 +94,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-      - name: Merge develop (fix round)
+      - name: Merge develop (fix round or resumed work)
         id: merge
-        if: inputs.pr != ''
+        if: inputs.pr != '' || steps.info.outputs.wip != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -107,11 +114,15 @@ jobs:
           ROUND: ${{ steps.info.outputs.round }}
           KIND: ${{ steps.info.outputs.kind }}
           CONFLICT: ${{ steps.merge.outputs.conflict || 'false' }}
+          WIP: ${{ steps.info.outputs.wip }}
         run: |
           set -euo pipefail
           if [ "$KIND" = refactor ]; then tpl=refactor.md; head="리팩터링 항목"; mk=claude-refactor; else tpl=claude-implement.md; head="작업 지시 (이슈 본문)"; mk=claude-implement; fi
           sed -e "s/{{ID}}/$ID/g" -e "s/{{ROUND}}/$ROUND/g" ".ctl/.github/agent/prompts/$tpl" | awk -v t="$TITLE" '{gsub(/\{\{TITLE\}\}/, t)}1' > .claude-task.md
           { echo; echo "## $head"; echo; cat "$RUNNER_TEMP/items.md"; } >> .claude-task.md
+          if [ -n "$WIP" ]; then
+            { echo; echo "## 이전 실행에서 이어서"; echo; echo "이전 실행이 끝나기 전에 중단되어(사용 한도, 최대 턴 등) 그때까지의 변경을 커밋해 두었고, 지금 그 커밋 위에서 시작한다(\`git log origin/develop..HEAD\`, \`git diff origin/develop\`로 확인). 처음부터 다시 만들지 말고 이미 한 작업을 확인해 남은 부분을 마무리하라. 중단 직전 상태라 미완성이거나 검사가 깨져 있을 수 있으니 lint·typecheck·build·test를 다시 돌려 확인하라."; } >> .claude-task.md
+          fi
           if [ "$CONFLICT" = true ]; then
             { echo; echo "## develop 병합 충돌"; echo; echo "develop을 이 브랜치에 병합했고 충돌이 있다. 충돌 표시(<<<<<<<, =======, >>>>>>>)가 있는 파일을 먼저 해결하라(양쪽 변경의 의도를 모두 유지)."; } >> .claude-task.md
           fi
@@ -147,6 +158,7 @@ jobs:
           BRANCH: ${{ steps.info.outputs.branch }}
           ROUND: ${{ steps.info.outputs.round }}
           EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
+          WIP: ${{ steps.info.outputs.wip }}
         run: |
           set -euo pipefail
           if [ -z "$GH_TOKEN" ]; then echo "::error::USER_PAT 시크릿이 없음"; exit 1; fi
@@ -155,11 +167,9 @@ jobs:
           if [ -z "$PR" ]; then git switch -q -C "$BRANCH"; fi
           git add -A
           # 보호 파일은 develop의 내용과 같아야 한다(develop 병합으로 들어온 변경은 유지)
-          for f in $(git diff --cached --name-only | grep -E '^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)' || true); do
-            if git diff --cached --quiet origin/develop -- "$f"; then continue; fi
-            if git cat-file -e "origin/develop:$f" 2>/dev/null; then git restore --staged --worktree --source=origin/develop -- "$f"; else git rm -q --cached -f -- "$f"; fi
-          done
-          if git diff --cached --quiet && [ ! -f .git/MERGE_HEAD ] && { [ -z "$PR" ] || [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ]; }; then
+          bash .ctl/.github/agent/stage-work.sh
+          # 이어서 한 작업(wip)은 이전 커밋이 있으므로 이번 실행에 새 변경이 없어도 PR을 올린다
+          if git diff --cached --quiet && [ ! -f .git/MERGE_HEAD ] && { { [ -z "$PR" ] && [ -z "$WIP" ]; } || { [ -n "$PR" ] && [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ]; }; }; then
             gh issue comment "$ISSUE" --body "Claude가 변경 없이 종료했습니다(라운드 $ROUND). 사람이 확인해 주세요."
             gh issue edit "$ISSUE" --add-label needs-human
             exit 0
@@ -185,6 +195,10 @@ jobs:
           if [ -z "$PR" ]; then
             gh label create owner-claude --color fbca04 --description "Claude가 구현한 PR (Codex가 리뷰)" --force >/dev/null
             gh pr create --base develop --head "$BRANCH" --title "$ID: $TITLE" --label owner-claude --body-file "$RUNNER_TEMP/body.md"
+            # PR에 들어간 중단 작업 브랜치는 더 쓰지 않으므로 지운다
+            for w in $(gh api "repos/$GH_REPO/git/matching-refs/heads/wip/$(tr 'A-Z' 'a-z' <<<"$ID")-" --jq '.[].ref' | sed 's#^refs/heads/##'); do
+              git push -q "$remote" --delete "$w" || true
+            done
           else
             { echo "**Claude 수정 (라운드 $ROUND)**"; echo; cat "$RUNNER_TEMP/body.md"; } | gh pr comment "$PR" --body-file -
             # PR 설명도 최신 보고로 바꾼다. 리뷰어는 PR 설명을 작성자의 주장으로 읽기 때문에 처음 설명이 남아 있으면 실제와 어긋난다
@@ -201,13 +215,40 @@ jobs:
           jq -r 'if type=="array" then . else [.] end
                  | (map(select(.type=="result")) | last | {subtype, is_error, num_turns, result: ((.result // "") | tostring | .[0:1500])}),
                    (map(select(.type=="assistant")) | last | .message.content // [] | map(select(.type=="text") | .text) | join("\n") | .[0:1500])' "$EXEC_FILE" || true
+      - name: Save work in progress
+        id: wip
+        # 새 작업에서 Claude가 실패하면 그때까지의 변경을 버리지 않고 wip 브랜치에 저장한다(다음 실행이 이어서 한다)
+        # 시간 초과로 취소된 경우도 포함한다
+        if: (failure() || cancelled()) && (steps.claude.outcome == 'failure' || steps.claude.outcome == 'cancelled') && inputs.pr == ''
+        env:
+          GH_TOKEN: ${{ secrets.USER_PAT }}
+          GH_REPO: ${{ github.repository }}
+          ID: ${{ steps.info.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then echo "::warning::USER_PAT 시크릿이 없어 중단 작업을 저장하지 못함"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          bash .ctl/.github/agent/stage-work.sh
+          if [ -f .git/MERGE_HEAD ]; then git commit -q --no-edit; fi
+          if git diff --cached --quiet && [ "$(git rev-list --count origin/develop..HEAD)" = 0 ]; then echo "저장할 변경 없음"; exit 0; fi
+          if ! git diff --cached --quiet; then
+            git commit -q -m "$ID: 중단된 작업 저장 (실행 $GITHUB_RUN_NUMBER)" -m "agent-claude가 실패 전에 남긴 변경. 같은 작업의 다음 실행이 이어서 한다."
+          fi
+          wip="wip/$(tr 'A-Z' 'a-z' <<<"$ID")-$GITHUB_RUN_NUMBER"
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "HEAD:refs/heads/$wip"
+          echo "wip=$wip" >> "$GITHUB_OUTPUT"
+          echo "::notice::중단 작업을 $wip 에 저장함"
       - name: Pause on failure
-        if: failure()
+        if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WIP: ${{ steps.wip.outputs.wip }}
         run: |
           gh label create agent-paused --color b60205 --description "자동 루프 일시중단" --force >/dev/null
           printf 'Claude 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. **원인을 해결한 뒤 이 이슈를 닫으면 같은 Claude 작업이 자동으로 다시 실행됩니다.**\n\n<!-- resume:claude issue=%s pr=%s -->\n' "$ISSUE" "$RUN_URL" "$ISSUE" "$PR" > "$RUNNER_TEMP/p.md"
+          if [ -n "$WIP" ]; then printf '\n중단 전까지의 변경은 `%s` 브랜치에 저장했습니다. 다시 실행하면 처음부터가 아니라 이 브랜치에서 이어서 합니다.\n' "$WIP" >> "$RUNNER_TEMP/p.md"; fi
           gh issue create --title "자동 루프 일시중단: Claude 작업 #$ISSUE" --label agent-paused --body-file "$RUNNER_TEMP/p.md"
