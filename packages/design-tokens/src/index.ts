@@ -42,6 +42,7 @@ export const size = {
 
 export const motion = {
   screen: { duration: 280, translateX: 24, easing: 'ease-out' },
+  /** §8 카드 넘김(R2 결과 화면 장소 카드·마커 강조). */
   panel: { duration: 320, bezier: [0.22, 1, 0.36, 1] },
   sheet: { duration: 260, backdropOpacity: 0.4 },
   press: { duration: 90, scale: 0.97 },

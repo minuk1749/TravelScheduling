@@ -73,7 +73,7 @@ test('component sizes and footer spacing match §5', () => {
 test('all transition durations, distances, easing, scale and opacity match §8', () => {
   assert.deepEqual([motion.screen.duration, motion.screen.translateX], numbers(row(8, '화면 전환')));
   assert.ok(row(8, '화면 전환').includes(motion.screen.easing));
-  assert.deepEqual([motion.panel.duration, ...motion.panel.bezier], numbers(row(8, '패널 스냅')));
+  assert.deepEqual([motion.panel.duration, ...motion.panel.bezier], numbers(row(8, '카드 넘김')));
   assert.deepEqual([motion.sheet.duration, motion.sheet.backdropOpacity * 100], numbers(row(8, '시트 등장')));
   assert.deepEqual([motion.press.duration, motion.press.scale], numbers(row(8, '누름 반응')));
   assert.equal(motion.skeleton.duration, numbers(row(8, '재계산'))[0] * 1000);
