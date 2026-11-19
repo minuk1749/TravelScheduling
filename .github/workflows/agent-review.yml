@@ -194,6 +194,8 @@ jobs:
           m="$OVERRIDE"
           if [ -z "$m" ]; then m=$(node .ctl/.github/agent/model-for.mjs claude "$TASK" .ctl/.github/agent/models.json || true); fi
           echo "model=$m" >> "$GITHUB_OUTPUT"
+          ef=$(node .ctl/.github/agent/model-for.mjs claude-effort "$TASK" .ctl/.github/agent/models.json || true)
+          echo "effort=$ef" >> "$GITHUB_OUTPUT"
           ex=$(node .ctl/.github/agent/model-for.mjs claude-exec "$TASK" .ctl/.github/agent/models.json || echo false)
           echo "exec=$ex" >> "$GITHUB_OUTPUT"
           if [ "$ex" = true ]; then
@@ -202,7 +204,7 @@ jobs:
           else
             echo 'args=--max-turns 40 --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" --disallowedTools "Edit,Write,NotebookEdit"' >> "$GITHUB_OUTPUT"
           fi
-          echo "::notice::리뷰 모델: ${m:-액션 기본값}, 실행 리뷰: $ex (작업 $TASK)"
+          echo "::notice::리뷰 모델: ${m:-액션 기본값}, 추론 강도: ${ef:-기본값}, 실행 리뷰: $ex (작업 $TASK)"
       - uses: actions/setup-node@v5
         if: steps.pick.outputs.exec == 'true'
         with:
@@ -223,6 +225,7 @@ jobs:
             ${{ steps.pick.outputs.args }}
             --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"},"refactor":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"scope":{"type":"string"},"reason":{"type":"string"}},"required":["title","scope","reason"]}}},"required":["verdict","summary","issues"]}'
             ${{ steps.pick.outputs.model && format('--model {0}', steps.pick.outputs.model) || '' }}
+            ${{ steps.pick.outputs.effort && format('--effort {0}', steps.pick.outputs.effort) || '' }}
       # 판정을 잡 출력이 아닌 파일로 넘긴다. 잡 출력은 마스킹된 값(예: 테스트 DB 비밀번호와 같은 단어)이
       # 들어 있으면 GitHub가 통째로 버린다("Skip output ... may contain secret").
       - name: Save review result

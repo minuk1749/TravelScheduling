@@ -73,6 +73,7 @@ bash scripts/agent/install-launchd.sh
 
 - `codex`: Mac 러너가 작업 번호로 모델과 추론 강도를 골라 Codex CLI에 넘긴다. 로그의 "Codex 실행 시작 (작업 …, 모델 …, 추론 …)"으로 확인.
 - `claude`: agent-review가 작업 번호로 리뷰 모델을 고른다. Actions 실행 화면의 "리뷰 모델" 알림으로 확인.
+- `claude.effort`: Claude의 모든 실행(구현·리팩터링·리뷰)에 쓰는 추론 강도(`--effort`). 기본 `xhigh`. `tasks`에 작업별 값을 둘 수 있다. 높을수록 결과가 꼼꼼해지지만 Claude 사용량이 늘어 한도에 빨리 닿는다.
 - `claude.exec_review`: 이 목록의 작업은 **실행 리뷰**. Claude가 테스트를 직접 돌리고, 테스트에 없는 경우를 확인용 스크립트로 실행해 본다. 리뷰 시간과 Claude 사용량이 늘고, Claude 토큰이 있는 리뷰 작업에서 PR 코드가 실행된다(본인 러너가 만든 PR만 대상).
 - 이 파일은 보호 파일이라 사람(또는 사람이 지시한 대화형 세션)만 바꾼다.
 
