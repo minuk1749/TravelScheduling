@@ -1,22 +1,17 @@
 # 자동 협업 루프 운영 가이드
 
-Codex(ChatGPT 구독)와 Claude(Claude 구독)가 **맡은 작업을 각자 구현하고, 서로의 코드를 리뷰**한다. 담당별로 하나씩 **동시에** 진행한다(선행 작업이 끝난 작업만). API 종량제 비용은 없다.
+Codex(ChatGPT 구독)와 Claude(Claude 구독)가 **맡은 작업을 각자 구현하고, 구현과 분리된 세션에서 두 에이전트가 각각 리뷰**한다. 담당별로 하나씩 **동시에** 진행한다(선행 작업이 끝난 작업만). API 종량제 비용은 없다.
 
 - 먼저 머지된 작업과 충돌하면 "머지 충돌" 피드백이 작성자에게 가고, 작성자가 develop을 병합해 해결한다.
 - Codex 리뷰는 Mac 러너가 하므로, Codex가 구현 중이면 Claude PR 리뷰는 그 뒤에 처리된다.
 
 ```
-agent-start ─ 다음 작업 이슈 생성 (작업표의 담당 확인)
-   │
-   ├─ 담당 gpt ──→ Mac 러너: Codex 구현 → PR ──→ agent-review: 테스트 → Claude 리뷰    │
-   │                 → Actions 요청 기록 → Mac 러너: Codex 자체 리뷰 → agent-verdict(둘 다 승인?) ─┤
-   │                                                                                 │
-   └─ 담당 claude → agent-claude: Claude 구현 → PR(owner-claude) → agent-review: 테스트 │
-                     → Actions 요청 기록 → Mac 러너: Codex 리뷰 → agent-verdict ─────┤
-                                                                                      ▼
-                                          판정(.github/agent/decide.sh): 승인 → 머지 → 다음 작업
-                                                                       수정 요청 → 작성자가 수정
-                                                                       리팩터링 제안 → R번호(Claude 수행, Codex 리뷰)
+agent-start → 작업표의 담당이 구현 → 필수 검사 → 커밋·푸시와 PR
+  → agent-review 필수 검사 → Claude 리뷰 → Mac 러너 Codex 리뷰
+  → agent-verdict가 같은 커밋의 두 판정을 결합
+     ├─ 둘 다 승인 → develop 머지 → 다음 작업
+     ├─ 수정 요청 → 작성자에게 피드백
+     └─ 근거 부족 → 사람 확인
 ```
 
 ## 규칙 문서
@@ -58,7 +53,7 @@ bash scripts/agent/install-launchd.sh
 |---|---|
 | 처음 한 번 | Actions → agent-start → Run workflow |
 | `needs-human` 라벨 PR | 직접 확인 후 처리 |
-| `agent-paused` 이슈 | 원인 해결 → **이슈 닫기만 하면 자동 재개** (Codex: 러너가 다음 실행에서 재개, Claude 작업: agent-resume이 다시 실행, 테스트·리뷰 실패: agent-resume이 PR을 다시 열어 재실행) |
+| `agent-paused` 이슈 | 원인 해결 → **이슈 닫기만 하면 자동 재개** (Codex: 러너가 다음 실행에서 재개, Claude 작업: agent-resume이 다시 실행하며 이전 규칙에서 자체 리뷰를 건너뛴 PR은 먼저 재검사, 테스트·리뷰 실패: agent-resume이 PR을 다시 열어 재실행) |
 | 주기적으로 | `docs/questions.md` 확인, `develop` → `main` 검토 후 머지 |
 | cloud 모드일 때만 | Codex 결과 댓글 알림이 오면 Codex 화면에서 PR 생성 버튼 클릭 |
 
@@ -76,27 +71,27 @@ bash scripts/agent/install-launchd.sh
 
 - `codex`: Mac 러너가 작업 번호로 모델과 추론 강도를 골라 Codex CLI에 넘긴다. 로그의 "Codex 실행 시작 (작업 …, 모델 …, 추론 …)"으로 확인.
 - `claude`: agent-review가 작업 번호로 리뷰 모델을 고른다. Actions 실행 화면의 "리뷰 모델" 알림으로 확인.
-- `claude.effort`: Claude의 모든 실행(구현·리팩터링·리뷰)에 쓰는 추론 강도(`--effort`). 기본 `xhigh`. `tasks`에 작업별 값을 둘 수 있다. 높을수록 결과가 꼼꼼해지지만 Claude 사용량이 늘어 한도에 빨리 닿는다.
+- `claude.effort`: Claude의 모든 실행(구현·리팩터링·리뷰)에 쓰는 추론 강도(`--effort`). 기본 `high`. `tasks`에 작업별 값을 둘 수 있다. 높을수록 결과가 꼼꼼해지지만 Claude 사용량이 늘어 한도에 빨리 닿는다.
 - 테스트는 비밀 값이 없는 별도 Actions 잡이 실행한다. Claude와 Codex 리뷰에서는 PR을 읽고 해당 커밋의 CI 로그를 확인한다. 테스트 재실행과 정적 검토를 혼동하지 않도록 판정에 `code`, `ci`, `unverified` 근거를 기록한다.
 - 이 파일은 보호 파일이라 사람(또는 사람이 지시한 대화형 세션)만 바꾼다.
 
 ## 리팩터링 (`agent-claude.yml`)
 
 - 리뷰가 승인하면서 `refactor` 항목을 제안하면(구조 문제로 곧 버그가 나거나 다음 작업을 막을 때만), 다음 작업 대신 리팩터링 이슈 `R번호`를 만들고 Claude(`models.json`의 `claude.refactor`, 기본 Opus)가 수행한다.
-- 리팩터링 PR은 사용자 토큰으로 올라가 agent-review(테스트)와 Codex 리뷰를 거친다. 수정 요청은 다시 Claude가 반영하고, 머지되면 원래 작업 순서(agent-start)로 돌아간다.
+- 리팩터링 PR은 사용자 토큰으로 올라가 agent-review의 검사와 Claude 자체 리뷰, Mac 러너의 Codex 교차 리뷰를 거친다. 수정 요청은 다시 Claude가 반영하고, 머지되면 원래 작업 순서(agent-start)로 돌아간다.
 - 수동 실행: `refactor-task` 라벨 이슈를 제목 `R번호: 내용`으로 만들고 Actions → agent-claude → 이슈 번호 입력.
 - 끄기: 저장소 변수 `AGENT_REFACTOR=off`.
 
 ## 구현이 중간에 실패했을 때 (Claude·Codex 공통)
 
 - 두 러너 모두 변경 내용을 준비한 뒤 CI와 같은 필수 검사와 E2E를 실행한다. 검사 또는 에이전트 실행이 실패하면 커밋과 푸시를 중단한다. 기존에 저장된 `wip/` 브랜치가 있으면 이어서 작업할 수 있다.
-- 열린 작업 PR은 그 커밋에서 일반 CI와 역할별 `agent-review` 필수 단계가 끝나야 수정본을 게시할 수 있다. 통과한 검사에서 리뷰어가 코드 수정을 요청한 경우에는 담당자가 수정하고 다시 검증한다.
+- 열린 작업 PR은 그 커밋에서 일반 CI와 `agent-review`의 필수 검사·Claude 리뷰가 끝나야 수정본을 게시할 수 있다. 통과한 검사에서 리뷰어가 코드 수정을 요청한 경우에는 담당자가 수정하고 다시 검증한다.
 - Claude 실행이 실패하면 `agent-paused` 이슈에 실행 링크가 남는다. Mac 러너는 테스트용 `DATABASE_URL`이 주어지면 해당 DB를 사용하고, 비어 있으면 Docker로 임시 PostgreSQL 16을 시작한다. 게시 전 검사 실패 시 일시중단 이슈를 열고, 실패한 명령은 Mac 러너 로그에 남긴다.
 
 ## 리뷰 판정과 머지
 
 - 대상은 `develop`을 base로 하는 진행 중 작업 PR이다. T번호의 구현 담당은 기준 브랜치의 작업표에서 가져온다. `owner-claude`는 진행 상황 표시와 기존 구현 러너의 분류에 사용한다.
-- 필수 검사에서 `lint`, `typecheck`, `build`, `test`가 없거나 명령 하나라도 실패하면 검사는 실패한다. `agent-review`는 검사 성공 후 PR 번호·커밋·실행과 실행 시도를 담은 기록을 만든다. Codex가 구현한 작업에는 Claude 판정도 포함한다.
+- 필수 검사에서 `lint`, `typecheck`, `build`, `test`가 없거나 명령 하나라도 실패하면 검사는 실패한다. `agent-review`는 검사 성공 후 PR 번호·커밋·실행과 실행 시도를 담은 기록을 만든다. 모든 작업에 Claude 판정을 포함한다. Codex도 같은 커밋을 따로 리뷰하며 두 판정이 모두 승인일 때 머지한다.
 - Mac 러너는 해당 기록을 읽고 권한이 있는 GitHub 계정으로 `agent-verdict`에 결과를 제출한다. PR 댓글은 표시용이다. 최종 단계는 원래 Actions 실행의 테스트 성공과 기록을 대조하고, `decision-record`에 판정 근거를 남긴 뒤 GitHub에 같은 커밋을 머지하도록 요청한다.
 - 완료 근거가 부족해 `needs_human`으로 판정되면 PR을 보류한다. 사람이 검토한 뒤 직접 판정하거나, `needs-human`을 해제하고 전체 검사를 다시 시작한다.
 - GitHub 소유자 계정은 기본적으로 리뷰 제출 권한도 갖는다. 구현 계정과 제출 계정을 분리하려면 `AGENT_CODEX_REVIEW_ACTOR`와 러너 인증을 전용 계정으로 구성한다. 이 권한은 브랜치 보호와 별개다.

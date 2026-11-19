@@ -37,14 +37,20 @@ test('the test record must match the target PR, commit and workflow attempt', ()
   assert.throws(() => validateRequest(request, { run: 44, attempt: 1 }), /일치하지/);
 });
 
-test('Codex-authored code needs both approvals while Claude-authored code needs the cross review', () => {
-  assert.equal(combineReviews(request, approval).verdict, 'approve');
-  assert.equal(combineReviews(request, changes).verdict, 'request_changes');
-  assert.equal(combineReviews(request, incomplete).verdict, 'needs_human');
-  assert.equal(combineReviews({ ...request, claude: changes }, incomplete).verdict, 'request_changes');
-  assert.throws(() => validateRequest({ ...request, owner: 'gpt', claude: null }, {}));
-  const claudeRequest = validateRequest({ ...request, owner: 'claude', claude: null }, {});
-  assert.equal(combineReviews(claudeRequest, approval), approval);
+test('both implementation owners need two independent approvals', () => {
+  for (const owner of ['gpt', 'claude']) {
+    const record = { ...request, owner };
+    assert.throws(() => validateRequest({ ...record, claude: null }, {}));
+    assert.throws(() => combineReviews({ ...record, claude: null }, approval));
+    assert.equal(combineReviews(validateRequest(record, {}), approval).verdict, 'approve');
+    assert.equal(combineReviews(record, changes).verdict, 'request_changes');
+    assert.equal(combineReviews(record, incomplete).verdict, 'needs_human');
+    assert.equal(combineReviews({ ...record, claude: changes }, approval).verdict, 'request_changes');
+    assert.equal(combineReviews({ ...record, claude: incomplete }, approval).verdict, 'needs_human');
+    assert.equal(combineReviews({ ...record, claude: changes }, incomplete).verdict, 'request_changes');
+  }
+  assert.match(combineReviews({ ...request, owner: 'claude' }, approval).summary, /Claude 자체 리뷰.*Codex 교차 리뷰/s);
+  assert.match(combineReviews(request, approval).summary, /Claude 교차 리뷰.*Codex 자체 리뷰/s);
 });
 
 function sandbox(t) {
@@ -93,9 +99,11 @@ test('publication checks the current head and the actual jobs for each implement
     assert.notEqual(check({ ...openPr, statusCheckRollup: withGate }), 0);
   }
   assert.notEqual(check({ ...openPr, statusCheckRollup: jobs.map(job => ({ ...job, status: 'IN_PROGRESS' })) }), 0);
-  const claude = { ...openPr, statusCheckRollup: jobs.map(job => job.name === 'review' ? { ...job, conclusion: 'SKIPPED' } : job) };
-  assert.equal(check(claude, 'claude'), 0);
-  assert.notEqual(check(claude, 'gpt'), 0);
+  for (const owner of ['gpt', 'claude']) {
+    assert.equal(check(openPr, owner), 0);
+    const skipped = { ...openPr, statusCheckRollup: jobs.map(job => job.name === 'review' ? { ...job, conclusion: 'SKIPPED' } : job) };
+    assert.notEqual(check(skipped, owner), 0);
+  }
 });
 
 test('merge always pins the reviewed commit and a new head does not enter the feedback loop', (t) => {

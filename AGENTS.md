@@ -72,10 +72,8 @@
 - 불필요한 추상화나 사용하지 않는 코드가 있는가?
 
 ## 자동 협업 루프 (`.github/workflows/agent-*.yml`, `scripts/agent/local-runner.sh`)
-- **역할: 담당한 쪽이 구현하고, 다른 쪽이 리뷰한다.**
-  - 작업표(`docs/tasks.md`)의 담당이 `gpt`인 작업 → Codex(Mac 러너)가 구현, **Codex 자체 리뷰 + Claude 리뷰(이중 리뷰)**. 둘 다 승인해야 머지하고, 지적 사항은 합쳐서 작성자에게 보낸다(agent-verdict)
-  - 담당이 `claude`인 작업 → Claude(agent-claude)가 구현, Codex(Mac 러너)가 리뷰 후 agent-verdict가 판정
-  - 리팩터링(`R번호`) → Claude가 수행, Codex가 리뷰
+- **역할**은 작업표(`docs/tasks.md`)에서 정한다. 담당이 `gpt`면 Codex가 구현하고, `claude` 작업과 리팩터링(`R번호`)은 Claude가 구현한다.
+- **Claude와 Codex가 각각 리뷰한다.** 작성자 쪽의 자체 리뷰도 구현과 다른 세션에서 진행한다. 두 리뷰가 같은 커밋을 승인해야 머지하며, 수정 사항은 합쳐서 작성자에게 보낸다(agent-verdict).
 - **동시 진행:** 담당별로 하나씩(Codex 1개 + Claude 1개) 동시에 진행한다. 리팩터링(R번호) 중에는 새 작업을 시작하지 않는다.
 - 동시에 진행한 작업이 먼저 머지되어 충돌하면, 판정이 작성자에게 "머지 충돌" 피드백을 보내고 작성자가 develop을 병합해 해결한다. 보호 파일은 develop의 내용과 같아야 한다.
 - 순서: agent-start가 다음 작업 이슈 생성 → 담당이 PR 생성 → agent-review가 필수 검사 → 리뷰 → 같은 커밋이 승인이면 `develop`에 머지하고 다음 작업, 아니면 PR에 피드백 댓글(`<!-- agent-feedback -->`) → **작성자가** 수정. 필수 근거가 부족하면 사람이 확인한다.

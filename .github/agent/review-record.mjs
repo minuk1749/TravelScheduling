@@ -41,26 +41,27 @@ export function validateRequest(record, expected) {
     && record.base === 'develop' && record.tests === 'passed', '테스트·리뷰 요청 기록이 잘못됨');
   requireValid(Object.entries(expected).every(([key, value]) => record[key] === value), '요청 기록이 PR·커밋·실행과 일치하지 않음');
   requireValid(record.owner === 'claude' || record.owner === 'gpt', '알 수 없는 구현 담당');
-  if (record.owner === 'gpt') validateReview(record.claude);
-  else requireValid(record.claude === null, 'Claude 구현에 Claude 리뷰가 기록됨');
+  validateReview(record.claude);
   return record;
 }
 
 export function combineReviews(record, codex) {
   validateReview(codex);
-  if (record.owner === 'claude') return codex;
   const claude = validateReview(record.claude);
   const opinions = [claude, codex];
+  const reviewers = record.owner === 'claude'
+    ? ['Claude 자체 리뷰', 'Codex 교차 리뷰']
+    : ['Claude 교차 리뷰', 'Codex 자체 리뷰'];
   const verdict = opinions.some((r) => r.verdict === 'request_changes') ? 'request_changes'
     : opinions.some((r) => r.verdict === 'needs_human') ? 'needs_human' : 'approve';
   return {
     verdict,
-    summary: `Claude (${claude.verdict}): ${claude.summary}\n\nCodex 자체 리뷰 (${codex.verdict}): ${codex.summary}`,
+    summary: `${reviewers[0]} (${claude.verdict}): ${claude.summary}\n\n${reviewers[1]} (${codex.verdict}): ${codex.summary}`,
     issues: [...claude.issues, ...codex.issues],
     notes: opinions.map((r) => r.notes).filter(Boolean).join('\n'),
     refactor: opinions.flatMap((r) => r.refactor),
     evidence: opinions.flatMap((r, index) => r.evidence.map((entry) => ({
-      ...entry, criterion: `${index ? 'Codex' : 'Claude'} — ${entry.criterion}`,
+      ...entry, criterion: `${reviewers[index]} — ${entry.criterion}`,
     }))),
   };
 }
