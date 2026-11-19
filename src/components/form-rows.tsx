@@ -13,6 +13,11 @@ const ICONS = {
   globe: 'M12 4a8 8 0 1 0 0 16a8 8 0 1 0 0-16zM4 12h16M12 4c2.5 2.5 2.5 13.5 0 16M12 4c-2.5 2.5-2.5 13.5 0 16',
   plus: 'M12 5v14M5 12h14',
   alert: 'M12 4L2.5 20h19zM12 10v4.5M12 17.2v.1',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+  search: 'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-4-4',
+  sight: 'M4 20h16M6 20V10M18 20V10M12 20V10M3 10l9-6 9 6z',
+  timer: 'M12 6a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM12 9v4l2 2M10 3h4',
 } as const;
 export type IconName = keyof typeof ICONS;
 

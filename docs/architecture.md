@@ -482,3 +482,4 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 - 데이터 흐름·API·저장 형식은 바꾸지 않는다. 화면 구성 변경은 T17–T20에서 화면별로 하며, 도로 경로 모양(polyline)처럼 새 외부 조회가 필요한 표현은 사람 결정 후 추가한다.
 - 이유와 대안은 [T16 결정](decisions/T16-design-system.md)을 따른다.
 - 입력 화면(T17)은 `components/form-rows.tsx`의 표시 요소(구역 카드·값 줄·항목 오류)를 쓴다. 검증 규칙·API·흐름은 그대로이며 기본 입력칸을 줄 안에 둔다. 근거는 [T17 결정](decisions/T17-input-screens.md).
+- 장소 단계(T18)는 `components/visit-entries.tsx`가 그리고 필수/희망을 아이콘+글자로 표시한다. 장소 검색은 같은 목록의 중복을 표시·경고만 하고 판정은 기존 검증에 둔다. 고정 조건은 결과 화면에서 설정한다. 근거는 [T18 결정](decisions/T18-place-step.md).

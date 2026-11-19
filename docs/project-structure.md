@@ -71,6 +71,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - 글꼴은 `pretendard` 패키지를 `layout.tsx`에서 불러와 자체 호스팅한다(외부 글꼴 요청 없음).
 - 화면별 적용은 T17(여행 만들기·생활 설정), T18(장소 추가), T19(동선 결과), T20(필수 장소 선택). 근거: [T16 결정](decisions/T16-design-system.md).
 - `src/components/form-rows.tsx`: 입력 화면 공용 표시 요소(`FormCard`, `FieldRow`, `FieldError`, `AddRowButton`, 아이콘). 상태·입출력 없음. 오류는 항목 아래에 보이고 요약 알림은 화면 낭독기용으로 하나만 둔다. 근거: [T17 결정](decisions/T17-input-screens.md).
+- `src/components/visit-entries.tsx`: 여행 입력의 장소 단계(방문 줄·필수/희망 표시·중복 경고). `place-picker.tsx`는 `taken`(같은 목록에서 고른 장소)을 받아 `이미 추가함`을 표시한다. 근거: [T18 결정](decisions/T18-place-step.md).
 
 ## T13 결과 UI 연결
 

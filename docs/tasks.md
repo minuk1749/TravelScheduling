@@ -30,6 +30,6 @@
 | T15A | 최종 전체 점검 | T15 | Y | 완료 | claude |  | #53 |
 | T16 | 디자인 시스템 기초 (토큰·글꼴·공통 스타일) | T15A | N | 리뷰 | claude | t16-design-system | #54 |
 | T17 | 여행 만들기·생활 설정 화면 디자인 적용 | T16 | N | 리뷰 | claude | t17-create-settings-design | #55 |
-| T18 | 장소 추가 화면 디자인 적용 | T16 | N | 대기 | claude | | |
+| T18 | 장소 추가 화면 디자인 적용 | T16 | N | 진행중 | claude | t18-places-design | |
 | T19 | 동선 결과 화면: 지도 위 패널과 경로 표현 | T16 | N | 대기 | claude | | |
 | T20 | 필수 장소 선택 화면 디자인 적용 | T19 | N | 대기 | claude | | |

@@ -7,6 +7,7 @@ import { cities, parseTripDraft, TripInputError, type TripDraft } from '../trips
 import { CityProfileCard } from './city-profile-card';
 import { AddRowButton, errorProps, FieldError, FieldRow, FormCard } from './form-rows';
 import { PlacePicker } from './place-picker';
+import { VisitEntries } from './visit-entries';
 
 const steps = ['여행', '항공', '숙소', '장소'];
 type FormDraft = Omit<TripDraft, 'lodgings' | 'visits'> & { lodgings: (TripDraft['lodgings'][number] & { key: number })[]; visits: (TripDraft['visits'][number] & { key: number })[] };
@@ -18,7 +19,7 @@ function inlineKeys(step: number, draft: FormDraft): string[] {
   if (step === 0) return ['cityCode', 'timeZone', 'startDate', 'endDate', 'taxiPolicy'];
   if (step === 1) return ['flights', 'luggageOption', ...draft.flights.flatMap((_, i) => [`flights.${i}.googlePlaceId`, `flights.${i}.localDateTime`])];
   if (step === 2) return ['lodgings', ...draft.lodgings.flatMap((_, i) => [`lodgings.${i}`, `lodgings.${i}.googlePlaceId`, `lodgings.${i}.checkIn`, `lodgings.${i}.checkOut`])];
-  return [];
+  return ['visits', ...draft.visits.flatMap((_, i) => ['googlePlaceId', 'kind', 'minutes', 'priority'].map(field => `visits.${i}.${field}`))];
 }
 
 export function TripInputForm() {
@@ -115,7 +116,7 @@ export function TripInputForm() {
           {draft.lodgings.map((lodging, i) => {
             const key = `lodgings.${i}`, place = field(`${key}.googlePlaceId`), checkIn = field(`${key}.checkIn`), checkOut = field(`${key}.checkOut`);
             return <div className="form-entry" key={lodging.key}>
-              <div className="form-entry-head"><h4>숙소 {i + 1}</h4><button type="button" className="secondary small" onClick={() => set('lodgings', draft.lodgings.filter((_, index) => index !== i))}>숙소 {i + 1} 삭제</button></div>
+              <div className="form-entry-head"><h4>숙소 {i + 1}</h4><button type="button" className="secondary small" aria-label={`숙소 ${i + 1} 삭제`} onClick={() => set('lodgings', draft.lodgings.filter((_, index) => index !== i))}>삭제</button></div>
               <PlacePicker label={`숙소 ${i + 1} 검색`} region={region} value={places[lodging.googlePlaceId]} invalid={!!place.error} describedBy={place.error ? place.errorId : undefined} onChange={value => updateLodging(i, { googlePlaceId: remember(value) })} />
               {place.error && <FieldError id={place.errorId} message={place.error} />}
               <FieldRow icon="calendar" label={`체크인 ${i + 1}`} {...checkIn}><input type="date" min={draft.startDate} max={draft.endDate} value={lodging.checkIn} {...control(`${key}.checkIn`)} onChange={event => updateLodging(i, { checkIn: event.target.value })} /></FieldRow>
@@ -126,17 +127,9 @@ export function TripInputForm() {
           {draft.startDate !== draft.endDate && <AddRowButton label="숙소 추가" disabled={draft.lodgings.length >= 31} onClick={() => set('lodgings', [...draft.lodgings, { key: nextKey.current++, googlePlaceId: '', checkIn: draft.lodgings.at(-1)?.checkOut ?? draft.startDate, checkOut: draft.endDate }])} />}
           {errors.lodgings && <FieldError id={errorId('lodgings')} message={errors.lodgings} />}
         </FormCard>}
-        {step === 3 && <FormCard title="방문 장소">
-          <p>식당과 명소의 체류시간을 분 단위로 입력해 주세요. 희망 장소는 일정에 자동 배치되지 않습니다.</p>
-          {draft.visits.map((visit, i) => <section className="entry" key={visit.key}><h3>방문 장소 {i + 1}</h3>
-            <PlacePicker label={`방문 장소 ${i + 1} 검색`} region={region} value={places[visit.googlePlaceId]} onChange={value => updateVisit(i, { googlePlaceId: remember(value) })} />
-            <label>유형 {i + 1}<select value={visit.kind} onChange={event => updateVisit(i, { kind: event.target.value as typeof visit.kind })}><option value="ATTRACTION">명소</option><option value="RESTAURANT">식당</option></select></label>
-            <label>체류시간 (분) {i + 1}<input type="number" min="1" max="1440" step="1" value={Number.isNaN(visit.minutes) ? '' : visit.minutes} onChange={event => updateVisit(i, { minutes: event.target.value === '' ? NaN : Number(event.target.value) })} /></label>
-            <label>우선순위 {i + 1}<select value={visit.priority} onChange={event => updateVisit(i, { priority: event.target.value as typeof visit.priority })}><option value="REQUIRED">필수</option><option value="WISH">희망 (지도에서 직접 추가)</option></select></label>
-            <button type="button" className="secondary" onClick={() => set('visits', draft.visits.filter((_, index) => index !== i))}>방문 장소 {i + 1} 삭제</button>
-          </section>)}
-          <button type="button" disabled={draft.visits.length >= 100} onClick={() => set('visits', [...draft.visits, { key: nextKey.current++, googlePlaceId: '', kind: 'ATTRACTION', minutes: 60, priority: 'REQUIRED' }])}>장소 추가</button>
-        </FormCard>}
+        {step === 3 && <VisitEntries visits={draft.visits} places={places} region={region} errors={errors} errorId={errorId} remember={remember}
+          onAdd={() => set('visits', [...draft.visits, { key: nextKey.current++, googlePlaceId: '', kind: 'ATTRACTION', minutes: 60, priority: 'REQUIRED' }])}
+          onUpdate={updateVisit} onRemove={index => set('visits', draft.visits.filter((_, n) => n !== index))} />}
       </fieldset>
       {rest.length > 0 && <ul className="form-errors">{rest.map(([key, error]) => <li key={key}>{error}</li>)}</ul>}
       <div className="form-navigation">{step > 0 && <button type="button" className="secondary" disabled={saving} onClick={() => move(step - 1)}>이전</button>}<button type="submit" disabled={saving}>{saving ? '저장 중…' : step === 3 ? '여행 저장' : '다음'}</button></div>
