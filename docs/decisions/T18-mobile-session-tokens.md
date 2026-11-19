@@ -54,3 +54,5 @@
 - `apps/server/tests/bearer-ownership.test.ts`: 기존 소유권 검사(여행 조회·동선 생성·제약 GET/PUT·공유 발급·설정 GET/PUT)를 실제 Bearer 세션으로 실행해 403,
   모든 사용자 API가 잘못된·없는·만료·폐기 토큰에 401 `UNAUTHENTICATED`.
 - `apps/server/tests/api-error-codes.test.ts`, `app-transition-contract.test.ts`: 처리기별 `code`, 문서 코드 목록, Auth.js 외 라우트의 `auth.ts` 미사용.
+- `apps/server/tests/living-settings-http.test.ts`: 실제 `LivingSettingsService`의 revision 비교가 오래된 저장을 409 `STALE_INPUT`으로 거부하고 쓰지 않음.
+  저장소의 원자적 검사(`living-settings-db.test.ts`)와 서비스의 사전 검사 두 경로가 같은 `code`를 쓴다.
