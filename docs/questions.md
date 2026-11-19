@@ -52,6 +52,13 @@
 | 2026-11-19 | T18 | `GET /api/trips/[id]` 응답 형식을 바꿔도 되나? | 상태 코드·`error`·성공 본문 `{ id }`는 그대로 두고 다른 API와 같은 `code`와 `Cache-Control: private, no-store`를 추가한다. 예외는 500 `INTERNAL`로 숨긴다(이전에는 처리되지 않은 예외). | 채택 |
 | 2026-11-19 | T17 | 앱·디자인 토큰 구현과 보호 작업표 갱신도 이번 작업인가? | 원격 develop 9512b21과 같은 t17-local에서 진행한다. 실행 지시가 보호 작업표 수정·commit/push/PR 생성을 금지하므로 기존 T17 진행중 상태를 유지한다. T16 구조의 네 워크스페이스를 만들되 Expo 앱·토큰 값·번들 검사는 T20 범위로 남긴다. 앱·토큰에는 README·package.json만 두며 루트 명령은 --workspaces --if-present로 실제 스크립트를 실행한다. 서버는 기존 경로에서 core를 재내보내고 환경 파일은 apps/server/.env.local로 옮겨 사용한다. [T17 결정](decisions/T17-npm-workspaces.md). | 채택 |
 
+## T19 가정과 병행 작업 인계
+
+- 기준 develop `0b1aab5`, 작업 브랜치 `t19-local`. 실행 지시가 보호 파일 수정을 금지하므로 tasks의 기존 진행중/gpt 상태를 유지하고 브랜치 열은 수정하지 않는다. 커밋·푸시·PR 생성은 러너가 담당한다.
+- T18이 진행 중이므로 인증 구현을 중복 작성하거나 해당 파일을 수정하지 않는다. 새 `route-shapes/http.ts`는 `userId(request)`를 받는다. 현재 조립은 쿠키 인증이며 Authorization이 있으면 401로 닫는다. T18 통합 시 `route-shapes/server.ts`에 공통 RequestAuthenticator 연결과 Bearer 소유권 회귀 검사가 필요하다.
+- 삭제된 장소로 `PlaceProvider.location`이 null이면 해당 구간도 명시적 `NONE`으로 반환한다. 제공자 장애는 null로 처리하지 않는다. 결과 미저장은 RESULT_UNAVAILABLE, 저장 결과는 있으나 현재 입력이 불완전하거나 해시가 다르면 STALE_INPUT이다.
+- 모양 표시만을 위한 Google 재조회이므로 저장 당시와 제공자 경로가 달라질 수 있다. 현재 선택 수단·출발 시각을 유지하며 동선·요금·시간을 재계산하지 않는다. 상세: [T19 결정](decisions/T19-route-shapes.md).
+
 ## T15A 남은 구조 문제와 사람 결정 항목
 
 최종 전체 점검([목록](t15a-audit.md), [결정](decisions/T15A-final-audit.md))에서 동작·데이터·운영 정책을 바꿔야 해서 자동 작업으로 처리하지 않은 항목이다.
