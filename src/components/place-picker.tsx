@@ -12,8 +12,10 @@ export function PlaceCredits({ place }: { place: PlaceSummary }) {
     return <span key={i}> · {href ? <a href={href} target="_blank" rel="noopener noreferrer">{item.provider}</a> : item.provider}</span>;
   })}</span>;
 }
-export function PlacePicker({ label, region, value, onChange }: {
+export function PlacePicker({ label, region, value, onChange, invalid, describedBy }: {
   label: string; region?: string; value?: PlaceSummary; onChange(value: PlaceSummary | undefined): void;
+  /** Inline error state owned by the parent form (docs/design.md §3). */
+  invalid?: boolean; describedBy?: string;
 }) {
   const id = useId();
   const [query, setQuery] = useState(value?.name ?? '');
@@ -38,7 +40,7 @@ export function PlacePicker({ label, region, value, onChange }: {
   }
   return <div className="place-picker">
     <label htmlFor={id}>{label}</label>
-    <div className="search-row"><input id={id} value={query} maxLength={200} placeholder="장소 이름으로 검색" onChange={event => {
+    <div className="search-row"><input id={id} value={query} maxLength={200} placeholder="장소 이름으로 검색" aria-invalid={invalid || undefined} aria-describedby={describedBy} onChange={event => {
       pending.current?.abort(); setBusy(false); setQuery(event.target.value); setResults([]); setMessage(''); onChange(undefined);
     }} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (query.trim()) void search(); } }} />
       <button type="button" onClick={search} disabled={busy || !query.trim()}>{busy ? '검색 중…' : '검색'}</button></div>

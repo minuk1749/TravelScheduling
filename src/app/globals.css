@@ -112,3 +112,52 @@ dl { margin: 0; } dt { margin-top: .6rem; color: var(--color-ink-3); font-size: 
 .form-navigation button[type="submit"] { flex: 1; max-width: 22rem; }
 @media (min-width: 560px) { .field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { * { transition-duration: 0s !important; animation-duration: 0s !important; } }
+
+/* T17 input screens: section cards and value rows (docs/design.md §3). */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.form-sections { min-width: 0; margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 12px; }
+.form-card { min-width: 0; padding: 20px 20px 8px; border-radius: var(--radius-lg); background: var(--color-surface); overflow-wrap: anywhere; }
+.form-card > h3 { margin: 0 0 4px; font-size: 1.125rem; }
+.form-card > p { color: var(--color-ink-2); }
+.field-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; column-gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--color-line); }
+.field-row:last-child, .field-row:has(+ .field-error:last-child) { border-bottom: 0; }
+.field-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; background: var(--color-fill); color: var(--color-ink-2); flex: none; }
+.trip-input .field-body { display: flex; flex-direction: column-reverse; min-width: 0; margin: 0; color: var(--color-ink-3); font-size: .875rem; }
+.field-label { line-height: 1.4; }
+.trip-input .field-row input, .trip-input .field-row select {
+  min-height: 44px; margin: 0; padding: 0; border-radius: 0; background: transparent; box-shadow: none;
+  color: var(--color-ink); font-size: 1.0625rem; font-weight: var(--weight-strong);
+}
+.trip-input .field-row input:focus-visible, .trip-input .field-row select:focus-visible { box-shadow: none; outline: none; }
+.field-row:focus-within { box-shadow: inset 0 -2px 0 var(--color-primary); }
+.field-row:focus-within .field-icon { background: var(--color-primary-soft); color: var(--color-primary-strong); }
+.field-note { color: var(--color-ink-3); font-size: .8125rem; text-align: right; }
+.field-row[data-invalid] .field-icon { background: var(--color-danger-soft); color: var(--color-danger); }
+.trip-input .field-row[data-invalid] input, .trip-input .field-row[data-invalid] select { color: var(--color-danger); background: transparent; box-shadow: none; }
+.field-error { display: flex; align-items: flex-start; gap: 4px; margin: 4px 0 8px; color: var(--color-danger); font-size: .8125rem; line-height: 1.5; }
+.field-error svg { flex: none; margin-top: 3px; }
+.field-row > .field-error { grid-column: 2 / -1; margin-top: 2px; }
+.field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; }
+.field-pair .field-row { grid-template-columns: 40px minmax(0, 1fr); }
+@media (max-width: 479px) { .field-pair { grid-template-columns: minmax(0, 1fr); } }
+.form-entry-head h4 { white-space: nowrap; }
+.form-entry { padding: 12px 0; border-bottom: 1px solid var(--color-line); }
+.form-entry:last-of-type { border-bottom: 0; }
+.form-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.form-entry-head h4 { margin: 0; font-size: 1rem; }
+button.small { min-height: 44px; padding: 0 13px; border-radius: var(--radius-sm); font-size: .875rem; font-weight: var(--weight-regular); }
+.add-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 0; background: transparent; color: var(--color-primary); text-align: left; }
+.add-row .field-icon { background: var(--color-primary-soft); color: var(--color-primary-strong); }
+.add-row:disabled { background: transparent; color: var(--color-disabled); }
+.empty-row { margin: 8px 0 12px; color: var(--color-ink-3); }
+.value-list { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; margin: 8px 0; }
+.value-list > div { display: contents; }
+.value-list dt { margin: 0; }
+.value-list dd { margin: 0; text-align: right; }
+.form-card .profile-card { margin: 4px 0 12px; }
+.profile-card h4 { margin: 0 0 4px; font-size: .9375rem; }
+.profile-recommendation { margin: 8px 0 0; color: var(--color-primary-strong); }
+.trip-summary, .save-status { margin: 0 8px 8px; color: var(--color-ink-3); font-size: .875rem; }
+.reload-row, .next-link { margin: 12px 8px; }
+.trip-input .form-navigation { position: sticky; bottom: 0; z-index: 1; margin: 12px -12px 0; padding: 10px 16px 20px; background: var(--color-background); }
+@supports not selector(:has(*)) { .field-row:last-child { border-bottom: 0; } }

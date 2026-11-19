@@ -14,8 +14,8 @@ export function LivingSettingsForm({ tripId, initial, reload }: { tripId: string
   const [saving, setSaving] = useState(false), [error, setError] = useState(''), [saved, setSaved] = useState(false);
   const inFlight = useRef(false);
   const preview = useMemo(() => {
-    try { return { calculation: calculateSettings(snapshot, parseSettings(draft, snapshot)), errors: [] }; }
-    catch (error) { return { calculation: null, errors: error instanceof TripInputError ? Object.values(error.fields) : ['설정을 확인해 주세요.'] }; }
+    try { return { calculation: calculateSettings(snapshot, parseSettings(draft, snapshot)), errors: {} as Record<string, string> }; }
+    catch (error) { return { calculation: null, errors: error instanceof TripInputError ? error.fields : { form: '설정을 확인해 주세요.' } }; }
   }, [draft, snapshot]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(snapshot.settings);
   async function save() {
@@ -31,15 +31,16 @@ export function LivingSettingsForm({ tripId, initial, reload }: { tripId: string
     finally { inFlight.current = false; setSaving(false); }
   }
   return <>
-    <p>{snapshot.startDate} – {snapshot.endDate} · 현지 시각 ({snapshot.timeZone})</p>
-    <p role="status">{saving ? '저장 중…' : dirty ? '저장하지 않은 변경사항 · 시간창은 입력 즉시 재계산됩니다.' : saved ? '생활 설정을 저장하고 시간창을 재계산했습니다.' : '저장된 생활 설정입니다.'}</p>
+    <p className="trip-summary">{snapshot.startDate} – {snapshot.endDate} · 현지 시각 ({snapshot.timeZone})</p>
+    <p role="status" className="save-status">{saving ? '저장 중…' : dirty ? '저장하지 않은 변경사항 · 시간창은 입력 즉시 재계산됩니다.' : saved ? '생활 설정을 저장하고 시간창을 재계산했습니다.' : '저장된 생활 설정입니다.'}</p>
     {error && <p className="form-errors" role="alert">{error}</p>}
-    {preview.errors.length > 0 && <div className="form-errors" role="alert"><ul>{preview.errors.map((message, i) => <li key={i}>{message}</li>)}</ul></div>}
+    {Object.keys(preview.errors).length > 0 && <div className="sr-only" role="alert"><ul>{Object.entries(preview.errors).map(([key, message]) => <li key={key}>{message}</li>)}</ul></div>}
+    {preview.errors.form && <p className="form-errors">{preview.errors.form}</p>}
     <form noValidate onSubmit={event => { event.preventDefault(); void save(); }}>
-      <fieldset className="input-card" disabled={saving}><legend>생활 설정</legend><SettingsFields snapshot={snapshot} settings={draft} onChange={settings => { setDraft(settings); setSaved(false); setError(''); }} /></fieldset>
+      <fieldset className="form-sections" disabled={saving}><legend className="sr-only">생활 설정</legend><SettingsFields snapshot={snapshot} settings={draft} errors={preview.errors} onChange={settings => { setDraft(settings); setSaved(false); setError(''); }} /></fieldset>
       <div className="form-navigation"><button type="button" className="secondary" disabled={saving} onClick={() => { setDraft(snapshot.settings); setError(''); setSaved(false); }}>변경 취소</button><button type="submit" disabled={saving || !preview.calculation || !dirty}>설정 저장</button></div>
     </form>
-    <p><button type="button" className="secondary" disabled={saving} onClick={reload}>저장된 설정 다시 불러오기</button></p>
+    <p className="reload-row"><button type="button" className="secondary" disabled={saving} onClick={reload}>저장된 설정 다시 불러오기</button></p>
     {saved && <SettingsItineraryPreview key={snapshot.revision} tripId={tripId} />}
     {preview.calculation && <SettingsPreview calculation={preview.calculation} snapshot={snapshot} />}
   </>;
