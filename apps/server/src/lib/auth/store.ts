@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createDatabasePool } from '../db';
+import { canonicalUuidOrNull, createDatabasePool } from '../db';
 
 let pool: ReturnType<typeof createDatabasePool> | undefined;
 function db() { return pool ??= createDatabasePool(); }
@@ -20,6 +20,6 @@ export async function deleteUser(id: string): Promise<void> {
   await db().query('DELETE FROM users WHERE id = $1', [id]);
 }
 export async function tripOwner(id: string): Promise<string | null> {
-  const result = await db().query<{ owner_id: string }>('SELECT owner_id FROM trips WHERE id::text = $1', [id]);
+  const result = await db().query<{ owner_id: string }>('SELECT owner_id FROM trips WHERE id = $1', [canonicalUuidOrNull(id)]);
   return result.rows[0]?.owner_id ?? null;
 }

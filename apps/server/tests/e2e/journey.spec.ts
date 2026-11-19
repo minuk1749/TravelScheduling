@@ -101,6 +101,9 @@ test('T15 375px journey: login → create → settings → over capacity → sel
   await page.getByRole('button', { name: '여행 저장' }).click();
   const { id: tripId } = await (await created).json() as { id: string };
   await expect(page.getByRole('heading', { name: '여행 입력을 저장했습니다' })).toBeVisible();
+  expect((await page.request.get(`/api/trips/${tripId}`)).status()).toBe(200);
+  expect((await page.request.get(`/api/trips/${tripId.replaceAll('-', '')}`)).status()).toBe(404);
+  expect((await request.get('/api/trips/not-a-uuid')).status()).toBe(401);
   const stored = (await pool.query('SELECT taxi_policy, city_code FROM trips WHERE id = $1', [tripId])).rows[0];
   expect(stored).toEqual({ taxi_policy: 'NEVER', city_code: 'TOKYO' });
   expect((await pool.query('SELECT count(*)::int AS n FROM trip_places WHERE trip_id = $1', [tripId])).rows[0].n).toBe(VISITS.length);
