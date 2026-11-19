@@ -82,21 +82,21 @@ main() {
     log "AGENT_EXECUTOR=cloud: 구현·수정은 cloud에서 진행"; return 0
   fi
 
-  # 1) 수정 모드: 열린 작업 PR 확인 (Codex가 만든 PR만)
-  local pr
-  pr=$(gh pr list -R "$REPO" --state open --base develop --json number,title,labels \
-    --jq '[.[] | select(.title | test("^T[0-9]+[A-Z]?:")) | select([.labels[].name] | (index("needs-human") or index("owner-claude")) | not)] | sort_by(.number) | first | .number // empty')
+  # develop의 담당과 단일 작업 이슈가 일치하는 경우에만 구현·수정한다.
+  git show origin/develop:.github/agent/tasks.mjs > "$TMPD/tasks.mjs"
+  local target itask issue pr
+  target=$(writer_target)
+  if [ -z "$target" ]; then log "Codex가 쓸 수 있는 단일 작업이 없음"; return 0; fi
+  read -r itask issue pr <<<"$target"
 
-  if [ -n "$pr" ]; then
-    local fb_at head_at branch title task
+  if [ "$pr" != "-" ]; then
+    local fb_at head_at branch task="$itask"
     fb_at=$(gh pr view "$pr" -R "$REPO" --json comments --jq '[.comments[] | select(.body | contains("<!-- agent-feedback"))] | last | .createdAt // empty')
     head_at=$(gh pr view "$pr" -R "$REPO" --json commits --jq '.commits | last | .committedDate')
     if [ -z "$fb_at" ] || [[ "$fb_at" < "$head_at" ]]; then
       log "PR #$pr 는 리뷰 대기 중 (새 피드백 없음)"; return 0
     fi
     branch=$(gh pr view "$pr" -R "$REPO" --json headRefName --jq .headRefName)
-    title=$(gh pr view "$pr" -R "$REPO" --json title --jq .title)
-    task=$(echo "$title" | grep -oE '^T[0-9]+[A-Z]?')
     log "수정 모드: PR #$pr ($task), 브랜치 $branch"
 
     git checkout -q -B "$branch" "origin/$branch"
@@ -134,6 +134,7 @@ main() {
       { echo "**Mac 러너: 변경 없이 종료**"; echo; cat "$msg" 2>/dev/null; } | gh pr comment "$pr" -R "$REPO" --body-file -
       rm -f "$msg"; return 0
     fi
+    if ! still_assigned "$target"; then return 1; fi
     git push -q origin "HEAD:$branch"
     { echo "**Mac 러너: 피드백 반영 후 푸시**"; echo; cat "$msg" 2>/dev/null; } | gh pr comment "$pr" -R "$REPO" --body-file -
     # PR 설명도 최신 보고로 바꾼다(리뷰어가 PR 설명을 작성자의 주장으로 읽기 때문)
@@ -143,15 +144,9 @@ main() {
     return 0
   fi
 
-  # 2) 구현 모드: 열린 작업 이슈 확인
-  local issue
-  issue=$(gh issue list -R "$REPO" --state open --label agent-task --json number,labels --jq '[.[] | select([.labels[].name] | index("owner-claude") | not)] | sort_by(.number) | first | .number // empty')
-  if [ -z "$issue" ]; then
-    log "진행할 작업 없음"; return 0
-  fi
-  local ititle itask ibranch
+  # 2) 구현 모드: 작업표에서 배정한 작업에 아직 PR이 없을 때
+  local ititle ibranch
   ititle=$(gh issue view "$issue" -R "$REPO" --json title --jq .title)
-  itask=$(echo "$ititle" | grep -oE '^T[0-9]+[A-Z]?')
   ibranch="$(echo "$itask" | tr 'A-Z' 'a-z')-local"
   log "구현 모드: 이슈 #$issue ($ititle), 브랜치 $ibranch"
 
@@ -203,6 +198,7 @@ main() {
     ibranch="$ibranch-$(date +%Y%m%d%H%M%S)"
     git branch -q -m "$ibranch"
   fi
+  if ! still_assigned "$target"; then return 1; fi
   git push -q origin "HEAD:$ibranch"
   {
     cat "$imsg" 2>/dev/null || true
@@ -218,6 +214,26 @@ main() {
     git push -q origin --delete "${w#origin/}" || true
   done
   log "PR 생성 완료"
+}
+
+writer_target() {
+  git show origin/develop:docs/tasks.md > "$TMPD/tasks.md" || return 1
+  gh issue list -R "$REPO" --state open --label agent-task --limit 1000 \
+    --json number,title,labels > "$TMPD/issues.json" || return 1
+  gh pr list -R "$REPO" --state open --limit 1000 \
+    --json number,title,labels,baseRefName,headRefName,isCrossRepository,isDraft > "$TMPD/prs.json" || return 1
+  node "$TMPD/tasks.mjs" writer "$TMPD/issues.json" "$TMPD/prs.json" --file "$TMPD/tasks.md"
+}
+
+# 모델 실행 중 담당이 바뀌거나 다른 PR이 열렸으면 게시를 멈춘다.
+still_assigned() {
+  local current pauses
+  git fetch -q origin refs/heads/develop:refs/remotes/origin/develop || return 1
+  pauses=$(gh issue list -R "$REPO" --label agent-paused --state open --json number --jq length) || return 1
+  current=$(writer_target) || return 1
+  if [ "$pauses" != 0 ] || [ "$current" != "$1" ]; then
+    log "게시 중단: 일시중단 상태 또는 작업 배정이 바뀜"; return 1
+  fi
 }
 
 review_run_for() { # pr, head

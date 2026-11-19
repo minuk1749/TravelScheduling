@@ -1,5 +1,6 @@
 // docs/tasks.md 표를 읽고 쓰는 도구 (외부 의존 없음)
 //   node tasks.mjs next  [file] [--owner o]      → 다음 자동 작업 {"id","title"} 또는 {} (담당 지정 가능)
+//   node tasks.mjs writer <열린 작업 이슈 JSON> <열린 PR JSON> [--file f] → Codex가 쓸 작업 ID, 이슈 번호, PR 번호(신규는 -)
 //   node tasks.mjs title <ID> [file]            → 작업 제목
 //   node tasks.mjs get <ID> <열> [--file f]       → 해당 칸 값
 //   node tasks.mjs set <ID> 열=값 ... [--file f] → 해당 행 갱신
@@ -37,6 +38,38 @@ function next(file, owner) {
   return pick ? { id: get(pick, "#"), title: get(pick, "작업") } : {};
 }
 
+// PR 라벨은 늦게 붙을 수 있다. develop의 담당과 열린 작업 이슈를 먼저 대조한다.
+function writer(file, issues, prs) {
+  const { rows } = load(file);
+  const hasLabel = (item, name) => item.labels.some((label) => label.name === name);
+  const candidates = [];
+  for (const row of rows) {
+    const state = get(row, "상태");
+    if (get(row, "담당") !== "gpt" || !["진행중", "리뷰"].includes(state)) continue;
+    const task = get(row, "#");
+    const belongs = (item) => item.title.startsWith(task + ": ");
+    const claims = issues.filter(belongs);
+    if (claims.length !== 1) continue;
+    const [issue] = claims;
+    if (hasLabel(issue, "owner-claude") || hasLabel(issue, "needs-human")) continue;
+
+    const matches = prs.filter(belongs);
+    if (matches.length > 1) continue;
+    const [pr] = matches;
+    const branch = get(row, "브랜치");
+    if (pr) {
+      if (pr.baseRefName !== "develop" || pr.isCrossRepository || pr.isDraft ||
+          hasLabel(pr, "owner-claude") || hasLabel(pr, "needs-human") ||
+          (branch && pr.headRefName !== branch)) continue;
+    } else if (state === "리뷰" || get(row, "PR") || get(row, "자동") !== "Y") {
+      continue;
+    }
+    candidates.push([task, issue.number, pr?.number ?? "-"]);
+  }
+  // agent-start는 한 담당에게 한 작업만 배정한다. 중복 배정은 추측하지 않는다.
+  return candidates.length === 1 ? candidates[0].join(" ") : "";
+}
+
 function set(file, id, pairs) {
   const { lines, rows } = load(file);
   const row = rows.find((r) => get(r, "#") === id);
@@ -66,6 +99,9 @@ if (cmd === "next") {
   let owner;
   if (oi >= 0) { owner = args[oi + 1]; args.splice(oi, 2); }
   console.log(JSON.stringify(next(args[0] ?? file, owner)));
+} else if (cmd === "writer") {
+  const [issues, prs] = args.map((path) => JSON.parse(fs.readFileSync(path, "utf8")));
+  console.log(writer(file, issues, prs));
 } else if (cmd === "title") {
   const { rows } = load(args[1] ?? file);
   const row = rows.find((r) => get(r, "#") === args[0]);
@@ -80,6 +116,6 @@ if (cmd === "next") {
 } else if (cmd === "set") {
   set(file, args[0], args.slice(1));
 } else {
-  console.error("사용법: tasks.mjs next|title|set");
+  console.error("사용법: tasks.mjs next|writer|title|get|set");
   process.exit(2);
 }
