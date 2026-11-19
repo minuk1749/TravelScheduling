@@ -113,4 +113,9 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 - PWA 화면을 React Native(Expo) 앱으로 바꾼다. 서버 API·DB·순수 코어는 유지하고, 화면과 로그인 방식(앱용 Bearer 세션 토큰)만 바꾼다. 작업 목록과 완료 기준: [요구사항 §5](requirements.md).
 - 화면은 [디자인 기준](design.md)을 따른다. 색·글자·간격 값은 앱의 토큰 모듈 한 곳에만 둔다.
 - 새 폴더 구조(모노레포)는 T16이 정하고 T17이 옮긴다. 옮긴 뒤 이 문서의 모듈 표를 새 경로로 갱신한다.
+- **T16 설계(계획, 코드 변경 없음):** [아키텍처 §13](architecture.md#13-t16-앱-전환-후-구조-계획), [T16 결정](decisions/T16-app-transition.md).
+  - `apps/server`(Next: API + `/share/[token]`), `apps/mobile`(Expo), `packages/core`(scheduler·fare·공용 DTO·검증·표시 변환), `packages/design-tokens`(디자인 값). 앱과 서버는 서로 import하지 않는다.
+  - 앱 인증: 네이티브 Google ID 토큰 → `POST /api/session` → 불투명 세션 토큰(DB에는 SHA-256 해시, 30일) → `Authorization: Bearer`. 처리기의 `userId(request)` 뒤 `authorizeTrip`은 그대로.
+  - 새 경로는 `/api/session`, `/api/account`, `/api/trips/[id]/itinerary/shapes`(경로 모양, 저장하지 않음) 세 개. 오류 본문에 `code`를 추가한다.
+  - `tests/app-transition-design.test.ts`가 §13의 항목, 모든 API 라우트의 계약 표 수록, T25 삭제 목록 경로의 존재를 검사한다. `tests/app-transition-contract.test.ts`는 현재 오류 응답의 `fields` 두 형태(목록·필드별 메시지)가 계획한 `ApiError`에 맞는지, `auth()`를 직접 부르는 API 라우트(`GET /api/trips/[id]`)가 Bearer 전환 대상과 T18 검증 계획에 있는지 검사한다.
 - 웹 화면은 T25에서 지운다. 공유 링크용 읽기 전용 웹 페이지(`/share/[token]`)만 남긴다.
