@@ -52,13 +52,13 @@ if ! current_pr; then
   exit 0
 fi
 
-if [[ "$R_TEST" != success && ( "$R_TEST" != failure || "$PASSED" != false ) ]] \
-  || [[ "$R_REVIEW" = failure || "$R_REVIEW" = cancelled ]]; then
-  pause "테스트 또는 리뷰 실행에 문제가 있어 자동 루프를 멈췄습니다."; exit 0
-fi
 verdict=$(printf '%s' "${REVIEW_JSON:-}" | jq -r '.verdict // empty' 2>/dev/null || true)
-if [ "$PASSED" = true ] && [[ "$R_TEST" != success || "$R_REVIEW" != success || -z "$verdict" ]]; then
-  pause "$REVIEWER 리뷰 또는 테스트 완료 기록을 확인하지 못했습니다."; exit 0
+if [[ "$R_TEST" != success || "$PASSED" != true || "$R_REVIEW" != success || -z "$verdict" ]]; then
+  pause "테스트 또는 리뷰 통과 기록이 없어 자동 루프를 멈췄습니다."; exit 0
+fi
+if ! node "$(dirname "$0")/check-pr.mjs" "$GITHUB_REPOSITORY" "$PR" "$HEAD_SHA" "$OWNER"; then
+  if current_pr; then pause "현재 커밋의 CI 또는 agent-review 필수 검사를 확인할 수 없어 자동 처리를 멈췄습니다."; fi
+  exit 0
 fi
 gh pr edit "$PR" --remove-label needs-codex-review >/dev/null 2>&1 || true
 
@@ -121,11 +121,6 @@ fi
   if [ "${MERGE_CONFLICT:-}" = true ]; then
     echo "### 머지 충돌"
     echo "리뷰는 승인됐지만, 그사이 develop에 다른 작업이 머지되어 이 PR이 충돌합니다. develop을 이 브랜치에 병합하고 충돌을 해결해 주세요(승인된 변경 내용은 유지)."
-  elif [ "$PASSED" != true ]; then
-    echo "### 테스트 실패 (npm ci / lint / typecheck / build / test 중 하나)"
-    echo '```'
-    cat "$RUNNER_TEMP/test-tail.log" 2>/dev/null || echo "(로그 없음)"
-    echo '```'
   else
     echo "### $REVIEWER 리뷰: 수정 요청"
     jq -r '.summary + "\n" + ([.issues[] | "\n- **" + .file + "**: " + .problem + "\n  - 수정 방향: " + .fix] | join(""))' <<<"$REVIEW_JSON"
