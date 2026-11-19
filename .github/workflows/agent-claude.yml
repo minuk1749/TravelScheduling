@@ -133,7 +133,7 @@ jobs:
           claude_args: >-
             --model ${{ steps.prompt.outputs.model }}
             ${{ steps.prompt.outputs.effort && format('--effort {0}', steps.prompt.outputs.effort) || '' }}
-            --max-turns 200
+            --max-turns 400
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git add:*),Bash(git rm:*)"
             --disallowedTools "NotebookEdit"
 
