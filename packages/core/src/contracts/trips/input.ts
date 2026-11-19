@@ -12,6 +12,8 @@ export const cities = [
   { code: 'PARIS', name: '파리', timeZone: 'Europe/Paris', region: 'FR' },
   { code: 'LONDON', name: '런던', timeZone: 'Europe/London', region: 'GB' },
 ] as const;
+export const visitDurationMinutes = { min: 1, max: 1440 } as const;
+
 export type TripDraft = {
   cityCode: string; timeZone: string; startDate: string; endDate: string;
   taxiPolicy: 'NEVER' | 'WHEN_NEEDED' | 'PREFER';
@@ -97,7 +99,7 @@ export function parseTripDraft(raw: unknown, step = 3): TripDraft {
     if (step >= 3) {
       if (!['RESTAURANT', 'ATTRACTION'].includes(visit.kind as string)) fail(`${key}.kind`, '식당 또는 명소를 선택해 주세요.');
       if (!['REQUIRED', 'WISH'].includes(visit.priority as string)) fail(`${key}.priority`, '필수 또는 희망을 선택해 주세요.');
-      if (typeof visit.minutes !== 'number' || !Number.isInteger(visit.minutes) || visit.minutes < 1 || visit.minutes > 1440) fail(`${key}.minutes`, '체류시간은 1–1,440분의 정수여야 합니다.');
+      if (typeof visit.minutes !== 'number' || !Number.isInteger(visit.minutes) || visit.minutes < visitDurationMinutes.min || visit.minutes > visitDurationMinutes.max) fail(`${key}.minutes`, '체류시간은 1–1,440분의 정수여야 합니다.');
     }
     return { googlePlaceId: step >= 3 ? id(visit.googlePlaceId, `${key}.googlePlaceId`) : string(visit.googlePlaceId), kind: visit.kind as 'RESTAURANT' | 'ATTRACTION', minutes: visit.minutes as number, priority: visit.priority as 'REQUIRED' | 'WISH' };
   });

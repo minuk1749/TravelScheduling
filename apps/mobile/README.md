@@ -1,6 +1,6 @@
 # @travel/mobile
 
-Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세션 복원, 보호된 첫 화면(`내 여행`), 로그아웃을 제공한다. 여행 입력은 T21에서 추가한다.
+Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세션 복원, 보호된 첫 화면(`내 여행`), 로그아웃을 제공한다. T21은 여행 만들기, 장소 추가, 저장한 여행 재열기와 하루 생활 수정을 제공한다.
 
 ## 설정과 실행
 
@@ -12,10 +12,14 @@ Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | 네이티브 SDK가 서버 검증용 ID 토큰을 요청할 Web OAuth 클라이언트 ID |
 | `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | iOS 앱의 OAuth 클라이언트 ID |
 | `GOOGLE_IOS_URL_SCHEME` | iOS OAuth ID의 역순 URL scheme (`com.googleusercontent.apps.…`). 네이티브 설정 생성 때 Google config plugin을 활성화한다 |
+| `EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY` | 숙소 위치 선택에 쓰는 iOS 앱 제한 Maps SDK 키 |
+| `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY` | 숙소 위치 선택에 쓰는 Android 앱 제한 Maps SDK 키 |
 
 서버의 `GOOGLE_MOBILE_CLIENT_IDS`에는 **실제 ID 토큰의 aud**를 허용해야 한다. 이 SDK에서 `webClientId`를 사용하므로 위 Web ID도 목록에 포함한다. T18의 서명·발급자·만료 검증은 그대로다. Android에는 Google Cloud에서 앱 패키지명·서명 인증서 SHA를 등록한다. OAuth client secret은 앱에 넣지 않는다.
 
 루트에서 `npm run dev --workspace @travel/mobile`로 Metro를 실행한다. 네이티브 Google 모듈 때문에 Expo Go가 아닌 개발 빌드가 필요하다. 자격증명 없는 CI에서는 로그인 SDK를 목으로 대체하고 JS 번들까지만 생성한다. 번들 ID·APK/Xcode 설치 안내는 T26 범위다. 실제 기기에서는 배포용 HTTPS 서버를 사용한다.
+
+두 Maps SDK 키는 각 앱과 플랫폼으로 제한한다. 지도 키가 없는 환경에서는 장소 검색과 주소 입력을 사용할 수 있다. 지도 SDK 설정을 바꾸면 개발 빌드를 다시 만든다. [Expo 지도 설정](https://docs.expo.dev/versions/latest/sdk/map-view/)
 
 ## 구조와 검증
 
@@ -23,7 +27,7 @@ Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세
 - `src/auth/`: `SessionManager`, Google/SecureStore 어댑터, 포트, 런타임 조립, React 구독. 세션은 SecureStore에 `{ token, expiresAt }`로 저장한다. 토큰 원문은 React 상태·로그에 넣지 않는다.
 - `src/api/`: 서버 origin 한 곳으로만 요청한다. Bearer 첨부, 쿠키/리다이렉트 전달 금지, 15초 제한, core 오류 코드·두 `fields` 형태 보존, 401이면 저장소 삭제와 로그인 이동.
 - `src/theme/`: `@travel/design-tokens` → RN 스타일, 글꼴 등록, 동작 줄이기. 화면 전환은 24pt 이동+페이드 280ms, 누름은 0.97배/90ms. 동작 줄이기에서는 이동을 없앤다.
-- `src/screens/`, `src/components/`: 로그인/첫 화면과 버튼·상태·전환. 입력 화면과 계정 탈퇴는 후속 작업이다.
+- `src/screens/`, `src/components/`: 로그인·여행 입력 화면과 공통 버튼·필드·검색·시트.
 
 `npm run lint`, `npm run typecheck`, `npm run build`, `npm test`에 이 워크스페이스 검사도 포함된다. 빌드는 `dist/ios`와 `dist/android`에 Expo export를 생성한다. `tests/login-flow.test.tsx`는 실제 라우터·인증 조립·목 HTTP를 통해 로그인/취소/오류/복원/401/로그아웃/저장소 재시도를 검사한다. 네이티브 드라이버 애니메이션은 테스트에서 즉시 완료시킨다.
 

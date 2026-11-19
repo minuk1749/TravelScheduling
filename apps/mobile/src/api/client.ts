@@ -51,7 +51,7 @@ export class ApiClient {
     try {
       response = await this.transport(url.toString(), {
         ...options, headers, credentials: 'omit', cache: 'no-store', redirect: 'error',
-        signal: options.signal ?? AbortSignal.timeout(15_000),
+        signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(options.signal ? [options.signal] : [])]),
       });
     } catch {
       throw new Error('서버에 연결하지 못했어요. 연결을 확인하고 다시 시도해 주세요.');
