@@ -714,7 +714,7 @@ export type ResultMapProps = {
 ```
 
 지도 SDK와 무관한 계산은 `apps/mobile/src/map/`의 순수 함수로 두고 단위 테스트한다: polyline 해독(`decodePolyline`),
-구간 순서 색(6색, 넘으면 보간. 색 값은 design-tokens), 도심 밖 판정, 패널 3단계 스냅 위치. 선 모양 차이(나눠 그리기·떠 있는 곡선)는
+구간 순서 색(6색, 넘으면 보간. 색 값은 design-tokens), 도심 밖 판정, 장소 카드 선택·이전/다음과 강조할 구간(결과 화면 R2). 선 모양 차이(나눠 그리기·떠 있는 곡선)는
 어댑터 안에서 가까운 표현으로 처리하고 `docs/questions.md`에 남긴다(요구사항 §5 주의).
 
 ### 13.6 앱 테스트 전략
