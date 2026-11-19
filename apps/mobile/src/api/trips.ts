@@ -3,10 +3,11 @@ import type { CityProfile } from '@travel/core/fare';
 import type { ItineraryResult } from '@travel/core/contracts/itinerary';
 import type { PlaceLocation, PlaceSummary } from '@travel/core/contracts/places';
 import type { Constraints, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
+import type { RouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import type { LivingSettings, SettingsView } from '@travel/core/contracts/settings/model';
 import type { TripCreation, TripSummary } from '@travel/core/contracts/trips/create';
 import { useRuntime } from '../auth/provider';
-import type { ApiClient } from './client';
+import { ApiFailure, type ApiClient } from './client';
 
 const trips = '/api/trips';
 const trip = (id: string) => `${trips}/${encodeURIComponent(id)}`;
@@ -17,6 +18,13 @@ const json = (method: 'POST' | 'PUT', body: unknown) => ({
 
 export type ProfileView = { profile: CityProfile | null; recommendedPolicy: LivingSettings['taxiPolicy'] };
 export type GeneratedTrip = ItineraryResult & { itineraryId: string; inputHash: string };
+
+/** A calculation is only shown for the input revision it was made from (T23·T22 shared rule). */
+export function verifyRevision(result: GeneratedTrip, revision: string) {
+  if (result.inputHash !== revision) {
+    throw new ApiFailure(409, 'STALE_INPUT', '여행 정보가 바뀌었어요. 저장된 설정을 다시 불러와 주세요.');
+  }
+}
 
 class TripApi {
   constructor(private readonly api: Pick<ApiClient, 'request'>) {}
@@ -47,6 +55,10 @@ class TripApi {
   }
   generate(id: string, signal?: AbortSignal) {
     return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST', signal });
+  }
+  /** T19 road shapes for the saved result; kept in memory only (never persisted). */
+  shapes(id: string, inputHash: string, signal: AbortSignal) {
+    return this.api.request<RouteShapesResponse>(`${trip(id)}/itinerary/shapes?${new URLSearchParams({ inputHash })}`, { signal });
   }
 }
 

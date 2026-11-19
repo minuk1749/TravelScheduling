@@ -4,7 +4,7 @@ import { parseConstraints } from '@travel/core/contracts/results/input';
 import { constraintsFrom, type ResultView, type VisitEdit } from '@travel/core/contracts/results/model';
 import { placeName } from '@travel/core/presentation';
 import { ApiFailure } from '../../api/client';
-import { useTripApi, type GeneratedTrip } from '../../api/trips';
+import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen, form } from '../../components/input/form-layout';
 import { colors, text } from '../../theme';
@@ -14,20 +14,17 @@ import { useTripResource } from '../trip-input/use-trip-resource';
 import { Candidates, RemoveFixedSheet, type Candidate } from './candidates';
 import { fixedConditions, selectionIssues } from './selection';
 import { FeasibleStatus, SelectionStatus } from './selection-status';
-import { VerifiedSchedule } from './verified-schedule';
 
 const title = '필수 장소 선택';
 
-function verifyRevision(result: GeneratedTrip, revision: string) {
-  if (result.inputHash !== revision) {
-    throw new ApiFailure(409, 'STALE_INPUT', '여행 정보가 바뀌었어요. 저장된 설정을 다시 불러와 주세요.');
-  }
-}
-
-type FlowProps = { tripId: string; initial: GeneratedTrip; back(): void; editConditions(): void };
+/** `viewResult` opens the verified result (T22 result screen) from memory without recalculating. */
+type FlowProps = {
+  tripId: string; initial: GeneratedTrip; back(): void; editConditions(): void;
+  viewResult(view: ResultView, result: GeneratedTrip): void;
+};
 type Selection = { view: ResultView; result: GeneratedTrip };
 
-export function CapacityFlow({ tripId, initial, back, editConditions }: FlowProps) {
+export function CapacityFlow({ tripId, initial, back, editConditions, viewResult }: FlowProps) {
   const api = useTripApi();
   const load = useCallback(async (signal: AbortSignal): Promise<Selection> => {
     const view = await api.savedInput(tripId, signal);
@@ -37,7 +34,7 @@ export function CapacityFlow({ tripId, initial, back, editConditions }: FlowProp
   }, [api, initial, tripId]);
   const { state, retry } = useTripResource(load);
   if (state.status === 'ready') return <SelectionEditor tripId={tripId} initial={state.data}
-    back={back} editConditions={editConditions} reload={retry} />;
+    back={back} editConditions={editConditions} reload={retry} viewResult={viewResult} />;
   return <FormScreen title={title} back={back}
     footer={state.status === 'error' && <ActionButton label="다시 불러오기" onPress={retry} />}>
     <FormCard>
@@ -49,8 +46,8 @@ export function CapacityFlow({ tripId, initial, back, editConditions }: FlowProp
   </FormScreen>;
 }
 
-function SelectionEditor({ tripId, initial, back, editConditions, reload }: {
-  tripId: string; initial: Selection; back(): void; editConditions(): void; reload(): void;
+function SelectionEditor({ tripId, initial, back, editConditions, reload, viewResult }: Omit<FlowProps, 'initial'> & {
+  initial: Selection; reload(): void;
 }) {
   const api = useTripApi();
   const reduced = useReducedMotion();
@@ -61,7 +58,6 @@ function SelectionEditor({ tripId, initial, back, editConditions, reload }: {
   const [confirm, setConfirm] = useState<Candidate | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; stale: boolean }>();
-  const [viewing, setViewing] = useState(false);
   const pending = useRef<AbortController | null>(null);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const issueOffset = useRef(0);
@@ -120,9 +116,8 @@ function SelectionEditor({ tripId, initial, back, editConditions, reload }: {
   }
 
   if (result?.status === 'OK') {
-    if (viewing) return <VerifiedSchedule view={view} result={result} back={() => setViewing(false)} />;
     return <FormScreen title={title} back={back} subtitle={titleForTrip(view.input)}
-      footer={<ActionButton label="동선 보기" onPress={() => setViewing(true)} />}>
+      footer={<ActionButton label="동선 보기" onPress={() => viewResult(view, result)} />}>
       <FeasibleStatus count={count} />
     </FormScreen>;
   }

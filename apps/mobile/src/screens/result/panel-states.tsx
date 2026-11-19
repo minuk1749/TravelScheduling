@@ -1,0 +1,72 @@
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { colors, radius, size, spacing, text } from '../../theme';
+import type { CardModel } from '../../result/days';
+
+function Button({ label, onPress, primary = false }: { label: string; onPress(): void; primary?: boolean }) {
+  return <Pressable accessibilityRole="button" onPress={onPress} style={[styles.button, primary && styles.primary]}>
+    <Text style={[text.secondary, styles.buttonLabel, primary && styles.primaryLabel]}>{label}</Text>
+  </Pressable>;
+}
+
+/** 3-6: no visit on the date; the pager is hidden. */
+export function EmptyDay({ freeTime, canAddWish, onAddWish }: { freeTime: string; canAddWish: boolean; onAddWish(): void }) {
+  return <View style={styles.block}>
+    <Text style={text.name}>배치된 장소 없음</Text>
+    <Text style={styles.secondary}>{freeTime}</Text>
+    {canAddWish && <View style={styles.row}><Button label="희망 장소에서 추가" onPress={onAddWish} /></View>}
+  </View>;
+}
+
+/** 3-9: the calculation failed; saved places and fixed conditions remain. */
+export function FailureBlock({ message, hasPrevious, onShowPrevious, onRetry }: {
+  message: string; hasPrevious: boolean; onShowPrevious(): void; onRetry(): void;
+}) {
+  return <View style={styles.block}>
+    <Text accessibilityRole="alert" style={text.name}>⚠ 동선을 계산하지 못했어요</Text>
+    <Text style={styles.secondary}>입력한 장소와 고정 조건은 그대로 있어요</Text>
+    <Text style={[text.tiny, { color: colors.gray.description }]}>{message}</Text>
+    <View style={styles.row}>
+      {hasPrevious && <Button label="이전 일정 보기" onPress={onShowPrevious} />}
+      <Button label="다시 계산" primary onPress={onRetry} />
+    </View>
+  </View>;
+}
+
+/** 3-9 with the last result shown: faded map and this mark. */
+export function PreviousBadge({ onRetry }: { onRetry(): void }) {
+  return <View style={[styles.row, styles.badgeRow]}>
+    <Text style={[text.tiny, styles.badge]}>이전 계산 결과 · 갱신 실패</Text>
+    <Button label="다시 계산" onPress={onRetry} />
+  </View>;
+}
+
+/** 3-8: fixed places are never moved automatically; offer to edit the cause or undo the change. */
+export function ConflictActions({ status, onEdit, onRevert, onEditConditions }: {
+  status: { messages: readonly string[]; target: CardModel | null; canUndo: boolean };
+  onEdit(card: CardModel): void; onRevert(): void; onEditConditions(): void;
+}) {
+  const target = status.target;
+  return <View style={styles.block}>
+    {status.messages.map(message => <Text key={message} style={[text.tiny, { color: colors.red.text }]}>⚠ {message}</Text>)}
+    <Text style={styles.secondary}>고정된 장소는 자동으로 옮기지 않아요</Text>
+    <View style={styles.row}>
+      {target ? <Button label={`${target.name} 고정 수정`} onPress={() => onEdit(target)} />
+        : <Button label="여행 조건 수정" onPress={onEditConditions} />}
+      {status.canUndo && <Button label="변경 취소" primary onPress={onRevert} />}
+    </View>
+  </View>;
+}
+
+const styles = StyleSheet.create({
+  block: { paddingHorizontal: spacing.screen, gap: spacing.steps[1] },
+  secondary: { ...text.secondary, color: colors.gray.secondary },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.steps[1] },
+  badgeRow: { paddingHorizontal: spacing.screen, alignItems: 'center' },
+  badge: { color: colors.amber.text, backgroundColor: colors.amber.surface, borderRadius: radius.small,
+    paddingHorizontal: spacing.steps[1], paddingVertical: spacing.steps[0], overflow: 'hidden' },
+  button: { minHeight: size.touch, paddingHorizontal: spacing.cardInside, borderRadius: radius.small,
+    backgroundColor: colors.gray.button, justifyContent: 'center' },
+  primary: { backgroundColor: colors.sky.primary },
+  buttonLabel: { color: colors.gray.secondary },
+  primaryLabel: { color: colors.card, fontFamily: text.place.fontFamily },
+});

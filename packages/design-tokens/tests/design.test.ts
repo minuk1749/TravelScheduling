@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { colors, legColors, typography, spacing, radius, size, motion } from '../src/index';
+import { colors, legColors, typography, spacing, radius, size, motion, shadow, result } from '../src/index';
 
 const document = readFileSync(new URL('../../../docs/design.md', import.meta.url), 'utf8');
 function section(number: number) {
@@ -68,6 +68,49 @@ test('component sizes and footer spacing match §5', () => {
   assert.deepEqual([radius.panel, size.handle.width, size.handle.height, motion.sheet.backdropOpacity * 100, 1, 2], numbers(row(5, '하단 시트').replace(/`#[\w]+`/g, '')));
   assert.deepEqual([radius.toast], numbers(row(5, '토스트')));
   assert.deepEqual([size.iconTile, radius.tile, typography.place.size, typography.place.weight, typography.secondary.size, size.rowButton], numbers(row(5, '목록 줄').replace(/`#[\w]+`/g, '')));
+});
+
+test('floating, panel and toast shadows match §4', () => {
+  const shadows = line(4, '- 그림자는').split(', ');
+  const values = (label: string) => {
+    const part = shadows.find(value => value.includes(label));
+    assert.ok(part, label);
+    return numbers(part.slice(part.indexOf('`')));
+  };
+  for (const [label, spec] of [['날짜 선택', shadow.floating], ['하단 시트·패널', shadow.panel], ['토스트', shadow.toast]] as const) {
+    assert.deepEqual(values(label), [0, spec.y, spec.blur, ...spec.rgb, spec.opacity], label);
+  }
+});
+
+test('R2 result layout, card, marker and route values match §6–7', () => {
+  const layout = (label: string) => numbers(row(7, label).replace(/`#[\w]+`/g, ''));
+  assert.deepEqual(layout('상단 바'), [result.topBar.top, result.topBar.inset, result.topBar.height, result.topBar.radius,
+    size.back, result.name.size, result.name.weight, typography.secondary.size, size.touch]);
+  assert.deepEqual(layout('날짜 선택').slice(0, 5), [result.dateChips.top, result.dateChips.inset, result.dateChips.height,
+    result.dateChips.radius, result.dateChips.gap]);
+  assert.ok(layout('날짜 선택').includes(size.focusBorder));
+  assert.deepEqual(layout('현재 위치 버튼'), [result.locate.offset, result.locate.inset, result.locate.size]);
+  assert.deepEqual(layout('장소 패널'), [result.panel.top, result.panel.ratio * 100]);
+  assert.deepEqual(numbers(line(7, '3. 장소 카드 줄')), [3, result.cardRow.width, result.cardRow.gap, result.cardRow.inset]);
+  const pager = line(7, '4. 넘김 줄');
+  assert.deepEqual(numbers(pager.replace(/`#[\w]+`/g, '')), [4, size.touch, typography.place.weight, size.touch, size.touch, result.pager.editRadius]);
+  assert.deepEqual(hexes(pager), [result.pager.disabled]);
+  const card = line(7, '**장소 카드**');
+  assert.deepEqual(hexes(card), [result.card.surface, colors.sky.primary]);
+  assert.deepEqual(numbers(card.replace(/`#[\w]+`/g, '')), [result.card.radius, result.card.padding, result.card.border]);
+  assert.deepEqual(numbers(row(7, '1').replace(/`#[\w]+`/g, '')), [result.number.size, typography.small.min,
+    result.name.weight, result.name.size, result.name.weight]);
+  assert.deepEqual([...numbers(row(7, '구분선').replace(/`#[\w]+`/g, '')), ...hexes(row(7, '구분선'))],
+    [result.card.dividerWidth, result.card.divider]);
+  assert.deepEqual(numbers(row(7, '5').replace(/`#[\w]+`/g, '').replace(/"[^"]*"/g, '')),
+    [typography.secondary.size, result.switchChip.height, typography.small.min, result.name.weight, size.touch]);
+  assert.equal(numbers(line(7, '- 선택하지 않은 카드'))[0], result.overlay.unselected * 100);
+  assert.ok(line(7, '- 이동수단을 바꾸면').includes(`카드 ${result.overlay.busy * 100}% 흐리게`));
+  const marker = line(7, '- 카드를 넘기거나');
+  assert.ok(marker.includes(`${result.marker.selectedScale}배`) && marker.includes(`바깥 ${result.marker.ring} 반투명`));
+  assert.ok(line(7, '- 희망 마커는').includes(`${result.marker.wishOpacity * 100}% 불투명도`));
+  assert.ok(row(6, '기본 · 카드 선택 (3-1)').includes(`${result.route.dimOpacity * 100}%로 흐리게`));
+  assert.ok(line(6, '- **도심 밖 판정').includes(`직선거리 ${result.route.outsideKm}km 이상`));
 });
 
 test('all transition durations, distances, easing, scale and opacity match §8', () => {

@@ -44,10 +44,12 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `packages/core/src/contracts/` | 공용 DTO·검증·설정 계산. `trips/`, `settings/`, `results/`, `itinerary.ts`, `places.ts`, `travel-time.ts`, `sharing.ts`, `errors.ts`(T18 오류 `code` 목록) | core 내부, Temporal | 서버 포트, Node·DB·네트워크·React·React Native |
 | `packages/core/src/presentation/` | 표시 변환·한국어 라벨 | core DTO, Temporal | 화면 프레임워크·I/O |
 | `apps/server/src/scheduler/`, `fare/`와 기존 공용 모듈 경로 | `@travel/core` 재내보내기, 기존 호출 지점 유지 | core의 공개 하위 경로 | 계산·검증 복사본 |
-| `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, T21 여행 생성·하루 생활·장소 입력(`screens/trip-input/`), 공통 버튼·상태·전환 | 앱 auth·theme·core 검증, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장 |
-| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`) | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
+| `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, T21 여행 생성·하루 생활·장소 입력(`screens/trip-input/`), T22 결과 화면·시트·재계산 흐름(`screens/result/`), 공통 버튼·상태·전환 | 앱 auth·theme·core 검증, `map/`·`result/`, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장, 지도 SDK 직접 import(어댑터 계약만) |
+| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`), T22 경로 모양 요청·`verifyRevision` | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
+| `apps/mobile/src/map/` | T22 결과 지도 계약(`types.ts`), 순수 계산(`geometry.ts` polyline·구간 색·도심 밖·곡선, `selection.ts` 카드 선택·이전/다음·강조 구간, `scene.ts` 마커·구간 명세), 어댑터 주입(`provider.tsx`)·Google 구현(`google-result-map.tsx`)·지도 키 확인(`config.ts`) | design-tokens, `result/` 모델 타입, `react-native-maps`(Google 어댑터만) | 화면 import, 서버 코드, 순수 파일의 React Native |
+| `apps/mobile/src/result/` | T22 결과 순수 모델: 날짜별 카드·구간·전체 일정 줄(`days.ts`), 충돌 원인(`conflicts.ts`), 제약 수정(`edits.ts`), 문구(`format.ts`) | core 계약·표시, `map/geometry`, Temporal | React Native, I/O |
 | `apps/mobile/src/theme/`, `assets/fonts/` | 디자인 값의 RN 스타일 변환, Pretendard 400/600, 동작 줄이기 | design-tokens, React Native·expo-font | 화면별 색·수치 복제 |
-| `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·움직임 값, 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
+| `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·그림자·움직임 값, T22 결과 화면 값(`result`), 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
 
 결과 화면(T13)은 아래 T13 연결 절을 따른다.
 
@@ -150,7 +152,14 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 - 앱의 생활 설정 화면은 PUT 성공 후 기존 `POST /api/trips/[id]/itinerary`로 전체 동선을 재검증한다. 계산 요청이 실패하면 저장된 설정을 유지하고 POST만 재시도한다.
 - core의 `contracts/trips/create.ts`, `contracts/results/fixed-visit.ts`, `contracts/settings/defaults.ts`가 생성 계약·고정 조건 검증·기본값을 연결한다. 지도와 주소 검색은 같은 장소 ID 계약을 쓴다. [T21 결정](decisions/T21-mobile-trip-input.md)
 
+## T22 모바일 결과 화면 (지도 우선 · 장소 카드)
+
+- `/trips/[id]/generate`(T21 생성 화면) → POST 응답 → `screens/result/result-flow.tsx`의 `OutcomeFlow`: OK·CONFLICT는 `ResultFlow`(GET `/constraints`로 입력, revision이 다르면 한 번 재계산), OVER_CAPACITY는 T23 `CapacityFlow`. T23 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름을 메모리로 오간다.
+- `result-screen.tsx`가 선택 `{ date, index }` 하나로 카드·지도 마커·강조 구간을 계산한다(`map/selection.ts`·`scene.ts`, `result/days.ts`). 지도는 `MapAdapterProvider`로 주입한 `ResultMapProps` 구현만 그린다(앱: `GoogleResultMap`, 테스트: `tests/fake-result-map.tsx`).
+- 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `use-itinerary.ts`가 기존 `PUT /constraints` → `POST /itinerary` → `verifyRevision`으로 처리하고, 저장 직전 제약으로 `변경 취소`·`되돌리기`를 한다. 경로 모양은 `use-route-shapes.ts`가 T19 GET으로 메모리에만 둔다.
+- 디자인 §4 그림자와 §6–7 값은 design-tokens의 `shadow`·`result`(토큰 테스트가 문서와 비교). [T22 결정](decisions/T22-mobile-result-screen.md), [가정](questions.md#t22-결과-화면-가정)
+
 ## T23 모바일 필수 장소 선택
 
 - 여행 생성 화면과 하루 생활 재계산이 `OVER_CAPACITY`를 받으면 `apps/mobile/src/screens/capacity/`의 선택 화면을 연다. 저장된 장소와 최초 계산을 같은 입력 해시로 맞춘다.
-- 재검증은 `src/api/trips.ts`의 제약 조회·저장과 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 일정으로 표시한다. [T23 결정](decisions/T23-mobile-capacity-selection.md)
+- 재검증은 `src/api/trips.ts`의 제약 조회·저장과 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 T22 결과 화면으로 연다. [T23 결정](decisions/T23-mobile-capacity-selection.md)

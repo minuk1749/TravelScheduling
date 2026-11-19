@@ -455,7 +455,7 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력까지 구현했다. T22–T25 화면은 아래 계획을 따른다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력, T22 결과 화면(§13.4.3, §13.5), T23 필수 선택까지 구현했다. T24–T25 화면은 아래 계획을 따른다.
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
 결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
@@ -475,7 +475,7 @@ apps/
     migrations/, scripts/, tests/   기존 SQL·실행기·서버 테스트
   mobile/                  @travel/mobile. T20 Expo SDK 58 앱
     app/                   expo-router 화면 라우트
-    src/{api,auth,theme,components,screens,navigation}/  map은 T22 계획
+    src/{api,auth,theme,components,screens,navigation}/  T22: map(지도 계약·순수 계산·어댑터), result(결과 순수 모델)
     assets/fonts/, tests/  Pretendard·jest-expo 컴포넌트 검사
 packages/
   core/                    @travel/core
@@ -689,33 +689,58 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
 - `OVER_CAPACITY`는 여행 생성과 하루 생활 재계산 화면에서 `CapacityFlow`를 연다. 기존 `GET /api/trips/[id]/constraints`의 `ResultView`로 후보와 저장된 제약을 채우며, `revision`과 최초 계산의 `inputHash`가 다르면 현재 입력을 계산한다.
 - `constraintsFrom`, `parseConstraints`를 재사용한다. 필수 장소를 해제하면 `WISH`로 저장하며, 확인한 경우에만 해당 방문의 날짜·시각·순서를 함께 해제한다. 이동수단 고정과 다른 방문의 조건은 기존 값대로 전송한다.
 - 변경 시 `PUT /api/trips/[id]/constraints`와 `POST /api/trips/[id]/itinerary`를 순서대로 호출한다. POST 실패 후에는 저장된 선택으로 POST를 재시도한다. 입력 변경 오류 시 저장된 설정을 다시 불러올 수 있다.
-- 입력 해시가 맞는 `OK`에서 `동선 보기`를 누르면 기존 생성 응답을 메모리에서 읽어 날짜별 읽기 전용 일정으로 표시한다. [T23 결정](decisions/T23-mobile-capacity-selection.md)
+- 입력 해시가 맞는 `OK`에서 `동선 보기`를 누르면 기존 생성 응답을 메모리에서 T22 결과 화면으로 넘긴다(§13.4.3). [T23 결정](decisions/T23-mobile-capacity-selection.md)
+
+### 13.4.3 모바일 결과 화면 (T22)
+
+- 진입: `/trips/[id]/generate`가 기존 `POST …/itinerary`를 실행하고, 응답을 `OutcomeFlow`에 넘긴다. OK·CONFLICT는 결과 화면(`ResultFlow`), OVER_CAPACITY는 T23 선택 화면이다. T23의 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름으로 오간다. 하루 생활 재계산의 OVER_CAPACITY도 `OutcomeFlow`를 연다.
+- `ResultFlow`는 `GET …/constraints`로 입력을 읽는다. revision이 응답의 `inputHash`와 같으면 응답을 그대로 쓰고, 다르면 한 번 다시 계산한다. 서버 API·DB는 바꾸지 않는다.
+- 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `constraintsFrom`으로 만든 제약을 `withVisit`·`withLegMode`로 바꿔 `PUT …/constraints`(core `parseConstraints`로 검증) → `POST …/itinerary` → `verifyRevision` 순서로 처리한다. 저장 직전 제약은 `변경 취소`·`되돌리기`에 쓰고, POST 실패 뒤에는 저장된 입력으로 POST만 다시 실행한다.
+- 순수 모델: `apps/mobile/src/result/days.ts`가 저장 입력과 결과에서 날짜별 카드(도착 구간·대기·숙소 복귀·당겨짐/늦춰짐·고정 조건)·구간(순서 색·도심 밖·바꿀 수단)·전체 일정 줄을 만든다. `conflicts.ts`는 3-8 원인, `edits.ts`는 제약 수정, `format.ts`는 문구다.
+- 경로 모양은 OK 결과의 `inputHash`로 `GET …/itinerary/shapes`를 요청해 메모리에만 둔다. 실패하거나 `NONE`이면 직선으로 그린다. 상세: [T22 결정](decisions/T22-mobile-result-screen.md)
 
 ### 13.5 지도 어댑터 인터페이스 (앱)
 
-화면은 `ResultMap` 계약만 알고 지도 SDK를 import하지 않는다. 구현은 `GoogleResultMap`(`react-native-maps`, `PROVIDER_GOOGLE`, 앱 전용 Maps SDK 키)과
-`FakeResultMap`(테스트: 마커·구간을 `testID`로 그리고 누름을 흉내 냄) 두 개이며, `MapAdapterProvider` 컨텍스트로 주입한다.
-서버 Places/Routes 키는 앱에 넣지 않는다.
+화면은 `ResultMapProps` 계약만 알고 지도 SDK를 import하지 않는다. 구현은 `GoogleResultMap`(`apps/mobile/src/map/google-result-map.tsx`: `react-native-maps`, `PROVIDER_GOOGLE`, 앱 전용 Maps SDK 키)과
+`FakeResultMap`(`apps/mobile/tests/fake-result-map.tsx`: 마커를 "지도 {이름}" 버튼으로, 구간을 순서·수단·선·강조·색·경로 종류 글자로 그리고 누름을 흉내 냄) 두 개이며,
+`MapAdapterProvider`(`apps/mobile/src/map/provider.tsx`) 컨텍스트로 주입한다. 앱 루트 레이아웃이 Google, 컴포넌트 테스트가 가짜를 넣는다.
+결과 흐름이 컨텍스트에서 한 번 읽어 화면에 prop으로 넘긴다. 서버 Places/Routes 키는 앱에 넣지 않는다. 마커는 계약의 `kind`·`order`와 `selectedId`로 모양을 정하고,
+구간은 화면이 정한 `color`·`line`·`emphasis`를 그대로 그린다(어댑터에 상태 규칙 없음).
 
-```ts
-// 계획(T22): apps/mobile/src/map/types.ts
-export type LatLng = { latitude: number; longitude: number };
-export type MapMarkerSpec = { id: string; coordinate: LatLng; kind: 'PLACED' | 'WISH' | 'LODGING'; order: number | null; label: string };
-export type MapRouteSpec = {
-  id: string; order: number; mode: 'TRANSIT' | 'WALK' | 'TAXI';
-  path: { kind: 'ROAD'; points: readonly LatLng[] } | { kind: 'STRAIGHT'; from: LatLng; to: LatLng };
+```typescript
+// T22 구현: apps/mobile/src/map/types.ts. 문서의 계약과 실제 export가 같아야 한다.
+import type * as ResultMapContract from '../apps/mobile/src/map/types';
+type DocumentedLatLng = { latitude: number; longitude: number };
+type DocumentedMarker = {
+  id: string; coordinate: DocumentedLatLng; kind: 'PLACED' | 'WISH' | 'LODGING' | 'AIRPORT'; order: number | null; label: string;
 };
-export type ResultMapProps = {
-  markers: readonly MapMarkerSpec[]; routes: readonly MapRouteSpec[]; selectedId: string | null;
-  /** 패널이 가린 아래쪽 높이(pt). 카메라 맞춤에 사용 */
-  bottomInset: number;
+type DocumentedRoute = {
+  id: string; order: number; mode: 'TRANSIT' | 'WALK' | 'TAXI'; color: string;
+  line: 'SOLID' | 'DOTTED' | 'FLOATING'; emphasis: 'STRONG' | 'DIM' | 'CONFLICT';
+  path: { kind: 'ROAD'; points: readonly DocumentedLatLng[] } | { kind: 'STRAIGHT'; from: DocumentedLatLng; to: DocumentedLatLng };
+};
+type DocumentedResultMapProps = {
+  markers: readonly DocumentedMarker[]; routes: readonly DocumentedRoute[]; selectedId: string | null;
+  /** 카메라가 맞출 그날의 장소·숙소. 공항은 화면 밖이면 가장자리 표시 */
+  focusIds: readonly string[];
+  /** 떠 있는 상단 바·날짜 칩과 장소 패널이 가린 높이(pt). 카메라 맞춤에 사용 */
+  topInset: number; bottomInset: number;
+  /** 3-9 이전 결과 흐리게 */
+  dimmed: boolean;
+  /** 현재 위치 버튼을 누를 때마다 증가 */
+  locateRequest: number;
   onSelectMarker(id: string): void;
 };
+export const documentedResultMap: [
+  SameType<DocumentedMarker, ResultMapContract.MapMarkerSpec>, SameType<DocumentedRoute, ResultMapContract.MapRouteSpec>,
+  SameType<DocumentedResultMapProps, ResultMapContract.ResultMapProps>,
+] = [true, true, true];
 ```
 
 지도 SDK와 무관한 계산은 `apps/mobile/src/map/`의 순수 함수로 두고 단위 테스트한다: polyline 해독(`decodePolyline`),
-구간 순서 색(6색, 넘으면 보간. 색 값은 design-tokens), 도심 밖 판정, 장소 카드 선택·이전/다음과 강조할 구간(결과 화면 R2). 선 모양 차이(나눠 그리기·떠 있는 곡선)는
-어댑터 안에서 가까운 표현으로 처리하고 `docs/questions.md`에 남긴다(요구사항 §5 주의).
+구간 순서 색(`legColor`: 6색, 넘으면 보간. 색 값은 design-tokens), 도심 밖 판정(`isOutsideCityCentre`, 도시별 `CITY_CENTRES`), 곡선·화살표·화면 밖 방향(`geometry.ts`),
+장소 카드 선택·이전/다음·스와이프 목표와 강조할 구간(`selection.ts`), 상태별 마커·구간 명세(`scene.ts`). 선 모양 차이(나눠 그리기·떠 있는 곡선)는
+어댑터 안에서 가까운 표현으로 처리하고 [질문](questions.md#t22-결과-화면-가정)에 남긴다(요구사항 §5 주의).
 
 ### 13.6 앱 테스트 전략
 
@@ -723,8 +748,8 @@ export type ResultMapProps = {
 |---|---|---|
 | core·design-tokens | `node:test` + `tsx` 순수 함수 테스트, 순수성 구조 검사, 토큰 값 = `docs/design.md` 표 값 | 없음 |
 | 서버 | 기존 HTTP·SQL·구조 테스트(PostgreSQL 16), T18 Bearer·JWKS 픽스처, T19 경로 모양 픽스처, T25 Bearer HTTP 종단 시나리오(흐름 1–10, Google만 가짜) | 실제 Google 키·약관 범위, 배포 서버(T26D) |
-| 앱 화면 | `jest-expo` + React Native Testing Library 컴포넌트 테스트. 목 API 클라이언트·가짜 지도·가짜 보안 저장소. `docs/design.md` 9절 상태별 렌더링, "입력 → 저장 → 다시 열면 값 유지" | 실제 화면 모양, 글꼴 렌더링, 제스처 감각(패널 끌기·스냅), 동작 줄이기 |
-| 앱 순수 계산 | 패널 스냅·도심 밖·구간 색·polyline 해독 단위 테스트 | 없음 |
+| 앱 화면 | `jest-expo` + React Native Testing Library 컴포넌트 테스트. 목 API 클라이언트·가짜 지도·가짜 보안 저장소. `docs/design.md` 9절 상태별 렌더링, "입력 → 저장 → 다시 열면 값 유지" | 실제 화면 모양, 글꼴 렌더링, 제스처 감각(카드 넘김), 동작 줄이기 |
+| 앱 순수 계산 | 장소 카드 선택·이전/다음·스와이프·강조 구간, 도심 밖·구간 색·polyline 해독, 결과 날짜 모델 단위 테스트 | 없음 |
 | 앱 빌드 | `expo export --platform ios`·`--platform android` JS 번들 생성, `tsc --noEmit`, ESLint. T26에서 `expo config` 검사 | 네이티브 빌드·설치(Xcode, APK), 7일 재설치 |
 | 로그인·지도 SDK | 네이티브 모듈은 목으로 대체해 흐름만 검사 | 실제 Google 로그인(iOS·Android), Google 지도 표시, OS 공유 시트, Keychain/Keystore 보관 |
 

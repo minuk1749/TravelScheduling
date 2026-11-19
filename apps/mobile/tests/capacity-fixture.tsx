@@ -10,7 +10,9 @@ import Generate from '../app/(app)/trips/[id]/generate';
 import Settings from '../app/(app)/trips/[id]/settings';
 import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
+import { MapAdapterProvider } from '../src/map/provider';
 import { RootNavigator } from '../src/navigation/root-navigator';
+import { FakeResultMap } from './fake-result-map';
 import { fixture, json, session } from './helpers';
 
 const day = '2026-12-01';
@@ -108,7 +110,7 @@ export function capacityFixture() {
 
 export async function openCapacity(f: ReturnType<typeof capacityFixture>, section = 'generate') {
   await renderRouter({
-    _layout: () => <AuthProvider runtime={f.runtime}><RootNavigator /></AuthProvider>,
+    _layout: () => <AuthProvider runtime={f.runtime}><MapAdapterProvider map={FakeResultMap}><RootNavigator /></MapAdapterProvider></AuthProvider>,
     login: () => null, '(app)/index': () => null, '(app)/trips/[id]/index': () => <Text>저장한 여행</Text>,
     '(app)/trips/[id]/generate': Generate, '(app)/trips/[id]/settings': Settings,
   }, { initialUrl: `/trips/trip/${section}` });

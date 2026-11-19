@@ -84,11 +84,13 @@ test('4-4 and 4-5: disables editing through save and verification, then opens th
   await act(async () => { checked.resolve(json(success)); });
   expect(await screen.findByRole('header', { name: '배치 가능' })).toBeVisible();
   await press('동선 보기');
-  expect(screen.getByRole('header', { name: '동선 결과' })).toBeVisible();
-  expect(screen.getByText('11:00–12:00 · 도쿄 미술관')).toBeVisible();
-  expect(screen.getByText('12:30–13:30 · 사찰')).toBeVisible();
+  expect(await screen.findByRole('header', { name: '도쿄' })).toBeVisible();
+  expect(screen.getByRole('button', { name: '1번 도쿄 미술관, 11:00부터 12:00까지', selected: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: '2번 사찰, 12:30부터 13:30까지', selected: false })).toBeVisible();
+  expect(screen.getByRole('button', { name: '지도 해변' })).toHaveTextContent('WISH -');
   expect(screen.queryByText(/해변/)).toBeNull();
   expect(f.generate).toHaveBeenCalledTimes(2);
+  expect(f.read).toHaveBeenCalledTimes(1);
 });
 
 test('4-6: a different selection at N can fail, with named problem places above the remaining candidates', async () => {

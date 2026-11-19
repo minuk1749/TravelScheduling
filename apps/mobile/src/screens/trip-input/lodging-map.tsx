@@ -1,17 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, type LatLng } from 'react-native-maps';
 import type { PlaceSummary } from '@travel/core/contracts/places';
 import { useTripApi } from '../../api/trips';
 import { FormError, FormSheet } from '../../components/input/form-layout';
 import { Skeleton } from '../../components/input/skeleton';
+import { isMapConfigured } from '../../map/config';
 import { spacing, text } from '../../theme';
-
-function isMapConfigured() {
-  return Platform.OS === 'ios'
-    ? process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY
-    : process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY;
-}
 
 export function LodgingMap({ city, region, select, close }: {
   city: string; region?: string; select(place: PlaceSummary): void; close(): void;

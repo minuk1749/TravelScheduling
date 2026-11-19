@@ -40,6 +40,31 @@ export const size = {
   checkbox: 26, checkboxBorder: 2, checkboxTouch: 40, handle: { width: 36, height: 5 },
 } as const;
 
+/** §4 그림자: CSS `0 y blur rgba(r,g,b,opacity)` 값을 그대로 담는다. */
+export const shadow = {
+  floating: { y: 2, blur: 10, rgb: [0, 0, 0], opacity: 0.12 },
+  panel: { y: -4, blur: 20, rgb: [0, 0, 0], opacity: 0.12 },
+  toast: { y: 8, blur: 28, rgb: [0, 0, 0], opacity: 0.18 },
+} as const;
+
+/** §6–7 결과 화면(R2 · 지도 우선 · 장소 카드)의 배치·카드·지도 값. */
+export const result = {
+  topBar: { top: 10, inset: 12, height: 52, radius: 26 },
+  dateChips: { top: 72, inset: 12, height: 44, radius: 22, gap: 6 },
+  locate: { offset: 56, inset: 12, size: 44 },
+  panel: { top: 480, ratio: 0.43 },
+  cardRow: { width: 300, gap: 12, inset: 20 },
+  card: { surface: '#F7F8FA', radius: 16, padding: 14, border: 1.5, divider: '#E5E8EB', dividerWidth: 1 },
+  number: { size: 24 },
+  name: { size: 16, weight: 600 },
+  switchChip: { height: 28 },
+  pager: { editRadius: 12, disabled: '#D1D6DB' },
+  /** 선택하지 않은 카드 위 흰 막, 재계산 중 카드 불투명도. */
+  overlay: { unselected: 0.45, busy: 0.5 },
+  marker: { selectedScale: 1.3, ring: 4, wishOpacity: 0.85 },
+  route: { dimOpacity: 0.25, outsideKm: 4 },
+} as const;
+
 export const motion = {
   screen: { duration: 280, translateX: 24, easing: 'ease-out' },
   /** §8 카드 넘김(R2 결과 화면 장소 카드·마커 강조). */

@@ -11,7 +11,7 @@ import { ActionButton } from '../../components/action-button';
 import { SmallButton, type Errors, type FocusRequest } from '../../components/input/fields';
 import { FormCard, FormError, FormScreen, form } from '../../components/input/form-layout';
 import { colors, text } from '../../theme';
-import { CapacityFlow } from '../capacity/capacity-flow';
+import { OutcomeFlow } from '../result/result-flow';
 import { LivingFields, TaxiFields } from './living-fields';
 import { errorMessage, fieldErrors } from './presentation';
 import { useTripResource } from './use-trip-resource';
@@ -100,7 +100,7 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
     await recalculate();
   }
   if (operation.status === 'calculated' && operation.result.status === 'OVER_CAPACITY') {
-    return <CapacityFlow tripId={tripId} initial={operation.result} back={reload} editConditions={reload} />;
+    return <OutcomeFlow tripId={tripId} initial={operation.result} back={reload} editConditions={reload} />;
   }
   return <FormScreen title="하루 생활" subtitle={snapshot.timeZone} back={busy ? () => {} : back} footer={<>
     {saved && <Text accessibilityLiveRegion="polite" style={text.body}>✓ 생활 설정을 저장했어요</Text>}

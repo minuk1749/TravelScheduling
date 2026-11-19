@@ -1,0 +1,71 @@
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { EfficiencySummary } from '@travel/core/contracts/itinerary';
+import { localTime, MEALS } from '@travel/core/presentation';
+import { FormSheet } from '../../components/input/form-layout';
+import { colors, radius, size, spacing, text } from '../../theme';
+import type { DayModel, TimelineRow } from '../../result/days';
+import { dateTitle, durationLabel, legLabel, moneyLabel } from '../../result/format';
+import { kindLabels } from '../trip-input/presentation';
+import { ENDPOINT_ICONS, ENDPOINT_LABELS, MODE_ICONS } from './icons';
+
+function Row({ row, zone, currency, select }: { row: TimelineRow; zone: string; currency: string | null; select(visitId: string): void }) {
+  const time = <Text style={styles.time}>{localTime(row.at, zone)}</Text>;
+  if (row.kind === 'LEG') {
+    const { leg } = row;
+    return <View style={styles.row}>
+      <View style={[styles.tile, { backgroundColor: leg.color }]}><Text style={[text.tinyStrong, styles.tileText]}>{leg.order}</Text></View>
+      <Text importantForAccessibility="no" style={[text.secondary, { color: leg.color }]}>{MODE_ICONS[leg.mode]}</Text>
+      <Text style={styles.move}>{legLabel(leg.mode, leg.minutes, leg.fare, currency)}{leg.outside ? ' · 도심 밖' : ''}</Text>
+    </View>;
+  }
+  if (row.kind === 'ENDPOINT') {
+    return <View style={styles.row}>{time}
+      <Text style={text.body}>{ENDPOINT_ICONS[row.role]} {ENDPOINT_LABELS[row.role]} · {row.name}</Text>
+    </View>;
+  }
+  if (row.kind === 'MEAL') return <View style={styles.row}>{time}<Text style={text.body}>{MEALS[row.slot]} 식사</Text></View>;
+  const { card } = row;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${localTime(row.at, zone)} ${card.name}`}
+    onPress={() => select(card.visitId)} style={styles.row}>
+    {time}
+    <View style={styles.flex}>
+      <Text style={text.place}>{card.name}</Text>
+      <Text style={styles.move}>{kindLabels[card.kind]} · {durationLabel(card.stay)}{card.fixed ? ` · 🔒 ${card.fixed}` : ''}</Text>
+    </View>
+  </Pressable>;
+}
+
+/** Trip-wide efficiency: the transit/walk-only baseline against the selected modes (T12 summary). */
+export function EfficiencyRows({ summary, estimated }: { summary: EfficiencySummary; estimated: boolean }) {
+  const total = (minutes: number | null) => minutes === null ? '시간 —' : durationLabel(minutes);
+  const saved = summary.transitMinutes !== null ? Math.ceil(summary.transitMinutes) - Math.ceil(summary.selectedMinutes) : null;
+  return <View testID="trip-efficiency" style={styles.efficiency}>
+    <Text accessibilityRole="header" style={text.place}>여행 전체 이동</Text>
+    <Text style={text.secondary}>대중교통·도보만 · {total(summary.transitMinutes)} · {moneyLabel(summary.transitFare, summary.currency)}</Text>
+    <Text style={text.secondary}>선택한 이동 · {total(summary.selectedMinutes)} · {moneyLabel(summary.selectedFare, summary.currency, estimated)}</Text>
+    {saved !== null && saved > 0 && <Text style={[text.secondary, styles.saved]}>{durationLabel(saved)} 단축</Text>}
+  </View>;
+}
+
+/** 3-2: the whole day as one list; pressing a place closes the sheet and selects its card. */
+export function ScheduleSheet({ day, currency, efficiency, estimated, close, select }: {
+  day: DayModel; currency: string | null; efficiency: EfficiencySummary | null; estimated: boolean;
+  close(): void; select(visitId: string): void;
+}) {
+  return <FormSheet title={`${dateTitle(day.date)} 전체 일정`} close={close}>
+    {day.rows.length === 0 && <Text style={text.body}>배치된 장소 없음</Text>}
+    {day.rows.map((row, index) => <Row key={index} row={row} zone={day.timeZone} currency={currency} select={select} />)}
+    {efficiency && <EfficiencyRows summary={efficiency} estimated={estimated} />}
+  </FormSheet>;
+}
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.cardGap, minHeight: size.touch },
+  time: { ...text.secondary, width: size.iconTile + spacing.cardGap, color: colors.gray.secondary },
+  tile: { width: size.iconTile, height: size.iconTile / 2, borderRadius: radius.small, alignItems: 'center', justifyContent: 'center' },
+  tileText: { color: colors.card },
+  move: { ...text.secondary, color: colors.gray.description, flexShrink: 1 },
+  efficiency: { gap: spacing.steps[0], paddingTop: spacing.cardGap, borderTopWidth: 1, borderTopColor: colors.gray.divider },
+  saved: { color: colors.sky.text },
+});

@@ -1,7 +1,7 @@
-import { StyleSheet, type TextStyle } from 'react-native';
-import { colors, typography, spacing, radius, size, motion } from '@travel/design-tokens';
+import { StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
+import { colors, typography, spacing, radius, size, motion, legColors, shadow, result } from '@travel/design-tokens';
 
-export { colors, typography, spacing, radius, size, motion };
+export { colors, typography, spacing, radius, size, motion, legColors, result };
 
 function textStyle(spec: { size: number; weight: 400 | 600 }): TextStyle {
   return {
@@ -17,6 +17,22 @@ export const text = StyleSheet.create({
   place: textStyle(typography.place), body: textStyle(typography.body),
   description: textStyle(typography.description), secondary: textStyle(typography.secondary),
   small: textStyle({ size: typography.small.max, weight: typography.small.weight }),
+  /** §7 결과 화면의 여행 이름·장소 카드 이름(16/600). */
+  name: textStyle(result.name),
+  tiny: textStyle({ size: typography.small.min, weight: typography.small.weight }),
+  tinyStrong: textStyle({ size: typography.small.min, weight: result.name.weight }),
+});
+
+/** Converts a CSS `0 y blur rgba()` shadow to iOS shadow props and an Android elevation. */
+function shadowStyle(spec: { y: number; blur: number; rgb: readonly number[]; opacity: number }): ViewStyle {
+  return {
+    shadowColor: `rgb(${spec.rgb.join(',')})`, shadowOffset: { width: 0, height: spec.y },
+    shadowRadius: spec.blur / 2, shadowOpacity: spec.opacity, elevation: Math.round(spec.blur / 2),
+  };
+}
+
+export const shadows = StyleSheet.create({
+  floating: shadowStyle(shadow.floating), panel: shadowStyle(shadow.panel), toast: shadowStyle(shadow.toast),
 });
 
 export const layout = StyleSheet.create({

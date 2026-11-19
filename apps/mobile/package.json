@@ -15,6 +15,7 @@
     "node": "24.x"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
     "@react-native-google-signin/google-signin": "^17.0.0",
     "@travel/core": "0.1.0",
     "@travel/design-tokens": "0.1.0",
