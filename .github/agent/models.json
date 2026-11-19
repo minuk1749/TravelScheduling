@@ -2,8 +2,8 @@
   "_설명": "작업별 모델 배정. 바꾸면 다음 실행부터 적용된다. codex.default/tasks: Mac 러너의 Codex 구현·수정. codex.review: Claude PR을 Codex가 리뷰할 때. claude.default/tasks: Codex PR을 Claude가 리뷰할 때(\"R\"은 모든 리팩터링 PR). claude.exec_review: Claude가 리뷰 중 직접 실행하는 작업. claude.implement: Claude가 담당 작업을 구현할 때. claude.refactor: Claude가 리팩터링할 때. claude.effort: Claude의 모든 실행(구현·리팩터링·리뷰) 추론 강도(low/medium/high/xhigh/max). default 대신 tasks에 작업별 값을 둘 수 있다.",
   "codex": {
     "default": {
-      "model": "gpt-6-astra",
-      "effort": "high"
+      "model": "gpt-6.2-sol",
+      "effort": "xhigh"
     },
     "tasks": {
       "T7A": {
