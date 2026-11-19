@@ -78,10 +78,10 @@
   - 리팩터링(`R번호`) → Claude가 수행, Codex가 리뷰
 - **동시 진행:** 담당별로 하나씩(Codex 1개 + Claude 1개) 동시에 진행한다. 리팩터링(R번호) 중에는 새 작업을 시작하지 않는다.
 - 동시에 진행한 작업이 먼저 머지되어 충돌하면, 판정이 작성자에게 "머지 충돌" 피드백을 보내고 작성자가 develop을 병합해 해결한다. 보호 파일은 develop의 내용과 같아야 한다.
-- 순서: agent-start가 다음 작업 이슈 생성 → 담당이 PR 생성 → agent-review가 테스트 → 리뷰 → 승인이면 `develop`에 머지하고 다음 작업, 아니면 PR에 피드백 댓글(`<!-- agent-feedback -->`) → **작성자가** 수정.
+- 순서: agent-start가 다음 작업 이슈 생성 → 담당이 PR 생성 → agent-review가 필수 검사 → 리뷰 → 같은 커밋이 승인이면 `develop`에 머지하고 다음 작업, 아니면 PR에 피드백 댓글(`<!-- agent-feedback -->`) → **작성자가** 수정. 필수 근거가 부족하면 사람이 확인한다.
 - 리뷰가 승인하면서 기존 코드의 구조 문제(`refactor` 항목)를 제안하면, 다음 작업 전에 리팩터링 이슈(`R번호: …`, `refactor-task` 라벨)를 만들어 Claude가 수행한다. `AGENT_REFACTOR=off`로 끌 수 있다.
 - Codex 쪽 구현 주체는 저장소 변수 `AGENT_EXECUTOR`로 고른다(`local` 기본: Mac 러너, `cloud`: Codex 클라우드 + 사람 클릭).
-- 작업 PR의 제목은 반드시 `T번호: ` 또는 `R번호: `로 시작한다. Claude가 만든 PR에는 `owner-claude` 라벨이 붙는다.
+- 작업 PR의 제목은 반드시 `T번호: ` 또는 `R번호: `로 시작한다. Claude가 만든 PR에는 `owner-claude` 라벨이 붙는다. 머지 판정은 작업표의 담당과 테스트 실행 기록을 사용한다.
 - 리뷰 왕복 상한(기본 3라운드)에 도달하면 `needs-human` 라벨을 붙이고 작업을 `보류`로 바꾼 뒤 다음 작업으로 넘어간다.
 - 에이전트 실행이 실패하면(구독 한도 소진 포함) `agent-paused` 이슈를 열고 멈춘다. 사람이 이슈를 닫으면 멈춘 작업이 자동으로 재개된다(`agent-resume`). 다른 일시중단 이슈가 열려 있으면 재개하지 않는다.
 - `.github/**`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/tasks.md`, `scripts/agent/**`를 수정한 PR은 자동 머지하지 않고 사람 검토로 넘긴다. 이 파일들은 사람(또는 사람이 지시한 대화형 세션)만 수정한다.

@@ -9,10 +9,10 @@ Codex(ChatGPT 구독)와 Claude(Claude 구독)가 **맡은 작업을 각자 구�
 agent-start ─ 다음 작업 이슈 생성 (작업표의 담당 확인)
    │
    ├─ 담당 gpt ──→ Mac 러너: Codex 구현 → PR ──→ agent-review: 테스트 → Claude 리뷰    │
-   │                 → needs-codex-review → Mac 러너: Codex 자체 리뷰 → agent-verdict(둘 다 승인?) ─┤
+   │                 → Actions 요청 기록 → Mac 러너: Codex 자체 리뷰 → agent-verdict(둘 다 승인?) ─┤
    │                                                                                 │
    └─ 담당 claude → agent-claude: Claude 구현 → PR(owner-claude) → agent-review: 테스트 │
-                     → needs-codex-review → Mac 러너: Codex 리뷰 → agent-verdict ─────┤
+                     → Actions 요청 기록 → Mac 러너: Codex 리뷰 → agent-verdict ─────┤
                                                                                       ▼
                                           판정(.github/agent/decide.sh): 승인 → 머지 → 다음 작업
                                                                        수정 요청 → 작성자가 수정
@@ -27,7 +27,7 @@ agent-start ─ 다음 작업 이슈 생성 (작업표의 담당 확인)
 ## 공통 1회 설정
 
 1. 기본 브랜치: `develop`
-2. Repository secrets: `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`), `USER_PAT`(cloud 모드에서만 필요)
+2. Repository secrets: `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`), `USER_PAT`(Claude 구현 PR 게시·작업 재개와 cloud 요청에 필요)
 3. Settings → Actions → General → Workflow permissions: "Read and write permissions", "Allow GitHub Actions to create and approve pull requests"
 
 ## Mac 러너 (local 모드) 설정
@@ -43,6 +43,8 @@ bash scripts/agent/install-launchd.sh
 ```
 
 - `~/agent-work/TravelScheduling`은 **러너 전용 폴더**다. 실행할 때마다 원격 상태로 초기화되므로 여기서 직접 작업하지 않는다.
+- 기존 설치는 새 코드가 `develop`에 머지된 후 `develop` 버전의 `install-launchd.sh`를 한 번 다시 실행한다. 이후 launchd는 매 실행 시 원격 `develop`의 러너 스크립트를 불러온다.
+- 전환 전에 이미 리뷰 대기 중인 PR은 새 커밋 푸시 또는 PR을 닫았다가 다시 여는 방법으로 새 검사 실행을 만든다. 예전 댓글과 라벨만 있는 PR에는 새 요청 기록이 없다. 수정한 잡만 재실행하면 같은 시도의 테스트 기록이 없을 수 있으므로 재검증 때는 전체 잡을 다시 실행한다.
 - 로그: `tail -f ~/Library/Logs/travelscheduling-agent.log`
 - 지금 바로 1회 실행: `launchctl kickstart -k gui/$(id -u)/com.travelscheduling.agent`
 - 제거: `bash ~/agent-work/TravelScheduling/scripts/agent/install-launchd.sh --uninstall`
@@ -67,6 +69,7 @@ bash scripts/agent/install-launchd.sh
 | `AGENT_EXECUTOR` | `local` | 구현 주체: `local`(Mac 러너) 또는 `cloud`(Codex 클라우드) |
 | `AGENT_MAX_ROUNDS` | 3 | 작업 하나당 리뷰 왕복 상한 |
 | `AGENT_PR_AUTHORS` | `chatgpt-codex-connector[bot],저장소 소유자` | 자동 리뷰 대상 PR 작성자(쉼표 구분) |
+| `AGENT_CODEX_REVIEW_ACTOR` | 저장소 소유자 | Mac에서 리뷰 판정을 Actions에 제출할 수 있는 GitHub 로그인. 지정하면 Mac의 `gh`도 그 계정으로 인증해야 한다. |
 | `CLAUDE_MODEL` | (비움) | 지정하면 모든 리뷰를 이 모델로. 보통 비워 두고 `.github/agent/models.json`의 작업별 배정을 쓴다 |
 
 ## 작업별 모델 (`.github/agent/models.json`)
@@ -74,7 +77,7 @@ bash scripts/agent/install-launchd.sh
 - `codex`: Mac 러너가 작업 번호로 모델과 추론 강도를 골라 Codex CLI에 넘긴다. 로그의 "Codex 실행 시작 (작업 …, 모델 …, 추론 …)"으로 확인.
 - `claude`: agent-review가 작업 번호로 리뷰 모델을 고른다. Actions 실행 화면의 "리뷰 모델" 알림으로 확인.
 - `claude.effort`: Claude의 모든 실행(구현·리팩터링·리뷰)에 쓰는 추론 강도(`--effort`). 기본 `xhigh`. `tasks`에 작업별 값을 둘 수 있다. 높을수록 결과가 꼼꼼해지지만 Claude 사용량이 늘어 한도에 빨리 닿는다.
-- `claude.exec_review`: 이 목록의 작업은 **실행 리뷰**. Claude가 테스트를 직접 돌리고, 테스트에 없는 경우를 확인용 스크립트로 실행해 본다. 리뷰 시간과 Claude 사용량이 늘고, Claude 토큰이 있는 리뷰 작업에서 PR 코드가 실행된다(본인 러너가 만든 PR만 대상).
+- 테스트는 비밀 값이 없는 별도 Actions 잡이 실행한다. Claude와 Codex 리뷰에서는 PR을 읽고 해당 커밋의 CI 로그를 확인한다. 테스트 재실행과 정적 검토를 혼동하지 않도록 판정에 `code`, `ci`, `unverified` 근거를 기록한다.
 - 이 파일은 보호 파일이라 사람(또는 사람이 지시한 대화형 세션)만 바꾼다.
 
 ## 리팩터링 (`agent-claude.yml`)
@@ -91,6 +94,14 @@ bash scripts/agent/install-launchd.sh
   - Codex(Mac 러너): Codex 실행이 실패할 때마다 저장한다. 연속 3회 실패하면 `agent-paused` 이슈를 연다. 배정과 다른 모델로 실행된 결과는 저장하지 않고 버린다.
 - 같은 작업을 다시 구현할 때 가장 최근 `wip/` 브랜치에서 develop을 병합한 뒤 이어서 한다. PR을 올리면 그 작업의 `wip/` 브랜치는 지운다.
 - 수정 라운드(이미 PR이 있는 작업)의 중간 실패는 아직 저장하지 않는다.
+
+## 리뷰 판정과 머지
+
+- 대상은 `develop`을 base로 하는 진행 중 작업 PR이다. T번호의 구현 담당은 기준 브랜치의 작업표에서 가져온다. `owner-claude`는 진행 상황 표시와 기존 구현 러너의 분류에 사용한다.
+- 필수 검사에서 `lint`, `typecheck`, `build`, `test`가 없거나 명령 하나라도 실패하면 검사는 실패한다. `agent-review`는 검사 성공 후 PR 번호·커밋·실행과 실행 시도를 담은 기록을 만든다. Codex가 구현한 작업에는 Claude 판정도 포함한다.
+- Mac 러너는 해당 기록을 읽고 권한이 있는 GitHub 계정으로 `agent-verdict`에 결과를 제출한다. PR 댓글은 표시용이다. 최종 단계는 원래 Actions 실행의 테스트 성공과 기록을 대조하고, `decision-record`에 판정 근거를 남긴 뒤 GitHub에 같은 커밋을 머지하도록 요청한다.
+- 완료 근거가 부족해 `needs_human`으로 판정되면 PR을 보류한다. 사람이 검토한 뒤 직접 판정하거나, `needs-human`을 해제하고 전체 검사를 다시 시작한다.
+- GitHub 소유자 계정은 기본적으로 리뷰 제출 권한도 갖는다. 구현 계정과 제출 계정을 분리하려면 `AGENT_CODEX_REVIEW_ACTOR`와 러너 인증을 전용 계정으로 구성한다. 이 권한은 브랜치 보호와 별개다.
 
 ## 알려진 제약
 

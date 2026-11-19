@@ -1,15 +1,4 @@
-# 루프 2단계: 작업 PR을 테스트하고 작성자가 아닌 쪽이 리뷰한다.
-#  - Codex(gpt)가 만든 PR → Claude가 여기서 리뷰
-#  - Claude가 만든 PR(owner-claude 라벨) → needs-codex-review 라벨을 붙이고, Mac 러너의 Codex 리뷰 후 agent-verdict가 판정
-#  - Codex가 만든 PR은 이중 리뷰: Claude 판정을 댓글로 남기고 Codex 자체 리뷰를 기다려 agent-verdict가 둘 다 승인일 때만 머지
-#
-#  - 승인 + 테스트 통과 → develop에 머지, 작업 완료 처리, agent-start로 다음 작업 시작
-#  - 수정 필요 → PR에 피드백 댓글. local이면 Mac 러너가 반영, cloud면 "@codex" 요청 후 사람이 PR 버튼 클릭
-#  - 리뷰 왕복 상한 도달 → needs-human, 작업 보류, 다음 작업 시작
-#  - Claude 실행 실패(구독 한도 소진 포함) → agent-paused 이슈를 열고 멈춤
-#
-# pull_request_target을 쓰는 이유: 워크플로 정의를 PR이 아닌 기준 브랜치에서 가져오기 위해서다.
-# PR 코드를 실행하는 test 잡에는 비밀 값을 넘기지 않고 읽기 권한만 준다.
+# PR 검사를 실행하고, 성공한 실행만 커밋에 묶인 Codex 리뷰 요청을 발행한다.
 name: agent-review
 
 on:
@@ -29,7 +18,7 @@ env:
 
 jobs:
   gate:
-    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    if: github.event.pull_request.base.ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,52 +31,62 @@ jobs:
       round: ${{ steps.g.outputs.round }}
       owner: ${{ steps.g.outputs.owner }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
       - id: g
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TITLE: ${{ github.event.pull_request.title }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          EXECUTOR: ${{ vars.AGENT_EXECUTOR || 'local' }}
           ALLOWED: ${{ vars.AGENT_PR_AUTHORS || format('chatgpt-codex-connector[bot],{0}', github.repository_owner) }}
         run: |
           set -euo pipefail
           out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
           R="repos/$GITHUB_REPOSITORY"
 
-          task=$(grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' <<<"$TITLE" || true)
-          if [ -z "$task" ]; then echo "::notice::작업 PR이 아님(제목이 T번호나 R번호로 시작하지 않음)"; out go false; exit 0; fi
-          if ! tr ',' '\n' <<<"$ALLOWED" | grep -qxF "$AUTHOR"; then echo "::notice::허용되지 않은 작성자: $AUTHOR"; out go false; exit 0; fi
+          task=$(sed -nE 's/^((T[0-9]+[A-Z]?|R[0-9]+)): .*/\1/p' <<<"$TITLE")
+          if [ -z "$task" ]; then out go false; exit 0; fi
+          if ! tr ',' '\n' <<<"$ALLOWED" | grep -qxF "$AUTHOR"; then out go false; exit 0; fi
 
-          # 후속 PR이 이전 PR 브랜치를 대상으로 만들어졌으면 develop으로 돌린다
-          if [ "$BASE_REF" != develop ]; then
-            gh api -X PATCH "$R/pulls/$PR" -f base=develop >/dev/null
-            echo "::notice::대상 브랜치를 $BASE_REF → develop 으로 변경"
-          fi
-          # 같은 작업의 이전 PR은 이 PR로 대체되었으므로 닫는다
-          for old in $(gh pr list --state open --json number,title --jq ".[] | select(.number != $PR) | select(.title | test(\"^${task}[: ]\")) | .number"); do
-            gh pr comment "$old" --body "#$PR 로 대체되어 닫습니다."
-            gh pr close "$old" >/dev/null
-          done
+          # 자동 작업 이슈와 develop의 작업표로 담당을 결정한다.
+          case "$task" in
+            R*) owner=claude; label=refactor-task ;;
+            *)
+              label=agent-task
+              owner=$(node .github/agent/tasks.mjs get "$task" 담당)
+              state=$(node .github/agent/tasks.mjs get "$task" 상태)
+              if [[ "$state" != 진행중 && "$state" != 리뷰 ]]; then out go false; exit 0; fi
+              ;;
+          esac
+          if [[ "$owner" != gpt && "$owner" != claude ]]; then out go false; exit 0; fi
+          issue=$(gh issue list --state open --label "$label" --json number,title --jq "[.[] | select(.title | startswith(\"$task:\"))] | if length == 1 then .[0].number else empty end")
+          if [ -z "$issue" ]; then echo "::notice::진행 중인 작업 이슈를 하나로 확인할 수 없음"; out go false; exit 0; fi
+          out task "$task"; out issue "$issue"; out owner "$owner"
 
-          issue=$(gh issue list --state open --json number,title,labels --jq "[.[] | select([.labels[].name] | (index(\"agent-task\") or index(\"refactor-task\"))) | select(.title | startswith(\"$task:\"))] | first | .number // empty")
-          out task "$task"; out issue "$issue"
-          # 구현 담당: Claude가 만든 PR에는 owner-claude 라벨이 있다 → Codex가 리뷰
-          if gh pr view "$PR" --json labels --jq '[.labels[].name] | index("owner-claude")' | grep -q '^[0-9]'; then out owner claude; else out owner gpt; fi
-
-          # 보호 경로를 건드리면 자동 처리하지 않는다
-          blocked=$(gh api --paginate "$R/pulls/$PR/files" --jq '.[].filename' | grep -E '^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)' || true)
+          files=$(gh api --paginate "$R/pulls/$PR/files" --jq '.[].filename')
+          blocked=$(grep -E '^(\.github/|\.claude/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)' <<<"$files" || true)
           if [ -n "$blocked" ]; then
             gh pr edit "$PR" --add-label needs-human
-            printf '보호된 파일을 수정해서 자동 리뷰·머지를 하지 않습니다. 사람이 확인해 주세요.\n\n```\n%s\n```\n' "$blocked" > "$RUNNER_TEMP/c.md"
+            printf '보호된 파일을 수정해서 사람이 확인해야 합니다.\n\n```\n%s\n```\n' "$blocked" > "$RUNNER_TEMP/c.md"
             gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
             out go false; exit 0
           fi
 
-          n=0
-          if [ -n "$issue" ]; then
-            n=$(gh api --paginate "$R/issues/$issue/comments" --jq '.[].body' | grep -c '<!-- agent-review -->' || true)
+          # 동일 작업의 후속 cloud PR만 이전 PR을 대체한다. 게이트를 통과한 뒤에 처리한다.
+          if [ "$owner" = gpt ] && [ "$EXECUTOR" = cloud ]; then
+            for old in $(gh pr list --state open --base develop --json number,title,author --jq ".[] | select(.number != $PR and .author.login == \"$AUTHOR\") | select(.title | startswith(\"$task: \")) | .number"); do
+              gh pr close "$old" --comment "#$PR 로 대체되어 닫습니다."
+            done
           fi
+
+          n=$(gh api --paginate "$R/issues/$issue/comments" --jq '.[] | select(.user.login == "github-actions[bot]") | .body' | grep -c '<!-- agent-review -->' || true)
           out round "$((n + 1))"
           out go true
 
@@ -114,40 +113,48 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
       - id: t
+        name: Required checks
+        working-directory: candidate
         run: |
-          set +e
-          # 서브셸 ( ) 안에서 exit 해야 단계 전체가 끝나지 않고 결과(passed=false)를 기록할 수 있다
-          (
-            if [ ! -f package.json ]; then echo "package.json 없음"; exit 1; fi
-            npm ci || exit 1
-            npm run --if-present lint || exit 1
-            npm run --if-present typecheck || exit 1
-            npm run --if-present build || exit 1
-            npm run --if-present test || exit 1
-            if node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
-              npx playwright install --with-deps chromium && npm run test:e2e -- --trace off || exit 1
-            fi
-          ) > test.log 2>&1
-          code=$?
-          tail -n 200 test.log
-          tail -n 150 test.log > test-tail.log
-          if [ $code -eq 0 ]; then echo "passed=true" >> "$GITHUB_OUTPUT"; else echo "passed=false" >> "$GITHUB_OUTPUT"; fi
+          set -euo pipefail
+          code=0
+          env -u GITHUB_OUTPUT -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_STEP_SUMMARY \
+            bash ../control/.github/agent/check-required.sh --e2e > "$RUNNER_TEMP/test.log" 2>&1 || code=$?
+          # The log is candidate output, so prevent it from emitting Actions workflow commands.
+          stop_token=$(cat /proc/sys/kernel/random/uuid)
+          echo "::stop-commands::$stop_token"
+          tail -n 200 "$RUNNER_TEMP/test.log"
+          echo "::$stop_token::"
+          tail -n 150 "$RUNNER_TEMP/test.log" > "$RUNNER_TEMP/test-tail.log"
+          if [ "$code" -eq 0 ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit "$code"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-log
-          path: test-tail.log
+          path: ${{ runner.temp }}/test-tail.log
+          overwrite: true
           retention-days: 7
 
   review:
     needs: [gate, test]
-    if: needs.test.outputs.passed == 'true' && needs.gate.outputs.owner == 'gpt'
+    if: needs.test.result == 'success' && needs.test.outputs.passed == 'true' && needs.gate.outputs.owner == 'gpt'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
@@ -155,89 +162,66 @@ jobs:
       pull-requests: read
       issues: read
       id-token: write
-    # 실행 리뷰(models.json의 claude.exec_review)일 때 Claude가 테스트와 확인용 스크립트를 돌릴 수 있도록 DB를 띄운다
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: app
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app
-    outputs:
-      result: ${{ steps.claude.outputs.structured_output }}
     steps:
+      # Claude starts in the trusted checkout. The proposed files are read as data.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          path: review-input/pr
           persist-credentials: false
-      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
         with:
-          ref: develop
-          path: .ctl
-          persist-credentials: false
-      - env:
-          BODY: ${{ github.event.pull_request.body }}
-        run: |
-          git fetch -q origin develop:refs/remotes/origin/develop || true
-          printf '%s\n' "$BODY" > .ctl-pr-body.md
-          printf '.ctl/\n.ctl-pr-body.md\n' >> .git/info/exclude
+          name: test-log
+          path: review-input
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
       - id: pick
         env:
+          BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           TASK: ${{ needs.gate.outputs.task }}
           OVERRIDE: ${{ vars.CLAUDE_MODEL }}
         run: |
-          m="$OVERRIDE"
-          if [ -z "$m" ]; then m=$(node .ctl/.github/agent/model-for.mjs claude "$TASK" .ctl/.github/agent/models.json || true); fi
-          echo "model=$m" >> "$GITHUB_OUTPUT"
-          ef=$(node .ctl/.github/agent/model-for.mjs claude-effort "$TASK" .ctl/.github/agent/models.json || true)
-          echo "effort=$ef" >> "$GITHUB_OUTPUT"
-          ex=$(node .ctl/.github/agent/model-for.mjs claude-exec "$TASK" .ctl/.github/agent/models.json || echo false)
-          echo "exec=$ex" >> "$GITHUB_OUTPUT"
-          if [ "$ex" = true ]; then
-            echo 'args=--max-turns 90 --allowedTools "Read,Grep,Glob,Edit,Write,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(curl:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git checkout:*),Bash(git stash:*)" --disallowedTools "NotebookEdit"' >> "$GITHUB_OUTPUT"
-            printf '.review-tmp/\n' >> .git/info/exclude
-          else
-            echo 'args=--max-turns 40 --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" --disallowedTools "Edit,Write,NotebookEdit"' >> "$GITHUB_OUTPUT"
-          fi
-          echo "::notice::리뷰 모델: ${m:-액션 기본값}, 추론 강도: ${ef:-기본값}, 실행 리뷰: $ex (작업 $TASK)"
-      - uses: actions/setup-node@v5
-        if: steps.pick.outputs.exec == 'true'
-        with:
-          node-version: "24"
-      - name: Install dependencies for execution review
-        if: steps.pick.outputs.exec == 'true'
-        run: npm ci --no-audit --no-fund
+          set -euo pipefail
+          git -C review-input/pr diff --no-ext-diff --no-textconv "$BASE_SHA...$HEAD_SHA" > review-input/changes.diff
+          printf '%s\n' "$BODY" > review-input/pr-body.md
+          echo "model=${OVERRIDE:-$(node .github/agent/model-for.mjs claude "$TASK")}" >> "$GITHUB_OUTPUT"
+          echo "effort=$(node .github/agent/model-for.mjs claude-effort "$TASK")" >> "$GITHUB_OUTPUT"
+          echo "schema=$(jq -c . .github/agent/review-schema.json)" >> "$GITHUB_OUTPUT"
       - id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: |
-            저장소 ${{ github.repository }}, PR #${{ github.event.pull_request.number }}, 작업 ${{ needs.gate.outputs.task }}, 라운드 ${{ needs.gate.outputs.round }}.
-            기준 브랜치는 origin/develop 이다. `.ctl/.github/agent/prompts/review.md`를 읽고 그 지시를 따르라.
-            ${{ steps.pick.outputs.exec == 'true' && '이번 리뷰는 실행 리뷰다. `.ctl/.github/agent/prompts/review-exec.md`도 읽고 따르라.' || '' }}
+            너는 Claude이며 Codex가 구현한 PR #${{ github.event.pull_request.number }}의 작업 ${{ needs.gate.outputs.task }}을 교차 리뷰한다.
+            기준 문서와 리뷰 지침은 현재 폴더의 develop 버전을 읽어라. 변경 diff는 review-input/changes.diff,
+            후보 코드와 테스트는 review-input/pr/, 작성자의 설명은 review-input/pr-body.md에 있다.
+            같은 커밋의 Actions 필수 검사가 통과했다. 실제 검사 로그는 review-input/test-tail.log에 있다.
+            .github/agent/prompts/review.md를 읽고 지정된 JSON으로 응답하라.
           claude_args: >-
-            ${{ steps.pick.outputs.args }}
-            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["approve","request_changes"]},"summary":{"type":"string"},"issues":{"type":"array","items":{"type":"object","properties":{"file":{"type":"string"},"problem":{"type":"string"},"fix":{"type":"string"}},"required":["file","problem","fix"]}},"notes":{"type":"string"},"refactor":{"type":"array","items":{"type":"object","properties":{"title":{"type":"string"},"scope":{"type":"string"},"reason":{"type":"string"}},"required":["title","scope","reason"]}}},"required":["verdict","summary","issues"]}'
+            --max-turns 40 --tools "Read,Grep,Glob" --disallowedTools "Bash,Edit,Write,NotebookEdit,Agent,Task"
+            --json-schema '${{ steps.pick.outputs.schema }}'
             ${{ steps.pick.outputs.model && format('--model {0}', steps.pick.outputs.model) || '' }}
             ${{ steps.pick.outputs.effort && format('--effort {0}', steps.pick.outputs.effort) || '' }}
-      # 판정을 잡 출력이 아닌 파일로 넘긴다. 잡 출력은 마스킹된 값(예: 테스트 DB 비밀번호와 같은 단어)이
-      # 들어 있으면 GitHub가 통째로 버린다("Skip output ... may contain secret").
-      - name: Save review result
-        if: always()
+      - name: Validate Claude review
         env:
           RESULT: ${{ steps.claude.outputs.structured_output }}
-        run: printf '%s' "$RESULT" > "$RUNNER_TEMP/review.json"
+        run: |
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/claude-review.json"
+          node .github/agent/review-record.mjs review "$RUNNER_TEMP/claude-review.json" >/dev/null
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: review-json
-          path: ${{ runner.temp }}/review.json
+          path: ${{ runner.temp }}/claude-review.json
+          overwrite: true
           retention-days: 7
 
   decide:
@@ -266,7 +250,47 @@ jobs:
         with:
           name: review-json
           path: ${{ runner.temp }}/review
-      - env:
+      - id: request
+        env:
+          TASK: ${{ needs.gate.outputs.task }}
+          ISSUE: ${{ needs.gate.outputs.issue }}
+          R_TEST: ${{ needs.test.result }}
+          R_REVIEW: ${{ needs.review.result }}
+          PASSED: ${{ needs.test.outputs.passed }}
+          OWNER: ${{ needs.gate.outputs.owner }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$R_TEST" != success || "$PASSED" != true || ( "$OWNER" = gpt && "$R_REVIEW" != success ) ]]; then exit 0; fi
+          claude=null
+          if [ "$OWNER" = gpt ]; then
+            claude=$(node .github/agent/review-record.mjs review "$RUNNER_TEMP/review/claude-review.json")
+          fi
+          jq -n --argjson pr "$PR" --argjson issue "$ISSUE" --argjson run "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" --arg head "$HEAD_SHA" --arg task "$TASK" \
+            --arg owner "$OWNER" --argjson claude "$claude" \
+            '{ $pr, $issue, $run, $attempt, $head, $task, $owner, $claude, base: "develop", tests: "passed" }' \
+            > "$RUNNER_TEMP/request.json"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.request.outputs.ready == 'true'
+        with:
+          name: agent-review-pr-${{ env.PR }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/request.json
+          overwrite: true
+          retention-days: 14
+      - if: steps.request.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [ "$(gh pr view "$PR" --json headRefOid --jq .headRefOid)" = "$HEAD_SHA" ] || exit 0
+          gh label create needs-codex-review --color 1d76db --description "Codex 리뷰 대기" --force >/dev/null
+          gh pr comment "$PR" --body "커밋 \`$HEAD_SHA\`의 필수 검사 통과. Codex 리뷰 대기 중입니다. 실행 #$GITHUB_RUN_ID."
+          gh pr edit "$PR" --add-label needs-codex-review
+      - if: steps.request.outputs.ready != 'true'
+        env:
           GH_TOKEN: ${{ github.token }}
           USER_PAT: ${{ secrets.USER_PAT }}
           EXECUTOR: ${{ vars.AGENT_EXECUTOR || 'local' }}
@@ -281,29 +305,4 @@ jobs:
           OWNER: ${{ needs.gate.outputs.owner }}
           REVIEWER: Claude
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          REVIEW_JSON=$(cat "$RUNNER_TEMP/review/review.json" 2>/dev/null || true)
-          export REVIEW_JSON
-          # Claude가 만든 PR이 테스트를 통과하면 Codex 리뷰를 요청하고 기다린다 (Mac 러너가 리뷰 후 agent-verdict가 판정)
-          if [ "$OWNER" = claude ] && [ "$PASSED" = true ]; then
-            gh label create needs-codex-review --color 1d76db --description "Codex 리뷰 대기" --force >/dev/null
-            gh pr edit "$PR" --add-label needs-codex-review
-            gh pr comment "$PR" --body "테스트 통과. Codex 리뷰를 요청했습니다 (Mac 러너가 다음 실행 때 리뷰)."
-            exit 0
-          fi
-          # Codex가 만든 PR은 이중 리뷰: Claude 판정을 남기고 Codex 자체 리뷰를 기다린다 (agent-verdict가 둘을 합쳐 판정)
-          verdict=$(printf '%s' "${REVIEW_JSON:-}" | jq -r '.verdict // empty' 2>/dev/null || true)
-          if [ "$OWNER" = gpt ] && [ "$PASSED" = true ] && [ "$R_REVIEW" = success ] && [ -n "$verdict" ]; then
-            {
-              echo "<!-- claude-review sha=$HEAD_SHA -->"
-              jq -r '"**Claude 리뷰: " + (if .verdict == "approve" then "승인" else "수정 요청" end) + "** (Codex 자체 리뷰와 합쳐 판정)\n\n" + .summary + ([.issues[] | "\n\n- **" + .file + "**: " + .problem + "\n  - 수정 방향: " + .fix] | join(""))' <<<"$REVIEW_JSON"
-              echo
-              echo "<details><summary>판정 JSON</summary>"; echo; echo '```json'; jq . <<<"$REVIEW_JSON"; echo '```'; echo; echo "</details>"
-            } > "$RUNNER_TEMP/cr.md"
-            gh label create needs-codex-review --color 1d76db --description "Codex 리뷰 대기" --force >/dev/null
-            gh pr comment "$PR" --body-file "$RUNNER_TEMP/cr.md"
-            gh pr edit "$PR" --add-label needs-codex-review
-            exit 0
-          fi
-          bash .github/agent/decide.sh
+        run: bash .github/agent/decide.sh

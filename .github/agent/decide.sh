@@ -9,6 +9,7 @@
 #   PASSED     테스트 통과 여부(true/false)
 #   R_TEST R_REVIEW   앞 단계 결과(success/failure/skipped/cancelled)
 #   REVIEW_JSON       리뷰 결과 JSON(verdict, summary, issues, notes, refactor)
+#   HEAD_SHA   테스트·리뷰 대상 커밋
 #   EXECUTOR USER_PAT REFACTOR_MODE RUN_URL RUNNER_TEMP GH_TOKEN
 set -euo pipefail
 git config user.name "github-actions[bot]"
@@ -39,28 +40,56 @@ push_develop() { # 다른 작업이 동시에 develop을 갱신할 수 있으므
   echo "::error::develop 푸시 실패"; return 1
 }
 next_task() { gh workflow run agent-start.yml --ref develop; }
-gh pr edit "$PR" --remove-label needs-codex-review >/dev/null 2>&1 || true
+# 오래된 실행은 새 커밋의 리뷰 큐나 상태를 건드리지 않는다.
+current_pr() {
+  gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" | jq -e --arg head "$HEAD_SHA" --arg task "$TASK" --arg repo "$GITHUB_REPOSITORY" '
+    .state == "open" and .draft == false and .base.ref == "develop" and .head.sha == $head and .head.repo.full_name == $repo
+    and (.title | startswith($task + ": ")) and ([.labels[].name] | index("needs-human") == null)
+  ' >/dev/null
+}
+if ! current_pr; then
+  echo "::notice::PR 상태 또는 최신 커밋이 바뀌어 판정하지 않음"
+  exit 0
+fi
 
-if [ "$R_TEST" != success ] || [ "$R_REVIEW" = failure ] || [ "$R_REVIEW" = cancelled ]; then
-  pause "테스트 또는 리뷰 단계가 실패해 자동 루프를 멈췄습니다."; exit 0
+if [[ "$R_TEST" != success && ( "$R_TEST" != failure || "$PASSED" != false ) ]] \
+  || [[ "$R_REVIEW" = failure || "$R_REVIEW" = cancelled ]]; then
+  pause "테스트 또는 리뷰 실행에 문제가 있어 자동 루프를 멈췄습니다."; exit 0
 fi
 verdict=$(printf '%s' "${REVIEW_JSON:-}" | jq -r '.verdict // empty' 2>/dev/null || true)
-if [ "$PASSED" = true ] && [ -z "$verdict" ]; then
-  pause "$REVIEWER 리뷰가 판정을 반환하지 않았습니다(턴 한도 도달 또는 출력 오류)."; exit 0
+if [ "$PASSED" = true ] && [[ "$R_TEST" != success || "$R_REVIEW" != success || -z "$verdict" ]]; then
+  pause "$REVIEWER 리뷰 또는 테스트 완료 기록을 확인하지 못했습니다."; exit 0
+fi
+gh pr edit "$PR" --remove-label needs-codex-review >/dev/null 2>&1 || true
+
+if [ "$verdict" = needs_human ]; then
+  gh pr edit "$PR" --add-label needs-human
+  jq -r '"**사람 확인 필요**\n\n" + .summary + ([.evidence[] | select(.status == "unverified") |
+    "\n- " + .criterion + " — " + .source] | join(""))' <<<"$REVIEW_JSON" > "$RUNNER_TEMP/c.md"
+  gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
+  exit 0
 fi
 
 # 승인 + 테스트 통과 → 머지
 if [ "$PASSED" = true ] && [ "$verdict" = approve ]; then
-  jq -r --arg who "$REVIEWER" --arg r "$ROUND" '"**" + $who + " 승인 (라운드 " + $r + ")**\n\n" + .summary + (if (.notes // "") != "" then "\n\n참고: " + .notes else "" end)' <<<"$REVIEW_JSON" > "$RUNNER_TEMP/c.md"
-  gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md"
-  if ! gh pr merge "$PR" --squash --delete-branch; then
-    # 동시에 진행한 다른 작업이 먼저 머지되어 충돌한 경우: 작성자에게 develop 반영과 충돌 해결을 요청한다
+  if ! gh pr merge "$PR" --squash --delete-branch --match-head-commit "$HEAD_SHA"; then
+    # 커밋이 바뀌면 새 실행이 처리한다. 실제 충돌만 작성자에게 보낸다.
+    if ! current_pr; then exit 0; fi
+    if [ "$(gh pr view "$PR" --json mergeable --jq .mergeable)" != CONFLICTING ]; then
+      pause "GitHub가 머지를 거부했습니다. 머지 조건과 실행 로그를 확인해 주세요."; exit 0
+    fi
     MERGE_CONFLICT=true
   else
     MERGE_CONFLICT=false
   fi
 fi
 if [ "${MERGE_CONFLICT:-}" = false ]; then
+  jq -r --arg who "$REVIEWER" --arg r "$ROUND" --arg run "${RUN_URL:-}" '
+    "**" + $who + " 승인 (라운드 " + $r + ")**\n\n" + .summary + "\n\n검증 기록: " + $run
+    + ([.evidence[] | "\n- " + .criterion + " [" + .method + "] — " + .source] | join(""))
+    + (if (.notes // "") != "" then "\n\n참고: " + .notes else "" end)
+  ' <<<"$REVIEW_JSON" > "$RUNNER_TEMP/c.md"
+  gh pr comment "$PR" --body-file "$RUNNER_TEMP/c.md" || true
   git pull -q --rebase origin develop
   update_tasks 완료
   if [ -n "$ISSUE" ]; then gh issue close "$ISSUE" --comment "PR #$PR 머지로 완료"; fi
