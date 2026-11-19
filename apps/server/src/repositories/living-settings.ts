@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { upsertDaySettings } from './day-settings';
 import { parseSettings } from '../settings/input';
 import { SettingsError, type LivingSettingsStore, type LivingSettings, type SettingsContext, type SettingsSnapshot } from '../settings/model';
 
@@ -77,12 +78,7 @@ export class LivingSettingsRepository implements LivingSettingsStore {
         default_meal_slots=$4::jsonb, meal_windows=$5::jsonb, taxi_policy=$6 WHERE id=$1`,
       [id, settings.departureTime, settings.returnTime, JSON.stringify(settings.mealSlots), JSON.stringify(settings.mealWindows), settings.taxiPolicy]);
       await client.query('DELETE FROM day_settings WHERE trip_id=$1 AND NOT (date = ANY($2::date[]))', [id, settings.days.map(day => day.date)]);
-      if (settings.days.length) await client.query(`INSERT INTO day_settings (trip_id,date,departure_time,return_time,meal_slots)
-        SELECT $1, date::date, departure_time::time, return_time::time, NULLIF(meal_slots, 'null'::jsonb)
-        FROM jsonb_to_recordset($2::jsonb) AS d(date text, departure_time text, return_time text, meal_slots jsonb) WHERE true
-        ON CONFLICT (trip_id, date) DO UPDATE SET departure_time=EXCLUDED.departure_time,
-          return_time=EXCLUDED.return_time, meal_slots=EXCLUDED.meal_slots`,
-      [id, JSON.stringify(settings.days.map(day => ({ date: day.date, departure_time: day.departureTime, return_time: day.returnTime, meal_slots: day.mealSlots })))]);
+      await upsertDaySettings(client, id, settings.days);
       return readSnapshot(client, id, ownerId);
     });
   }

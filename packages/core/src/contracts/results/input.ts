@@ -1,18 +1,12 @@
-import { Temporal } from '@js-temporal/polyfill';
 import type { TripInputs } from '../itinerary';
 import { TripInputError } from '../trips/input';
+import { parseFixedVisit, validConstraintDate } from './fixed-visit';
 import type { Constraints, LegEdit, VisitEdit } from './model';
 
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-function validConstraintDate(value: unknown, input: TripInputs): value is string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  try { return Temporal.PlainDate.from(value).toString() === value && value >= input.startDate && value <= input.endDate; } catch { return false; }
-}
-
 export function parseConstraints(value: unknown, input: TripInputs): Constraints {
   const raw = record(value), fields: Record<string, string> = {};
   const fail = (key: string, message: string) => { fields[key] = message; };
-  const date = (value: unknown): value is string => validConstraintDate(value, input);
   const ids = new Set(input.visits.map(visit => visit.id)), seen = new Set<string>();
   const visits: VisitEdit[] = [];
   if (!Array.isArray(raw.visits) || raw.visits.length !== ids.size) fail('visits', '모든 장소의 설정을 보내 주세요.');
@@ -21,13 +15,11 @@ export function parseConstraints(value: unknown, input: TripInputs): Constraints
     if (typeof row.id !== 'string' || !ids.has(row.id) || seen.has(row.id)) { fail('visits', '여행에 속한 장소를 중복 없이 선택해 주세요.'); continue; }
     seen.add(row.id);
     if (row.priority !== 'REQUIRED' && row.priority !== 'WISH') fail(key, '필수 또는 희망을 선택해 주세요.');
-    if (row.fixedDate !== null && !date(row.fixedDate)) fail(key, '여행 기간 안의 날짜를 선택해 주세요.');
-    if (row.fixedTime !== null) {
-      if (typeof row.fixedTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(row.fixedTime) || !date(row.fixedDate)) fail(key, '고정 시각에는 날짜와 유효한 시각이 필요합니다.');
-      else try { Temporal.PlainDateTime.from(`${row.fixedDate}T${row.fixedTime}`).toZonedDateTime(input.timeZone, { disambiguation: 'reject' }); }
-      catch { fail(key, '시간대에서 존재하지 않거나 중복되는 시각입니다.'); }
+    try { parseFixedVisit(row, input, ids.size); }
+    catch (error) {
+      if (!(error instanceof TripInputError)) throw error;
+      fail(key, Object.values(error.fields).at(-1)!);
     }
-    if (row.fixedOrder !== null && (typeof row.fixedOrder !== 'number' || !Number.isSafeInteger(row.fixedOrder) || row.fixedOrder < 0 || row.fixedOrder >= ids.size || !date(row.fixedDate))) fail(key, '고정 순서는 날짜와 0부터 시작하는 방문 위치가 필요합니다.');
     visits.push(row as VisitEdit);
   }
   let legs: LegEdit[] = [];

@@ -1,11 +1,12 @@
 import { accessError, apiError, privateJson as json, hasForeignOrigin } from '../lib/http';
 import { authorizeTrip } from '../lib/auth/authorization';
 import type { CityProfile } from '../fare';
-import { parseTripDraft, TripInputError, type TripDraft } from './input';
+import { parseTripCreation, type TripCreation, type TripSummary } from '@travel/core/contracts/trips/create';
+import { TripInputError } from './input';
 
 type UserId = { userId(request: Request): Promise<string | undefined> };
 type Dependencies = UserId & {
-  create(ownerId: string, input: TripDraft): Promise<string>;
+  create(ownerId: string, input: TripCreation): Promise<string>;
   profile(cityCode: string): Promise<CityProfile | null>;
 };
 export function tripHandlers(deps: Dependencies) {
@@ -27,7 +28,7 @@ export function tripHandlers(deps: Dependencies) {
       if (body.length > 100_000) return apiError(413, 'PAYLOAD_TOO_LARGE', '입력 크기를 줄여 주세요.');
       let raw: unknown;
       try { raw = JSON.parse(body); } catch { return apiError(400, 'INVALID_JSON', '올바른 JSON 입력이 필요합니다.'); }
-      const input = parseTripDraft(raw);
+      const input = parseTripCreation(raw);
       return json({ id: await deps.create(userId, input) }, 201);
     }),
     profile: (request: Request) => handle(request, async () => {
@@ -46,6 +47,17 @@ export function tripAccessHandler(deps: UserId & { findOwner(id: string): Promis
       return status === 200 ? json({ id }) : accessError(status, '접근할 수 없습니다.');
     } catch {
       return apiError(500, 'INTERNAL', '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+  };
+}
+
+export function tripListHandler(deps: UserId & { list(ownerId: string): Promise<TripSummary[]> }) {
+  return async (request: Request): Promise<Response> => {
+    try {
+      const ownerId = await deps.userId(request);
+      return ownerId ? json({ trips: await deps.list(ownerId) }) : apiError(401, 'UNAUTHENTICATED', '로그인 후 다시 시도해 주세요.');
+    } catch {
+      return apiError(500, 'INTERNAL', '여행 목록을 불러오지 못했습니다.');
     }
   };
 }

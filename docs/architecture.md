@@ -455,7 +455,7 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API와 T20 앱 골격·토큰·로그인까지 구현했으며 나머지 화면은 T21–T25 **계획**이다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력까지 구현했다. T22–T25 화면은 아래 계획을 따른다.
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
 결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
@@ -533,7 +533,8 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `GET /api/city-profiles` | `?cityCode=` | `{ profile: CityProfile \| null, recommendedPolicy }` | 400, 401, 500 |
 | `GET /api/places` | `?query=&regionCode=` | `{ places: PlaceSummary[], attribution }` | 400, 401, 502/503 `PROVIDER_*`, 500 |
 | `GET /api/places/[id]` (`id`=Google 장소 ID) | `?timeZone=&date=…` 또는 `?fields=location` | `{ place: PlaceDetails \| PlaceLocation, attribution }` | 400, 401, 404, 502/503, 500 |
-| `POST /api/trips` | `TripDraft` | 201 `{ id }` | 400 `INVALID_INPUT` + `fields`, 401, 403, 413, 415, 500 |
+| `GET /api/trips` (T21) | — | `{ trips: TripSummary[] }` (소유 여행의 ID·도시·기간) | 401, 500 |
+| `POST /api/trips` | `TripDraft` + 선택적 초기 생활 설정과 방문 고정 조건(T21) | 201 `{ id }` | 400 `INVALID_INPUT` + `fields`, 401, 403, 413, 415, 500 |
 | `GET /api/trips/[id]` | — | `{ id }` (T18: `trips/http.ts`의 `tripAccessHandler` + `RequestAuthenticator`, `private, no-store`, §13.3) | 401, 403, 404, 500 |
 | `GET /api/trips/[id]/settings` | — | `SettingsView` (`{ snapshot, calculation }`) | 401, 403, 404, 409 `INCOMPLETE_TRIP`(초 단위 시각 등 저장 형식 불일치), 500 |
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
@@ -673,6 +674,15 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
     mode: 'TRANSIT' | 'WALK' | 'DRIVE'; departure: string; timeZone: string }): Promise<{ encodedPolyline: string } | null>;
 }
 ```
+
+### 13.4.1 모바일 여행 입력 (T21)
+
+- 보호된 `/trips/new`는 여행·생활과 장소 초안을 메모리에서 편집한다. 최종 버튼으로 `POST /api/trips`를 한 번 호출하며 선택적인 `settings`와 각 방문의 `fixedDate`, `fixedTime`, `fixedOrder`를 함께 저장한다. 날짜·시각은 여행의 IANA 시간대 기준이며 순서는 API에서 0부터 시작한다.
+- core의 `parseTripDraft`, `parseSettings`, `parseFixedVisit`가 앱과 서버의 규칙을 공유한다. 생성 시 최상위 `taxiPolicy`가 기준이며 설정을 생략한 기존 요청에는 기존 기본값을 넣는다. 여행·날짜별 설정·항공편·숙소·장소·고정 조건은 기존 SQL 열을 사용해 한 트랜잭션으로 저장한다.
+- `내 여행`은 인증된 `GET /api/trips`로 도시·기간이 설정된 소유 여행을 열고, 상세 화면은 기존 `GET /api/trips/[id]/constraints`에서 장소·입력을 조회한다. 생활 설정 수정은 별도 화면에서 기존 revision 기반 `GET/PUT /api/trips/[id]/settings`를 사용한다.
+- 앱의 생활 설정 화면은 입력 중 TIME_WINDOWS 미리보기를 표시한다. PUT 성공 후 기존 `POST /api/trips/[id]/itinerary`로 §9의 전체 검증을 실행하고 진행 상태와 결과를 표시한다. 계산 요청에 실패하면 저장된 설정을 유지하고 POST만 재시도할 수 있다.
+- `/trips/[id]/generate`는 기존 `POST /api/trips/[id]/itinerary`를 호출한다. 저장된 여행 ID로 재계산할 수 있다. T22/T23의 상세 결과·수용량 선택 화면은 이 생성 응답에 연결할 수 있다.
+- 주소 직접 입력은 기존 한국어 장소 검색을 사용한다. 지도에서 숙소를 고르면 Google POI의 ID만 쓰기 요청에 보낸다. 검색 결과·지도 표시 이름·귀속은 메모리에서만 사용한다. [T21 결정](decisions/T21-mobile-trip-input.md)
 
 ### 13.5 지도 어댑터 인터페이스 (앱)
 

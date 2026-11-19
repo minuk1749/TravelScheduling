@@ -13,3 +13,5 @@ jest.spyOn(Animated, 'timing').mockImplementation((value, config) => ({
   },
   stop() {}, reset() {},
 }));
+// A repeating animation stays mounted while its loading state is rendered.
+jest.spyOn(Animated, 'loop').mockReturnValue({ start() {}, stop() {}, reset() {} });

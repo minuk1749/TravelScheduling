@@ -25,7 +25,7 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `apps/server/src/app/` | 화면, 서버 액션, API 라우트(`api/auth`, `api/places`, `api/trips`, `api/trips/[id]/itinerary`). 세션 확인·입력 검증·응답 변환 | 서비스, 각 모듈의 `server.ts`, `auth` | 스케줄링 알고리즘 직접 구현, 브라우저에서 DB·비밀 키 접근 |
 | `apps/server/src/services/itinerary/` | **동선 생성 서비스(T12).** 날짜별 앵커·짐 구간(`day-plan.ts`), 시간창·자정을 넘는 공항 이동 반영·행렬(`days.ts`), 공항 이동 조회(`transfers.ts`), 장소 조회(`places.ts`), 단위·요금 변환과 구간 조회(`routes.ts`), 실제 출발 시각 재조회 루프(`verification.ts`), 비교·효율 요약(`efficiency.ts`), 포트·결과 타입(`types.ts`) | `scheduler`, `fare`, `places`·`travel-time`의 포트 타입 | SQL, HTTP 객체, 구체 Google 어댑터, 환경 변수 |
 | `apps/server/src/itineraries/` | 동선 생성 HTTP 처리(`http.ts`: 인증·소유권·오류 변환)와 구체 구현 조립(`server.ts`) | 서비스, 저장소, 각 모듈 `server.ts` | 스케줄링 계산 |
-| `apps/server/src/repositories/` | 여행 생성(`trip-inputs.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 일정 저장(`itineraries.ts`)과 details 형식(`itinerary-details.ts`), 생활 설정/제약 읽기·원자적 수정 | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
+| `apps/server/src/repositories/` | 여행 생성·소유 목록(`trip-inputs.ts`), 날짜별 설정 쓰기(`day-settings.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 일정 저장(`itineraries.ts`)과 details 형식(`itinerary-details.ts`), 생활 설정/제약 읽기·원자적 수정 | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
 | `apps/server/src/auth.ts`, `apps/server/src/lib/auth/` | 웹 Google 로그인(Auth.js, T25까지), 여행 소유권 확인(`authorizeTrip`), 인증 SQL(`store.ts`). **T18:** 포트(`ports.ts`), Google ID 토큰 검증(`google-id-token.ts`), 모바일 세션 발급·폐기(`mobile-sessions.ts`), Bearer/쿠키 요청 인증(`request-authenticator.ts`), 세션 SQL(`session-store.ts`), 조립(`server.ts`: `requestAuthenticator`·`bearerAuthenticator`) | `lib/db`, `lib/opaque-token`, `jose` | 화면, 도메인 서비스 |
 | `apps/server/src/sessions/` | T18 `POST`·`DELETE /api/session`, `DELETE /api/account` HTTP(`http.ts`)와 조립(`server.ts`) | `lib/auth`, `lib/http` | SQL 직접 작성 |
 | `apps/server/src/lib/http.ts` | 공통 private/no-store JSON 응답, 오류 본문(`apiError`·`accessError`·`providerError`: `{ code, error, fields? }`), Origin 비교, 설정·공유 쓰기용 교차 사이트 검사(`isCrossSiteRequest`) | 표준 Request/Response, core `contracts/errors` 타입 | DB·인증·도메인 오류 정책 |
@@ -44,8 +44,8 @@ CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → bui
 | `packages/core/src/contracts/` | 공용 DTO·검증·설정 계산. `trips/`, `settings/`, `results/`, `itinerary.ts`, `places.ts`, `travel-time.ts`, `sharing.ts`, `errors.ts`(T18 오류 `code` 목록) | core 내부, Temporal | 서버 포트, Node·DB·네트워크·React·React Native |
 | `packages/core/src/presentation/` | 표시 변환·한국어 라벨 | core DTO, Temporal | 화면 프레임워크·I/O |
 | `apps/server/src/scheduler/`, `fare/`와 기존 공용 모듈 경로 | `@travel/core` 재내보내기, 기존 호출 지점 유지 | core의 공개 하위 경로 | 계산·검증 복사본 |
-| `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, 공통 버튼·상태·전환 | 앱 auth·theme, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장 |
-| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리 | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
+| `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, T21 여행 생성·하루 생활·장소 입력(`screens/trip-input/`), 공통 버튼·상태·전환 | 앱 auth·theme·core 검증, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장 |
+| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`) | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
 | `apps/mobile/src/theme/`, `assets/fonts/` | 디자인 값의 RN 스타일 변환, Pretendard 400/600, 동작 줄이기 | design-tokens, React Native·expo-font | 화면별 색·수치 복제 |
 | `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·움직임 값, 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
 
@@ -142,3 +142,10 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 - `travel-time/shapes.ts`는 이동시간과 분리된 포트, `google-shapes.ts`는 polyline 전용 어댑터다. 기존 이동시간 어댑터와 `google-client.ts`의 HTTP·요청 옵션·오류 정규화를 공유한다. 모양 캐시는 없다.
 - DTO는 `packages/core/src/contracts/route-shapes.ts`. 서비스는 DAY·AIRPORT 구간 순서를 유지하고 요청당 최대 4개 구간을 처리한다. 좌표만 요청 안에서 중복 조회를 합치며 모양 응답은 재사용하지 않는다.
 - T18 병행 작업과의 인증 연결·검증 범위는 [T19 결정](decisions/T19-route-shapes.md), 저장 정책은 [ADR 0005](decisions/0005-travel-time-provider-and-cache.md)를 따른다.
+
+## T21 모바일 입력 연결
+
+- `내 여행` → `/trips/new`의 여행 입력·장소 초안 → `POST /api/trips`에서 초기 생활 설정과 고정 조건까지 원자적으로 저장 → `/trips/[id]/generate`에서 기존 일정 생성 요청.
+- `GET /api/trips`는 소유한 여행 목록, 기존 `GET /api/trips/[id]/constraints`는 저장한 입력과 장소 표시 정보, 기존 `GET/PUT /api/trips/[id]/settings`는 생활 설정 조회·수정을 담당한다.
+- 앱의 생활 설정 화면은 PUT 성공 후 기존 `POST /api/trips/[id]/itinerary`로 전체 동선을 재검증한다. 계산 요청이 실패하면 저장된 설정을 유지하고 POST만 재시도한다.
+- core의 `contracts/trips/create.ts`, `contracts/results/fixed-visit.ts`, `contracts/settings/defaults.ts`가 생성 계약·고정 조건 검증·기본값을 연결한다. 지도와 주소 검색은 같은 장소 ID 계약을 쓴다. [T21 결정](decisions/T21-mobile-trip-input.md)

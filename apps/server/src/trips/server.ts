@@ -3,7 +3,7 @@ import { tripOwner } from '../lib/auth/store';
 import { createDatabasePool } from '../lib/db';
 import { cityProfileRepository } from '../repositories/city-profiles';
 import { tripInputRepository } from '../repositories/trip-inputs';
-import { tripAccessHandler, tripHandlers } from './http';
+import { tripAccessHandler, tripHandlers, tripListHandler } from './http';
 let pool: ReturnType<typeof createDatabasePool> | undefined;
 const db = () => pool ??= createDatabasePool();
 const userId = (request: Request) => requestAuthenticator.userId(request);
@@ -13,3 +13,5 @@ export const handlers = tripHandlers({
   profile: code => cityProfileRepository(db()).findByCityCode(code),
 });
 export const access = tripAccessHandler({ userId, findOwner: tripOwner });
+
+export const list = tripListHandler({ userId, list: ownerId => tripInputRepository(db()).list(ownerId) });
