@@ -16,7 +16,7 @@ npm run build          # 앱 iOS·Android export + 서버/PWA + core·토큰 JS/
 npm test               # 앱·서버·core·토큰 전체 (DB는 DATABASE_URL 필요, PWA는 build 먼저)
 ```
 
-CI(`agent-review`)는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순서로 실행한다.
+CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순서로 실행한다. 자동 작업 PR의 검사와 머지 기록은 [자동 협업 루프](agent-loop.md#리뷰-판정과-머지)를 참고한다.
 
 ## 모듈과 책임
 

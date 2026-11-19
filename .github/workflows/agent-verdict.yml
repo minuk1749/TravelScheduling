@@ -1,15 +1,29 @@
-# Codex 리뷰 판정: Mac 러너가 남긴 Codex 리뷰 댓글(<!-- codex-review sha=… -->)을 읽어
-# (Claude PR이면 그대로, Codex PR이면 같은 커밋의 Claude 판정과 합쳐 둘 다 승인일 때만 승인)
-# agent-review와 같은 판정(.github/agent/decide.sh)을 실행한다.
-# 러너는 저장소 소유자 계정(gh 로그인)으로 댓글을 달기 때문에 이 이벤트가 발생한다.
+# Mac 리뷰 러너가 Actions에 직접 판정을 제출한다. PR 댓글은 표시용이다.
 name: agent-verdict
 
 on:
-  issue_comment:
-    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR 번호
+        required: true
+        type: string
+      head:
+        description: 리뷰한 PR 커밋
+        required: true
+        type: string
+      review_run:
+        description: 테스트와 교차 리뷰를 기록한 agent-review 실행 ID
+        required: true
+        type: string
+      review:
+        description: Codex 판정 JSON
+        required: true
+        type: string
 
+# 같은 PR의 판정을 직렬화한다. 오래된 커밋의 판정은 아래 단계에서 버린다.
 concurrency:
-  group: agent-verdict-${{ github.event.issue.number }}
+  group: agent-verdict-${{ inputs.pr }}
   cancel-in-progress: false
 
 permissions:
@@ -17,18 +31,20 @@ permissions:
 
 jobs:
   verdict:
-    if: >-
-      github.event.issue.pull_request &&
-      contains(github.event.comment.body, '<!-- codex-review') &&
-      github.event.comment.user.login == github.repository_owner
+    if: github.ref == 'refs/heads/develop' && github.actor == (vars.AGENT_CODEX_REVIEW_ACTOR || github.repository_owner)
     runs-on: ubuntu-latest
     permissions:
+      checks: read
+      statuses: read
       contents: write
       pull-requests: write
       issues: write
       actions: write
     env:
-      PR: ${{ github.event.issue.number }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ inputs.pr }}
+      HEAD_SHA: ${{ inputs.head }}
+      REVIEW_RUN: ${{ inputs.review_run }}
       MAX_ROUNDS: ${{ vars.AGENT_MAX_ROUNDS || '3' }}
     steps:
       - uses: actions/checkout@v5
@@ -37,59 +53,95 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-      - id: v
+      - id: source
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
-          info=$(gh pr view "$PR" --json title,headRefOid,state,labels)
-          if [ "$(jq -r .state <<<"$info")" != OPEN ]; then echo "::notice::PR이 열려 있지 않음"; out go false; exit 0; fi
-          if jq -e '[.labels[].name] | index("owner-claude")' <<<"$info" >/dev/null; then owner=claude; else owner=gpt; fi
-          sha=$(grep -oE '<!-- codex-review sha=[0-9a-f]+' <<<"$BODY" | sed 's/.*sha=//')
-          head=$(jq -r .headRefOid <<<"$info")
-          if [ "$sha" != "$head" ]; then echo "::notice::리뷰한 커밋($sha)이 PR 최신 커밋($head)과 달라 무시"; out go false; exit 0; fi
-          # 댓글의 ```json 블록에서 판정 JSON을 꺼낸다
-          awk '/^```json$/{f=1;next} /^```$/{if(f){exit}} f' <<<"$BODY" > "$RUNNER_TEMP/review.json"
-          jq -e '.verdict' "$RUNNER_TEMP/review.json" >/dev/null || { echo "::error::Codex 리뷰 JSON을 읽지 못함"; exit 1; }
-          reviewer=Codex
-          if [ "$owner" = gpt ]; then
-            # Codex가 만든 PR: 같은 커밋에 대한 Claude 판정과 합친다. 둘 다 승인일 때만 승인
-            gh pr view "$PR" --json comments --jq "[.comments[] | select(.body | contains(\"<!-- claude-review sha=$head\"))] | last | .body // \"\"" > "$RUNNER_TEMP/claude-review-body.md"
-            awk '/^```json$/{f=1;next} /^```$/{if(f){exit}} f' "$RUNNER_TEMP/claude-review-body.md" > "$RUNNER_TEMP/claude.json"
-            if ! jq -e '.verdict' "$RUNNER_TEMP/claude.json" >/dev/null 2>&1; then echo "::error::같은 커밋에 대한 Claude 판정을 찾지 못함"; exit 1; fi
-            jq -n --slurpfile a "$RUNNER_TEMP/claude.json" --slurpfile b "$RUNNER_TEMP/review.json" '
-              ($a[0]) as $c | ($b[0]) as $x |
-              { verdict: (if $c.verdict == "approve" and $x.verdict == "approve" then "approve" else "request_changes" end),
-                summary: ("Claude(" + $c.verdict + "): " + $c.summary + "\n\nCodex 자체 리뷰(" + $x.verdict + "): " + $x.summary),
-                issues: ((($c.issues // []) | map(.problem = "[Claude] " + .problem)) + (($x.issues // []) | map(.problem = "[Codex] " + .problem))),
-                notes: ([$c.notes, $x.notes] | map(select(. != null and . != "")) | join(" / ")),
-                refactor: (($c.refactor // []) + ($x.refactor // [])) }' > "$RUNNER_TEMP/combined.json"
-            mv "$RUNNER_TEMP/combined.json" "$RUNNER_TEMP/review.json"
-            reviewer="Claude·Codex"
+          [[ "$PR" =~ ^[1-9][0-9]*$ && "$REVIEW_RUN" =~ ^[1-9][0-9]*$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          R="repos/$GITHUB_REPOSITORY"
+          info=$(gh api "$R/pulls/$PR")
+          if ! jq -e --arg head "$HEAD_SHA" --arg repo "$GH_REPO" '
+            .state == "open" and .draft == false and .base.ref == "develop" and .head.sha == $head
+            and .head.repo.full_name == $repo and ([.labels[].name] | index("needs-human") == null)
+          ' <<<"$info" >/dev/null; then
+            echo "::notice::PR 상태 또는 최신 커밋이 바뀌어 판정하지 않음"
+            exit 0
           fi
-          title=$(jq -r .title <<<"$info")
-          task=$(grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' <<<"$title")
-          issue=$(gh issue list --state open --json number,title,labels --jq "[.[] | select([.labels[].name] | (index(\"agent-task\") or index(\"refactor-task\"))) | select(.title | startswith(\"$task:\"))] | first | .number // empty")
-          n=0
-          if [ -n "$issue" ]; then n=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$issue/comments" --jq '.[].body' | grep -c '<!-- agent-review -->' || true); fi
-          out go true; out task "$task"; out issue "$issue"; out round "$((n + 1))"; out owner "$owner"; out reviewer "$reviewer"
-      - if: steps.v.outputs.go == 'true'
+          workflow=$(gh api "$R/actions/workflows/agent-review.yml" --jq .id)
+          run=$(gh api "$R/actions/runs/$REVIEW_RUN")
+          attempt=$(jq -er --argjson workflow "$workflow" --argjson pr "$PR" --arg head "$HEAD_SHA" --arg repo "$GH_REPO" '
+            select(.workflow_id == $workflow and .event == "pull_request_target" and .conclusion == "success"
+              and .head_sha == $head and .head_repository.full_name == $repo
+              and any(.pull_requests[]?; .number == $pr and .base.ref == "develop" and .head.sha == $head))
+            | .run_attempt
+          ' <<<"$run")
+          jobs=$(gh api --paginate "$R/actions/runs/$REVIEW_RUN/attempts/$attempt/jobs" --jq '
+            .jobs[] | select(.conclusion == "success" and (.name == "test" or .name == "review")) | .name')
+          for required in test review; do
+            if ! grep -qxF "$required" <<<"$jobs"; then
+              echo "::error::해당 실행 시도에서 $required 잡의 성공을 확인하지 못함"
+              exit 1
+            fi
+          done
+          echo "attempt=$attempt" >> "$GITHUB_OUTPUT"
+          echo "go=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        if: steps.source.outputs.go == 'true'
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.review_run }}
+          name: agent-review-pr-${{ inputs.pr }}-${{ inputs.head }}
+          path: ${{ runner.temp }}/request
+      - id: prepare
+        if: steps.source.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTEMPT: ${{ steps.source.outputs.attempt }}
+          CODEX_REVIEW: ${{ inputs.review }}
+        run: |
+          set -euo pipefail
+          file="$RUNNER_TEMP/request/request.json"
+          printf '%s' "$CODEX_REVIEW" > "$RUNNER_TEMP/codex-review.json"
+          request=$(node .github/agent/review-record.mjs request "$file" "$PR" "$HEAD_SHA" "$REVIEW_RUN" "$ATTEMPT")
+          node .github/agent/review-record.mjs combine "$file" "$PR" "$HEAD_SHA" "$REVIEW_RUN" "$ATTEMPT" "$RUNNER_TEMP/codex-review.json" > "$RUNNER_TEMP/verdict.json"
+          task=$(jq -r .task <<<"$request")
+          issue_number=$(jq -r .issue <<<"$request")
+          owner=$(jq -r .owner <<<"$request")
+          issue=$(gh issue view "$issue_number" --json state,title)
+          jq -e --arg task "$task" '.state == "OPEN" and (.title | startswith($task + ":"))' <<<"$issue" >/dev/null
+          n=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$issue_number/comments" --jq '.[] | select(.user.login == "github-actions[bot]") | .body' | grep -c '<!-- agent-review -->' || true)
+          jq -n --argjson request "$request" --slurpfile codex "$RUNNER_TEMP/codex-review.json" --slurpfile verdict "$RUNNER_TEMP/verdict.json" \
+            '{ $request, codex: $codex[0], verdict: $verdict[0] }' > "$RUNNER_TEMP/decision-record.json"
+          {
+            echo "task=$task"
+            echo "issue=$issue_number"
+            echo "owner=$owner"
+            echo "round=$((n + 1))"
+            echo "passed=$(jq -r '.tests == "passed"' <<<"$request")"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.source.outputs.go == 'true'
+        with:
+          name: decision-record
+          path: ${{ runner.temp }}/decision-record.json
+          overwrite: true
+          retention-days: 14
+      - if: steps.source.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           USER_PAT: ${{ secrets.USER_PAT }}
           EXECUTOR: ${{ vars.AGENT_EXECUTOR || 'local' }}
           REFACTOR_MODE: ${{ vars.AGENT_REFACTOR || 'on' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TASK: ${{ steps.v.outputs.task }}
-          ISSUE: ${{ steps.v.outputs.issue }}
-          ROUND: ${{ steps.v.outputs.round }}
-          OWNER: ${{ steps.v.outputs.owner }}
-          REVIEWER: ${{ steps.v.outputs.reviewer }}
-          PASSED: "true"
+          TASK: ${{ steps.prepare.outputs.task }}
+          ISSUE: ${{ steps.prepare.outputs.issue }}
+          OWNER: ${{ steps.prepare.outputs.owner }}
+          ROUND: ${{ steps.prepare.outputs.round }}
+          REVIEWER: Claude·Codex
+          PASSED: ${{ steps.prepare.outputs.passed }}
           R_TEST: success
           R_REVIEW: success
         run: |
-          REVIEW_JSON=$(cat "$RUNNER_TEMP/review.json") bash .github/agent/decide.sh
+          set -euo pipefail
+          REVIEW_JSON=$(cat "$RUNNER_TEMP/verdict.json") bash .github/agent/decide.sh
