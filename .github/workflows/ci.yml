@@ -28,11 +28,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+      - name: Review gate regression tests
+        run: node --test .github/agent/review-record.test.mjs
       - name: Check
-        run: |
-          if [ ! -f package.json ]; then echo "package.json 없음(T1 전), 건너뜀"; exit 0; fi
-          npm ci
-          npm run --if-present lint
-          npm run --if-present typecheck
-          npm run --if-present build
-          npm run --if-present test
+        run: bash .github/agent/check-required.sh

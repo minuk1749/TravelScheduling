@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "verdict": { "type": "string", "enum": ["approve", "request_changes", "needs_human"] },
+    "summary": { "type": "string" },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "file": { "type": "string" }, "problem": { "type": "string" }, "fix": { "type": "string" } },
+        "required": ["file", "problem", "fix"]
+      }
+    },
+    "notes": { "type": "string" },
+    "refactor": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "title": { "type": "string" }, "scope": { "type": "string" }, "reason": { "type": "string" } },
+        "required": ["title", "scope", "reason"]
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "criterion": { "type": "string" },
+          "source": { "type": "string" },
+          "status": { "type": "string", "enum": ["verified", "failed", "unverified"] },
+          "method": { "type": "string", "enum": ["code", "ci", "unverified"] }
+        },
+        "required": ["criterion", "source", "status", "method"]
+      }
+    }
+  },
+  "required": ["verdict", "summary", "issues", "notes", "refactor", "evidence"]
+}

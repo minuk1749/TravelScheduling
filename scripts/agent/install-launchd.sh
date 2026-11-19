@@ -41,7 +41,12 @@ cat > "$PLIST" <<EOF
     <string>/usr/bin/caffeinate</string>
     <string>-i</string>
     <string>/bin/bash</string>
-    <string>$WORKDIR/scripts/agent/local-runner.sh</string>
+    <string>-o</string>
+    <string>pipefail</string>
+    <string>-c</string>
+    <string>git -C "\$1" fetch -q origin refs/heads/develop:refs/remotes/origin/develop &amp;&amp; git -C "\$1" show refs/remotes/origin/develop:scripts/agent/local-runner.sh | /bin/bash</string>
+    <string>TravelScheduling</string>
+    <string>$WORKDIR</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
