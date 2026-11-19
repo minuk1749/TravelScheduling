@@ -4,6 +4,8 @@
 #   0) Claude가 만든 PR에 needs-codex-review 라벨이 있으면 → Codex CLI로 리뷰하고 판정 댓글 (agent-verdict가 판정)
 #   1) Codex가 만든 열린 작업 PR에 아직 반영하지 않은 자동 피드백이 있으면 → Codex CLI로 수정 후 푸시
 #   2) 작업 PR이 없고 Codex 담당 작업 이슈(agent-task, owner-claude 아님)가 있으면 → Codex CLI로 구현, 브랜치 푸시, PR 생성
+#      구현 중 Codex가 실패하면(사용 한도 등) 그때까지의 변경을 wip/<작업>-<시각> 브랜치에 저장하고,
+#      다음 구현 실행은 가장 최근 wip 브랜치에서 이어서 한다. PR을 올리면 그 작업의 wip 브랜치는 지운다.
 #   3) 그 밖에는 아무것도 하지 않음 (리뷰 대기 중이거나 할 작업 없음)
 #
 # 테스트와 판정·머지는 GitHub Actions(agent-review, agent-verdict)가 한다.
@@ -149,12 +151,26 @@ main() {
   ibranch="$(echo "$itask" | tr 'A-Z' 'a-z')-local"
   log "구현 모드: 이슈 #$issue ($ititle), 브랜치 $ibranch"
 
-  git checkout -q -B "$ibranch" origin/develop
+  # 이전 실행이 중단되며 남긴 작업이 있으면 가장 최근 것에서 이어서 한다
+  local wip wip_note=""
+  wip=$(git for-each-ref --format='%(refname:short)' "refs/remotes/origin/wip/$(echo "$itask" | tr 'A-Z' 'a-z')-*" | sort -V | tail -1)
+  if [ -n "$wip" ]; then
+    log "이전 중단 작업($wip)에서 이어서 함"
+    git checkout -q -B "$ibranch" "$wip"
+    wip_note="- 이전 실행이 끝나기 전에 중단되어(사용 한도 등) 그때까지의 변경을 커밋해 두었고, 지금 그 커밋 위에서 시작한다(git log origin/develop..HEAD, git diff origin/develop 로 확인). 처음부터 다시 만들지 말고 이미 한 작업을 확인해 남은 부분을 마무리하라. 미완성이거나 충돌 표시(<<<<<<<)가 남아 있을 수 있으니 확인하라."
+    if ! git merge -q --no-edit origin/develop >/dev/null 2>&1; then
+      wip_note="$wip_note develop을 병합했고 충돌이 있다. 충돌 표시가 있는 파일을 먼저 해결하라(양쪽 변경의 의도를 모두 유지)."
+      log "develop 병합 충돌, Codex가 해결"
+    fi
+  else
+    git checkout -q -B "$ibranch" origin/develop
+  fi
   install_deps
   local iprompt="$TMPD/prompt.md"
   {
     echo "# 실행 환경 안내 (Mac 러너)"
-    echo "- 현재 브랜치는 develop에서 새로 만든 $ibranch 이다."
+    if [ -n "$wip" ]; then echo "- 현재 브랜치는 이전 중단 작업($wip)에서 만든 $ibranch 이다."; else echo "- 현재 브랜치는 develop에서 새로 만든 $ibranch 이다."; fi
+    if [ -n "$wip_note" ]; then echo "$wip_note"; fi
     echo "- git commit/push와 PR 생성은 하지 마라. 스크립트가 한다. PR 제목은 스크립트가 '$ititle'로 붙인다."
     echo "- 인터넷 접근이 가능하다. 새 패키지는 npm install로 설치해 package-lock.json을 갱신하라."
     echo "- 완료 전에 npm run lint, npm run typecheck, npm run build, npm test 를 실행해 통과를 확인하라."
@@ -164,10 +180,16 @@ main() {
     gh issue view "$issue" -R "$REPO" --json body --jq .body
   } > "$iprompt"
 
-  local imsg="$TMPD/msg.md"
-  run_codex "$iprompt" "$imsg" "$itask" || { rm -f "$iprompt"; return 1; }
+  local imsg="$TMPD/msg.md" rc=0
+  run_codex "$iprompt" "$imsg" "$itask" || rc=$?
   rm -f "$iprompt"
-  if ! commit_changes "$ititle"; then
+  if [ "$rc" != 0 ]; then
+    # 실행 실패(1)면 변경을 저장한다. 다른 모델로 실행된 결과(2)는 쓰지 않는다
+    if [ "$rc" = 1 ]; then save_wip "$itask"; fi
+    return 1
+  fi
+  # 이어서 한 작업(wip)은 이전 커밋이 있으므로 이번 실행에 새 변경이 없어도 PR을 올린다
+  if ! commit_changes "$ititle" && [ -z "$wip" ]; then
     log "Codex가 변경을 만들지 못함"
     { echo "**Mac 러너: 변경 없이 종료.** 다음 실행에서 다시 시도합니다. 계속 반복되면 사람이 확인해 주세요."; echo; cat "$imsg" 2>/dev/null; } | gh issue comment "$issue" -R "$REPO" --body-file -
     rm -f "$imsg"; return 0
@@ -186,6 +208,11 @@ main() {
   } > "$imsg.body"
   gh pr create -R "$REPO" --base develop --head "$ibranch" --title "$ititle" --body-file "$imsg.body"
   rm -f "$imsg" "$imsg.body"
+  # PR에 들어간 중단 작업 브랜치는 더 쓰지 않으므로 지운다
+  local w
+  for w in $(git for-each-ref --format='%(refname:short)' "refs/remotes/origin/wip/$(echo "$itask" | tr 'A-Z' 'a-z')-*"); do
+    git push -q origin --delete "${w#origin/}" || true
+  done
   log "PR 생성 완료"
 }
 
@@ -285,7 +312,7 @@ run_codex() { # prompt_file msg_file task
   if [ -n "$model" ] && [ -n "$used" ] && [ "$used" != "$model" ]; then
     log "배정 모델($model)과 실제 모델($used)이 달라 결과를 버리고 멈춤"
     pause_issue "Codex가 배정한 모델(\`$model\`)이 아니라 \`$used\`로 실행되어, 결과를 PR로 올리지 않고 멈췄습니다 (작업 ${3:-?})." "$out"
-    return 1
+    return 2
   fi
   echo 0 > "$FAILFILE"
   log "Codex 실행 종료"
@@ -317,6 +344,16 @@ pause_issue() { # message output_file
     echo "</details>"
   } > "$TMPD/pause.md"
   gh issue create -R "$REPO" --title "자동 루프 일시중단: Codex" --label agent-paused --body-file "$TMPD/pause.md" >/dev/null && log "agent-paused 이슈를 열고 멈춤"
+}
+
+save_wip() { # task
+  # 실패한 구현 실행의 변경을 wip/<작업>-<시각> 브랜치에 남긴다(강제 푸시 없음, 매번 새 이름)
+  local w
+  if ! commit_changes "$1: 중단된 작업 저장" && [ "$(git rev-list --count origin/develop..HEAD)" = 0 ]; then
+    log "저장할 변경 없음"; return 0
+  fi
+  w="wip/$(echo "$1" | tr 'A-Z' 'a-z')-$(date +%Y%m%d%H%M%S)"
+  if git push -q origin "HEAD:refs/heads/$w"; then log "중단 작업을 $w 에 저장함"; else log "중단 작업 저장 실패"; fi
 }
 
 commit_changes() { # message
