@@ -32,6 +32,8 @@ jobs:
     # 최대 400턴(xhigh)을 마칠 수 있도록 여유를 둔다
     timeout-minutes: 150
     permissions:
+      # check-pr.mjs가 읽는 statusCheckRollup의 workflowName(checkSuite.workflowRun)은 actions 읽기 권한이 필요하다
+      actions: read
       checks: read
       statuses: read
       contents: read
