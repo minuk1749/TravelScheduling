@@ -5,6 +5,7 @@
 //   claude-refactor → 리팩터링 수행 모델
 //   claude-implement → Claude가 담당 작업을 구현할 모델
 //   codex-review → Claude PR을 리뷰할 Codex "모델<TAB>추론강도"
+//   claude-effort → Claude 실행(구현·리팩터링·리뷰) 추론 강도. 작업별 값이 없으면 기본값, 둘 다 없으면 빈 값(CLI 기본)
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,10 +36,13 @@ if (kind === "codex") {
   process.stdout.write(`${(c.tasks || {})[task] || c.default || "claude-opus-5-5"}\n`);
 } else if (kind === "claude-refactor") {
   process.stdout.write(`${(cfg.claude || {}).refactor || "claude-opus-5-5"}\n`);
+} else if (kind === "claude-effort") {
+  const e = (cfg.claude || {}).effort || {};
+  process.stdout.write(`${(e.tasks || {})[task] || e.default || ""}\n`);
 } else if (kind === "claude-exec") {
   const list = (cfg.claude || {}).exec_review || [];
   process.stdout.write(list.includes(task) ? "true\n" : "false\n");
 } else {
-  console.error("사용법: model-for.mjs <codex|codex-review|claude|claude-exec|claude-implement|claude-refactor> <TASK> [models.json]");
+  console.error("사용법: model-for.mjs <codex|codex-review|claude|claude-exec|claude-implement|claude-refactor|claude-effort> <TASK> [models.json]");
   process.exit(2);
 }

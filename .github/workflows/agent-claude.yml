@@ -119,6 +119,7 @@ jobs:
             { echo; echo "## 직전 리뷰 피드백 (이번 라운드에서 해결할 것)"; echo; cat "$RUNNER_TEMP/feedback.md"; } >> .claude-task.md
           fi
           echo "model=$(node .ctl/.github/agent/model-for.mjs "$mk" "$ID" .ctl/.github/agent/models.json)" >> "$GITHUB_OUTPUT"
+          echo "effort=$(node .ctl/.github/agent/model-for.mjs claude-effort "$ID" .ctl/.github/agent/models.json)" >> "$GITHUB_OUTPUT"
 
       - id: claude
         uses: anthropics/claude-code-action@v1
@@ -131,6 +132,7 @@ jobs:
             저장소 ${{ github.repository }}의 작업 ${{ steps.info.outputs.id }} 이다. `.claude-task.md`를 읽고 그 지시를 따르라.
           claude_args: >-
             --model ${{ steps.prompt.outputs.model }}
+            ${{ steps.prompt.outputs.effort && format('--effort {0}', steps.prompt.outputs.effort) || '' }}
             --max-turns 200
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git add:*),Bash(git rm:*)"
             --disallowedTools "NotebookEdit"
