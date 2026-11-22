@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createDatabasePool } from '../src/lib/db';
+import { canonicalUuidOrNull, createDatabasePool } from '../src/lib/db';
+
+test('UUID lookups accept the PostgreSQL text form regardless of UUID version', () => {
+  const id = 'abcdef01-2345-1789-abcd-ef0123456789';
+  assert.equal(canonicalUuidOrNull(id), id);
+  for (const alias of [id.toUpperCase(), id.replaceAll('-', ''), `{${id}}`, `${id}\n`]) {
+    assert.equal(canonicalUuidOrNull(alias), null);
+  }
+});
 
 test('database configuration is required and must be PostgreSQL', () => {
   assert.throws(() => createDatabasePool(''), /DATABASE_URL/);

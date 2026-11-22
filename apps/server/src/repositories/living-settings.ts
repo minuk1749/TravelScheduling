@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { canonicalUuidOrNull } from '../lib/db';
 import { upsertDaySettings } from './day-settings';
 import { parseSettings } from '../settings/input';
 import { SettingsError, type LivingSettingsStore, type LivingSettings, type SettingsContext, type SettingsSnapshot } from '../settings/model';
@@ -17,10 +18,11 @@ type TripRow = {
   arrival_buffer_minutes: number | null; departure_buffer_minutes: number | null;
 };
 
-async function readSnapshot(client: PoolClient, id: string, ownerId: string): Promise<SettingsSnapshot> {
+async function readSnapshot(client: PoolClient, id: string, ownerId: string, lockTrip = false): Promise<SettingsSnapshot> {
   const row = (await client.query<TripRow>(`SELECT owner_id, time_zone, start_date::text, end_date::text,
     default_departure_time::text, default_return_time::text, default_meal_slots, meal_windows,
-    taxi_policy, arrival_buffer_minutes, departure_buffer_minutes FROM trips WHERE id::text=$1`, [id])).rows[0];
+    taxi_policy, arrival_buffer_minutes, departure_buffer_minutes FROM trips WHERE id=$1
+    ${lockTrip ? 'FOR UPDATE' : ''}`, [canonicalUuidOrNull(id)])).rows[0];
   if (!row) throw new SettingsError(404, '여행을 찾을 수 없습니다.');
   if (row.owner_id !== ownerId) throw new SettingsError(403, '접근할 수 없습니다.');
   if (!row.time_zone || !row.start_date || !row.end_date || row.arrival_buffer_minutes === null || row.departure_buffer_minutes === null) {
@@ -71,8 +73,7 @@ export class LivingSettingsRepository implements LivingSettingsStore {
   }
   save(id: string, ownerId: string, expectedRevision: string, settings: LivingSettings): Promise<SettingsSnapshot> {
     return this.transaction(true, async client => {
-      await client.query('SELECT id FROM trips WHERE id::text=$1 FOR UPDATE', [id]);
-      const current = await readSnapshot(client, id, ownerId);
+      const current = await readSnapshot(client, id, ownerId, true);
       if (current.revision !== expectedRevision) throw new SettingsError(409, '다른 화면에서 입력이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.', 'STALE_INPUT');
       await client.query(`UPDATE trips SET default_departure_time=$2, default_return_time=$3,
         default_meal_slots=$4::jsonb, meal_windows=$5::jsonb, taxi_policy=$6 WHERE id=$1`,
