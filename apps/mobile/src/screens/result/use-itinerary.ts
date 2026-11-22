@@ -11,7 +11,7 @@ import { errorMessage, fieldErrors } from '../trip-input/presentation';
 export type Phase =
   | { kind: 'idle' }
   | { kind: 'calculating'; change: Change }
-  | { kind: 'failed'; change: Change; message: string; stale: boolean };
+  | { kind: 'failed'; change: Change; message: string; reload: boolean; draft: Constraints | null };
 export type Notice = { id: number; title: string; detail: string | null; undo: boolean };
 
 type State = {
@@ -62,8 +62,8 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
     view, shown: result, base: result.status === 'OK' ? result : null, previous: null,
     focusVisit: null, phase: { kind: 'idle' }, notice: null,
   }));
-  const undo = useRef<{ constraints: Constraints; change: Change } | null>(null);
-  const [canUndo, setCanUndo] = useState(false);
+  const [undo, setUndo] = useState<{ revision: string; constraints: Constraints; change: Change } | null>(null);
+  const canUndo = undo !== null && undo.revision === state.view.revision;
   const pending = useRef<AbortController | null>(null);
   const notices = useRef(0);
   useEffect(() => () => pending.current?.abort(), []);
@@ -74,18 +74,31 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
     if (pending.current) return;
     const request = new AbortController();
     pending.current = request;
-    const reload = state.phase.kind === 'failed' && state.phase.stale;
+    let reload = state.phase.kind === 'failed' && state.phase.reload;
+    let draft = next;
     setState(current => ({ ...current, phase: { kind: 'calculating', change }, notice: null }));
     try {
-      let current = reload ? await api.savedInput(tripId, request.signal) : state.view;
+      const original = state.view;
+      let current = reload ? await api.savedInput(tripId, request.signal) : original;
       if (request.signal.aborted) return;
-      const before = constraintsFrom(current.input);
-      if (next && !sameConstraints(next, before)) {
-        const saved = await api.saveConstraints(tripId, current.revision, parseConstraints(next, current.input), request.signal);
-        if (request.signal.aborted) return;
-        current = { ...current, ...saved };
-        undo.current = change.kind === 'UNDO' ? null : { constraints: before, change };
-        setCanUndo(!!undo.current);
+      reload = false;
+      if (current.revision !== original.revision) setUndo(null);
+      if (draft) {
+        const before = constraintsFrom(original.input);
+        if (!sameConstraints(draft, constraintsFrom(current.input))) {
+          // Only the revision against which the draft was prepared can accept a full replacement.
+          if (current.revision !== original.revision) {
+            throw new ApiFailure(409, 'STALE_INPUT', '다른 기기에서 여행 정보가 바뀌었어요. 다시 계산한 뒤 변경을 적용해 주세요.');
+          }
+          const saved = await api.saveConstraints(tripId, original.revision, parseConstraints(draft, current.input), request.signal);
+          if (request.signal.aborted) return;
+          current = { ...current, ...saved };
+        }
+        if (!sameConstraints(draft, before)) {
+          setUndo(change.kind === 'UNDO' ? null : { revision: current.revision, constraints: before, change });
+        }
+        // Acknowledged PUT or observed the desired saved state after an ambiguous failure.
+        draft = null;
       }
       setState(value => ({ ...value, view: current }));
       const generated = await api.generate(tripId, request.signal);
@@ -103,7 +116,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
       if (request.signal.aborted) return;
       const fields = Object.values(fieldErrors(failure));
       const stale = failure instanceof ApiFailure && failure.code === 'STALE_INPUT';
-      setState(value => ({ ...value, phase: { kind: 'failed', change, stale,
+      setState(value => ({ ...value, phase: { kind: 'failed', change, reload: reload || stale || !!draft, draft: stale ? null : draft,
         message: fields.length ? fields.join(' ') : errorMessage(failure) } }));
     } finally {
       if (pending.current === request) pending.current = null;
@@ -113,11 +126,14 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
   return {
     ...state, canUndo,
     /** Save `next` (when it differs from the saved input) and recalculate. */
-    apply: (change: Change, next: Constraints) => { void run(change, next); },
-    /** 3-9 "다시 계산": POST only, after re-reading the input when it changed elsewhere. */
-    retry: () => { void run({ kind: 'RETRY' }, null); },
+    apply: (change: Change, next: Constraints) => { if (state.phase.kind === 'idle') void run(change, next); },
+    retry: () => {
+      if (state.phase.kind !== 'failed') return;
+      const { change, draft } = state.phase;
+      void run(draft ? change : { kind: 'RETRY' }, draft);
+    },
     /** 3-8 "변경 취소" / toast "되돌리기": restore the constraints saved before the last change. */
-    revert: () => { if (undo.current) void run({ kind: 'UNDO', of: undo.current.change }, undo.current.constraints); },
+    revert: () => { if (canUndo && state.phase.kind === 'idle') void run({ kind: 'UNDO', of: undo.change }, undo.constraints); },
     dismissNotice,
   };
 }

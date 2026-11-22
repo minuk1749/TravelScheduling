@@ -92,7 +92,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   const chooseDate = (date: string) => { setSheet(null); select(selectDate(date)); };
   const selectMarker = (id: string) => {
-    if (wishes.some(wish => wish.visitId === id)) { if (!calculating) setSheet({ kind: 'WISH', visitId: id, date: day.date }); return; }
+    if (wishes.some(wish => wish.visitId === id)) { if (phase.kind === 'idle') setSheet({ kind: 'WISH', visitId: id, date: day.date }); return; }
     const index = day.cards.findIndex(item => item.visitId === id);
     if (index >= 0) select({ date: day.date, index });
   };
