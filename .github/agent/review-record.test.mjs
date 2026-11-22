@@ -29,6 +29,28 @@ test('approval requires evidence and cannot contain unresolved criteria or defec
   assert.throws(() => validateReview({ ...changes, verdict: 'approve' }), /수정 항목/);
 });
 
+test('Claude review publishes the original valid verdict and retries only a rejected record', (t) => {
+  const cwd = sandbox(t);
+  const workflow = readFileSync(join(here, '../workflows/agent-review.yml'), 'utf8');
+  const block = workflow.match(/run: &validate_review \|\n((?:          [^\n]*\n)+)/)[1];
+  const script = block.replace(/^          /gm, '');
+  const check = (review) => spawnSync('bash', ['-eu', '-c', script], {
+    cwd: join(here, '../..'), env: { ...process.env, RUNNER_TEMP: cwd, RESULT: JSON.stringify(review) },
+  });
+  const optionalDevice = { criterion: 'Optional device test', source: 'Not required for the adapter task', status: 'unverified', method: 'unverified' };
+  const artifact = join(cwd, 'claude-review.json');
+  for (const invalid of [{ ...approval, evidence: [...approval.evidence, optionalDevice] }, { ...incomplete, verdict: 'approve' }]) {
+    assert.notEqual(check(invalid).status, 0);
+    assert.throws(() => readFileSync(artifact), { code: 'ENOENT' });
+  }
+  for (const valid of [changes, incomplete, { ...approval, notes: optionalDevice.source }]) {
+    assert.equal(check(valid).status, 0);
+    assert.equal(readFileSync(artifact, 'utf8'), JSON.stringify(valid));
+  }
+  assert.match(workflow, /if: steps\.validate_review\.outcome == 'failure'\s+uses: anthropics\/claude-code-action@v1\s+with: \*review_invocation/);
+  assert.match(workflow, /steps\.retry_claude\.outputs\.structured_output }}\s+run: \*validate_review/);
+});
+
 test('the test record must match the target PR, commit and workflow attempt', () => {
   assert.equal(validateRequest(request, { pr: 12, head, run: 45, attempt: 2 }), request);
   assert.throws(() => validateRequest({ ...request, tests: 'failed' }, {}), /기록이 잘못/);
