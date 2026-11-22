@@ -139,8 +139,8 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 ## T19 구간 경로 모양 연결
 
-- GET `/api/trips/[id]/itinerary/shapes?inputHash=` → `route-shapes/http.ts`(인증·소유권·해시 검증) → `RouteShapeService` → `PostgresRouteShapeRepository`·`PlaceProvider.location`·`RouteShapeProvider`.
-- `repositories/route-shapes.ts`는 소유자·최신 저장 해시·현재 입력을 read-only repeatable-read 트랜잭션으로 읽고 `shared-itinerary.ts`의 기존 복원을 재사용한다. 스키마·저장 동작은 바꾸지 않는다.
+- GET `/api/trips/[id]/itinerary/shapes`(필수 `inputHash`, 선택 `itineraryId`) → `route-shapes/http.ts`(인증·소유권·쿼리 검증) → `RouteShapeService` → `PostgresRouteShapeRepository`·`PlaceProvider.location`·`RouteShapeProvider`.
+- `repositories/route-shapes.ts`는 소유자·현재 입력·여행의 최신 저장 일정을 read-only repeatable-read 트랜잭션에서 확인한다. 지도와 공유 링크 모두 `shared-itinerary.ts`로 선택한 행의 구간을 복원한다. 지도 성공 응답에는 그 행의 ID가 들어가며, 현재 해시에 다른 ID를 지정하면 409 `RESULT_UNAVAILABLE`이다.
 - `travel-time/shapes.ts`는 이동시간과 분리된 포트, `google-shapes.ts`는 polyline 전용 어댑터다. 기존 이동시간 어댑터와 `google-client.ts`의 HTTP·요청 옵션·오류 정규화를 공유한다. 모양 캐시는 없다.
 - DTO는 `packages/core/src/contracts/route-shapes.ts`. 서비스는 DAY·AIRPORT 구간 순서를 유지하고 요청당 최대 4개 구간을 처리한다. 좌표만 요청 안에서 중복 조회를 합치며 모양 응답은 재사용하지 않는다.
 - T18 병행 작업과의 인증 연결·검증 범위는 [T19 결정](decisions/T19-route-shapes.md), 저장 정책은 [ADR 0005](decisions/0005-travel-time-provider-and-cache.md)를 따른다.

@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import type { ShareRepository, SharedSnapshot } from '../sharing/model';
 import { loadTripInputs } from './trip-snapshot';
-import { readSharedResult } from './shared-itinerary';
+import { readLatestItinerary, readSharedResult } from './shared-itinerary';
 
 export class PostgresShareRepository implements ShareRepository {
   constructor(private readonly pool: Pool) {}
@@ -23,7 +23,9 @@ export class PostgresShareRepository implements ShareRepository {
       if (!trip) return null;
       const loaded = await loadTripInputs(client, trip.id);
       if (loaded?.status !== 'READY') return 'UNAVAILABLE';
-      const result = await readSharedResult(client, loaded.input, loaded.inputHash);
+      const stored = await readLatestItinerary(client, trip.id);
+      if (!stored || stored.input_hash !== loaded.inputHash) return 'UNAVAILABLE';
+      const result = await readSharedResult(client, stored, loaded.input.timeZone);
       return result ? { input: loaded.input, result } : 'UNAVAILABLE';
     } finally {
       try { await client.query('ROLLBACK'); } finally { client.release(); }
