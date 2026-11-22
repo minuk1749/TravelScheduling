@@ -60,11 +60,11 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     setPicked(current);
   }
   const select = (selection: Selection) => setPicked(pick(days, shown, selection));
-  const selection = current.selection;
-  const day = dayOf(days, selection)!;
-  const card = selectedCard(days, selection);
-
+  const day = dayOf(days, current.selection)!;
   const [sheet, setSheet] = useState<Sheet | null>(null);
+  const editSelection = sheet?.kind === 'EDIT' ? findVisit([day], sheet.visitId) : null;
+  const selection = editSelection ?? current.selection;
+  const card = selectedCard(days, selection);
   // "이전 일정 보기" applies to the failure it was pressed for, not to a later one.
   const [previousFor, setPreviousFor] = useState<typeof phase | null>(null);
   // A timeline opened before or after this failure also counts as viewing the last successful result.
@@ -87,9 +87,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const placed = placedVisitIds(days);
   const wishes = view.input.visits.filter(visit => visit.priority === 'WISH' && !placed.has(visit.id))
     .map(visit => ({ visitId: visit.id, name: placeName(view, visit.place.id) }));
-  const editing = sheet?.kind === 'EDIT' ? day.cards.find(item => item.visitId === sheet.visitId) ?? null : null;
-  const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editing ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
-  const scene = mapScene({ view, day, card: editing ?? card, focus, placed, shapes, causes,
+  const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editSelection ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
+  const scene = mapScene({ view, day, card, focus, placed, shapes, causes,
     pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
   const constraints = constraintsFrom(view.input);
   const editOf = (visitId: string) => constraints.visits.find(visit => visit.id === visitId)!;
@@ -122,7 +121,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   return <View style={styles.screen}>
     <ResultMap markers={scene.markers} routes={scene.routes} focusDate={day.date} focusIds={scene.focusIds}
-      selectedId={sheet?.kind === 'WISH' ? sheet.visitId : (editing ?? card)?.visitId ?? null} topInset={insets.top} bottomInset={insets.bottom}
+      selectedId={sheet?.kind === 'WISH' ? sheet.visitId : card?.visitId ?? null} topInset={insets.top} bottomInset={insets.bottom}
       dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}
       onLayout={event => { const top = event.nativeEvent.layout.height; setInsets(value => ({ ...value, top })); }}>
@@ -153,12 +152,13 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       previous={showPrevious} onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
       select={visitId => { setSheet(null); const found = findVisit([day], visitId); if (found) select(found); }} />}
-    {sheet?.kind === 'EDIT' && editing && <EditSheet view={view} card={editing} days={days} current={editOf(editing.visitId)}
+    {editSelection && card && <EditSheet view={view} card={card} days={days} current={editOf(card.visitId)}
       day={day} close={() => setSheet(null)}
       apply={edit => {
+        select(editSelection);
         setSheet(null);
         const before = editOf(edit.id);
-        const previousDate = editing.start ? day.date : before.fixedDate;
+        const previousDate = card.start ? day.date : before.fixedDate;
         const placementOrder = { before: before.fixedOrder, after: edit.fixedOrder };
         itinerary.apply({ kind: 'VISIT', visitId: edit.id, date: edit.fixedDate, previousDate, placementOrder }, withVisit(constraints, edit));
       }} />}

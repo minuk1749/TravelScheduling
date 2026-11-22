@@ -36,15 +36,18 @@ test('3-8: a conflicting fix selects the cause card, fades every leg, draws the 
 
   await press('지도 도쿄 국립박물관');
   expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: '1번 도쿄 국립박물관, 11:00부터 12:00까지', selected: true })).toBeVisible();
   await press('아메요코 시장 고정 수정');
   expect(sheet().getByRole('header', { name: '아메요코 시장' })).toBeVisible();
   expect(sheet().getByLabelText('순서 고정')).toHaveProp('value', true);
+  expect(screen.getByRole('button', { name: '2번 아메요코 시장, 13:20부터 14:05까지', selected: true })).toBeVisible();
   expect(screen.getByRole('button', { name: '지도 아메요코 시장', selected: true })).toBeVisible();
   expect(Object.entries(routes()).filter(([, route]) => / STRONG /.test(route)).map(([id]) => id)).toEqual([
     legId(D1, 'museum', 'market'), legId(D1, 'market', 'hotel'),
   ]);
   expect(routes()['conflict:1']).toBeUndefined();
   await fireEvent.press(sheet().getByRole('button', { name: '취소' }));
+  expect(screen.getByRole('button', { name: '1번 도쿄 국립박물관, 11:00부터 12:00까지', selected: true })).toBeVisible();
   expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
   expect(routes()['conflict:1']).toMatch(/ CONFLICT /);
   expect(Object.values(routes()).some(route => / STRONG /.test(route))).toBe(false);
