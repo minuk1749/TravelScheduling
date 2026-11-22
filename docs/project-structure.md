@@ -16,7 +16,7 @@ npm run build          # 앱 iOS·Android export + 서버/PWA + core·토큰 JS/
 npm test               # 앱·서버·core·토큰 전체 (DB는 DATABASE_URL 필요, PWA는 build 먼저)
 ```
 
-CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순서로 실행한다. 자동 작업 PR의 검사와 머지 기록은 [자동 협업 루프](agent-loop.md#리뷰-판정과-머지)를 참고한다.
+CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순서로 실행한다. Claude 작업은 구현·검증·게시를 각각 별도 러너에서 실행한다. 검증 러너가 확인한 Git 커밋을 게시 러너가 같은 번들에서 읽어 PR에 올린다. 자동 작업 PR의 검사와 머지 기록은 [자동 협업 루프](agent-loop.md#리뷰-판정과-머지)를 참고한다.
 
 ## 모듈과 책임
 

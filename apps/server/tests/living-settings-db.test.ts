@@ -37,7 +37,10 @@ test('T11 DB round trip, atomic rollback, ownership, stale update and fixed cons
       assert.deepEqual((await client.query('SELECT * FROM trip_places WHERE trip_id=$1 ORDER BY id', [id])).rows, fixedBefore);
       const denied = (status: number) => (error: unknown) => error instanceof SettingsError && error.status === status;
       await assert.rejects(repository.load(id, 'other'), denied(403));
-      await assert.rejects(repository.load('not-a-uuid', owner), denied(404));
+      for (const missing of ['not-a-uuid', id.replaceAll('-', ''), randomUUID()]) {
+        await assert.rejects(repository.load(missing, owner), denied(404));
+        await assert.rejects(repository.save(missing, owner, saved.snapshot.revision, draft), denied(404));
+      }
       await assert.rejects(repository.save(id, 'other', saved.snapshot.revision, draft), denied(403));
       await assert.rejects(repository.save(id, owner, initial.revision, draft), error => denied(409)(error) && (error as SettingsError).code === 'STALE_INPUT');
       const invalid = structuredClone(draft); invalid.taxiPolicy = 'PREFER'; invalid.days.push(invalid.days[0]);

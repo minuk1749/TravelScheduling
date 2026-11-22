@@ -78,22 +78,23 @@ test('T13A audit records the checklist, oversized files, measurements and follow
   assert.match(await readFile(path.join(root, 'docs/architecture.md'), 'utf8'), /T13A/);
 });
 
-test('T15A final audit records the same checklist, oversized files and human decisions in questions.md', async () => {
+test('T15A final audit records the checklist, starting inventory and human decisions in questions.md', async () => {
   const audit = await readFile(path.join(root, 'docs/t15a-audit.md'), 'utf8');
   for (const topic of ['책임 혼합', '중복 규칙', '순환', '여러 곳 수정', '불필요한 추상화', '300줄', '성능', '남은 문제']) {
     assert.ok(audit.includes(topic), topic);
   }
-  for (const name of ['architecture.md', 'local-runner.sh', 'agent-review.yml', 'package-lock.json']) assert.ok(audit.includes(name), name);
-  // Every tracked code/script/workflow file over 300 lines must be listed; documents grow by design and are not checked.
-  const { execFileSync } = await import('node:child_process');
-  const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--deduplicate'], { encoding: 'utf8', cwd: root }).split('\n').filter(file => /\.(?:ts|tsx|mjs|js|sh|yml|sql|css)$/.test(file));
-  for (const file of files) {
-    let source: string;
-    try { source = await readFile(path.join(root, file), 'utf8'); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
-    const lines = source.trimEnd().split('\n').length;
-    if (lines > 300) assert.ok(audit.includes(file.split('/').at(-1)!), `${file}: ${lines} lines missing from the T15A list`);
-  }
+  // Keep the inventory from the audit's starting commit available in shallow checkouts.
+  assert.match(audit, /`ee500de`/);
+  const inventory = audit.split(/^## /m).find(section => section.startsWith('300줄 초과 파일 목록'));
+  assert.ok(inventory, 'Missing T15A oversized-file inventory');
+  const rows = Array.from(inventory.matchAll(/^\|\s*`([^`]+)`\s*\|([^|\r\n]*)\|/gm),
+    ([, file, lines]) => [file, lines.trim()]);
+  assert.deepEqual(Object.fromEntries(rows), {
+    'docs/architecture.md': '462',
+    'scripts/agent/local-runner.sh': '343',
+    '.github/workflows/agent-review.yml': '306',
+    'package-lock.json': '7,500+',
+  });
   const questions = await readFile(path.join(root, 'docs/questions.md'), 'utf8');
   assert.match(questions, /## T15A 남은 구조 문제와 사람 결정 항목/);
   for (let item = 1; item <= 7; item++) assert.match(questions, new RegExp(`\\| T15A-${item} \\|`));

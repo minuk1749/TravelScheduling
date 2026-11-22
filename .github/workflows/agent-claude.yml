@@ -1,10 +1,5 @@
-# Claude 작업: Claude가 담당 작업(T번호, 작업표 담당=claude)이나 리팩터링(R번호)을 수행하고 PR을 올린다.
-#
-# 실행 시점: agent-start가 담당이 claude인 작업을 시작할 때, 리뷰가 리팩터링을 제안했을 때,
-#            Claude PR에 수정 요청이 나왔을 때(모두 자동), 또는 사람이 이슈 번호로 수동 실행.
-# PR은 사용자 토큰(USER_PAT)으로 올리고 owner-claude 라벨을 붙인다 → agent-review가 테스트 후 Codex 리뷰를 요청한다.
-# Claude 단계에는 USER_PAT을 넘기지 않는다.
-# 실패하면 작업을 일시중단한다. 이전 버전의 wip 브랜치는 이어서 작업할 수 있다.
+# Claude 구현과 PR 게시. 구현·검증·게시 잡은 별도 러너에서 실행한다.
+# 검증한 커밋만 USER_PAT로 게시한다. 중단 시에는 같은 작업·PR·원래 HEAD에 묶인 WIP를 보관한다.
 name: agent-claude
 
 on:
@@ -28,14 +23,20 @@ permissions:
 
 jobs:
   claude:
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     # 최대 400턴(xhigh)을 마칠 수 있도록 여유를 둔다
     timeout-minutes: 150
+    outputs:
+      wip: ${{ steps.upload.outcome == 'success' && (steps.candidate.outputs.wip || steps.bundle.outputs.wip) || '' }}
+      attempt: ${{ github.run_attempt }}
     permissions:
+      # check-pr.mjs가 읽는 statusCheckRollup의 workflowName(checkSuite.workflowRun)은 actions 읽기 권한이 필요하다
+      actions: read
       checks: read
       statuses: read
       contents: read
-      issues: write
+      issues: read
       pull-requests: read
       id-token: write
     services:
@@ -59,25 +60,20 @@ jobs:
         run: |
           set -euo pipefail
           out() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+          [[ $ISSUE =~ ^[0-9]+$ && ( -z $PR || $PR =~ ^[0-9]+$ ) ]] || exit 1
           title=$(gh issue view "$ISSUE" --json title --jq .title)
           id=$(grep -oE '^(T[0-9]+[A-Z]?|R[0-9]+)' <<<"$title" || true)
           if [ -z "$id" ]; then echo "::error::이슈 제목이 T번호나 R번호로 시작하지 않음: $title"; exit 1; fi
           out id "$id"
-          case "$id" in R*) out kind refactor; suffix=refactor;; *) out kind implement; suffix=claude;; esac
+          case "$id" in R*) out kind refactor;; *) out kind implement;; esac
           out title "${title#*: }"
           if [ -n "$PR" ]; then
-            pr_info=$(gh pr view "$PR" --json headRefName,headRefOid)
-            out branch "$(jq -r .headRefName <<<"$pr_info")"
+            pr_info=$(gh pr view "$PR" --json headRefOid)
             out head "$(jq -r .headRefOid <<<"$pr_info")"
             n=$(gh pr view "$PR" --json comments --jq '[.comments[] | select(.body | contains("<!-- agent-feedback"))] | length')
             out round "$((n + 1))"
           else
-            out branch "$(tr 'A-Z' 'a-z' <<<"$id")-$suffix"
             out round 1
-            # 이전 실행이 중단되며 남긴 작업이 있으면 가장 최근 것에서 이어서 한다
-            wip=$(gh api "repos/$GH_REPO/git/matching-refs/heads/wip/$(tr 'A-Z' 'a-z' <<<"$id")-" --jq '.[].ref' | sed 's#^refs/heads/##' | sort -V | tail -1)
-            out wip "$wip"
-            if [ -n "$wip" ]; then echo "::notice::이전 실행의 중단 작업($wip)에서 이어서 한다"; fi
           fi
           gh issue view "$ISSUE" --json body --jq .body > "$RUNNER_TEMP/items.md"
           if [ -n "$PR" ]; then
@@ -86,12 +82,12 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.pr != '' && steps.info.outputs.head || steps.info.outputs.wip || 'develop' }}
+          ref: ${{ steps.info.outputs.head || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/checkout@v5
         with:
-          ref: develop
+          ref: ${{ github.sha }}
           path: .ctl
           persist-credentials: false
       - uses: actions/setup-node@v5
@@ -110,17 +106,26 @@ jobs:
             table=.ctl/docs/tasks.md
             [ "$(node .ctl/.github/agent/tasks.mjs get "$ID" 담당 --file "$table")" = claude ]
             state=$(node .ctl/.github/agent/tasks.mjs get "$ID" 상태 --file "$table")
-            [[ "$state" = 진행중 || "$state" = 리뷰 ]]
+            [[ "$state" = 진행중 || "$state" = 리뷰 ]] || exit 1
           fi
           if [ -n "$PR" ]; then node .ctl/.github/agent/check-pr.mjs "$GH_REPO" "$PR" "$HEAD_SHA" claude; fi
+      - name: Restore interrupted work
+        id: resume
+        env:
+          ID: ${{ steps.info.outputs.id }}
+          HEAD_SHA: ${{ steps.info.outputs.head }}
+        run: |
+          set -euo pipefail
+          # 작업 PR/복구 후보가 아닌 이 워크플로를 정의한 커밋의 코드를 실행한다.
+          git show "$GITHUB_SHA:.github/agent/claude-wip.sh" | bash -s -- restore
       - name: Merge develop (fix round or resumed work)
         id: merge
-        if: inputs.pr != '' || steps.info.outputs.wip != ''
+        if: inputs.pr != '' || steps.resume.outputs.wip != ''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 동시에 진행된 다른 작업을 반영한다. 충돌이 나면 충돌 표시를 남겨 Claude가 해결한다
-          if git merge -q --no-ff --no-commit origin/develop; then echo "conflict=false" >> "$GITHUB_OUTPUT"; else echo "conflict=true" >> "$GITHUB_OUTPUT"; fi
+          if git merge -q --no-ff --no-commit "$GITHUB_SHA"; then echo "conflict=false" >> "$GITHUB_OUTPUT"; else echo "conflict=true" >> "$GITHUB_OUTPUT"; fi
       - name: Install dependencies
         run: |
           npm ci --no-audit --no-fund
@@ -133,7 +138,7 @@ jobs:
           ROUND: ${{ steps.info.outputs.round }}
           KIND: ${{ steps.info.outputs.kind }}
           CONFLICT: ${{ steps.merge.outputs.conflict || 'false' }}
-          WIP: ${{ steps.info.outputs.wip }}
+          WIP: ${{ steps.resume.outputs.wip }}
         run: |
           set -euo pipefail
           if [ "$KIND" = refactor ]; then tpl=refactor.md; head="리팩터링 항목"; mk=claude-refactor; else tpl=claude-implement.md; head="작업 지시 (이슈 본문)"; mk=claude-implement; fi
@@ -167,84 +172,17 @@ jobs:
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git add:*),Bash(git rm:*)"
             --disallowedTools "NotebookEdit"
 
-      - name: Stage and verify candidate
+      - name: Prepare candidate
+        id: candidate
         env:
-          PG_SERVICE: ${{ job.services.postgres.id }}
-        run: |
-          set -euo pipefail
-          git add -A
-          bash .ctl/.github/agent/stage-work.sh
-          # 커밋할 파일만 전달한다. 검사 컨테이너에는 저장소 토큰·러너 디렉터리를 마운트하지 않는다.
-          candidate="$RUNNER_TEMP/candidate"
-          mkdir "$candidate"
-          git checkout-index --all --prefix="$candidate/"
-          network=$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' "$PG_SERVICE")
-          git -C .ctl show HEAD:.github/agent/check-required.sh > "$RUNNER_TEMP/check-required.sh"
-          stop_token=$(cat /proc/sys/kernel/random/uuid)
-          echo "::stop-commands::$stop_token"
-          trap 'echo "::$stop_token::"' EXIT
-          docker run --rm --network "$network" \
-            -e DATABASE_URL=postgresql://postgres:postgres@postgres:5432/app \
-            -v "$candidate:/source:ro" -v "$RUNNER_TEMP/check-required.sh:/check-required.sh:ro" \
-            -w /candidate node:24-bookworm bash -ec 'cp -R /source/. . && git init -q && git add -A && bash /check-required.sh --e2e'
-
-      - name: Commit, push and open PR
-        id: publish
-        env:
-          GH_TOKEN: ${{ secrets.USER_PAT }}
-          GH_REPO: ${{ github.repository }}
           ID: ${{ steps.info.outputs.id }}
+          BASE_SHA: ${{ steps.resume.outputs.base }}
           TITLE: ${{ steps.info.outputs.title }}
-          BRANCH: ${{ steps.info.outputs.branch }}
           ROUND: ${{ steps.info.outputs.round }}
           EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
-          HEAD_SHA: ${{ steps.info.outputs.head }}
-          WIP: ${{ steps.info.outputs.wip }}
         run: |
           set -euo pipefail
-          if [ -z "$GH_TOKEN" ]; then echo "::error::USER_PAT 시크릿이 없음"; exit 1; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          check_target() {
-            if [ -n "$PR" ]; then node .ctl/.github/agent/check-pr.mjs "$GH_REPO" "$PR" "$HEAD_SHA" claude; fi
-          }
-          check_target
-          # 이어서 한 작업(wip)은 이전 커밋이 있으므로 이번 실행에 새 변경이 없어도 PR을 올린다
-          if git diff --cached --quiet && [ ! -f .git/MERGE_HEAD ] && { { [ -z "$PR" ] && [ -z "$WIP" ]; } || { [ -n "$PR" ] && [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ]; }; }; then
-            gh issue comment "$ISSUE" --body "Claude가 변경 없이 종료했습니다(라운드 $ROUND). 사람이 확인해 주세요."
-            gh issue edit "$ISSUE" --add-label needs-human
-            exit 0
-          fi
-          if ! git diff --cached --quiet || [ -f .git/MERGE_HEAD ]; then
-            git commit -q -m "$ID: $TITLE (round $ROUND)" -m "Claude 작업, agent-claude 자동 커밋"
-          fi
-
-          # Claude 최종 메시지 → PR 설명/댓글
-          msg=""
-          if [ -n "${EXEC_FILE:-}" ] && [ -f "$EXEC_FILE" ]; then
-            msg=$(jq -r 'if type=="array" then (map(select(.type=="result")) | last | .result // "") else (.result // "") end' "$EXEC_FILE" 2>/dev/null || true)
-          fi
-          printf '%s\n\n---\n작업 이슈: #%s · 구현: Claude · 리뷰: Codex\n' "${msg:-(최종 메시지 없음)}" "$ISSUE" > "$RUNNER_TEMP/body.md"
-
-          remote="https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
-          # 강제 푸시는 쓰지 않는다. 새 작업인데 같은 이름의 브랜치가 이미 있으면(이전 실패 흔적) 새 이름을 쓴다
-          if [ -z "$PR" ] && git ls-remote --exit-code --heads "$remote" "$BRANCH" >/dev/null 2>&1; then
-            BRANCH="$BRANCH-$GITHUB_RUN_NUMBER"
-          fi
-          check_target
-          git push -q "$remote" "HEAD:refs/heads/$BRANCH"
-          if [ -z "$PR" ]; then
-            gh label create owner-claude --color fbca04 --description "Claude가 구현한 PR (Codex가 리뷰)" --force >/dev/null
-            gh pr create --base develop --head "$BRANCH" --title "$ID: $TITLE" --label owner-claude --body-file "$RUNNER_TEMP/body.md"
-            # PR에 들어간 중단 작업 브랜치는 더 쓰지 않으므로 지운다
-            for w in $(gh api "repos/$GH_REPO/git/matching-refs/heads/wip/$(tr 'A-Z' 'a-z' <<<"$ID")-" --jq '.[].ref' | sed 's#^refs/heads/##'); do
-              git push -q "$remote" --delete "$w" || true
-            done
-          else
-            { echo "**Claude 수정 (라운드 $ROUND)**"; echo; cat "$RUNNER_TEMP/body.md"; } | gh pr comment "$PR" --body-file -
-            # PR 설명도 최신 보고로 바꾼다. 리뷰어는 PR 설명을 작성자의 주장으로 읽기 때문에 처음 설명이 남아 있으면 실제와 어긋난다
-            gh pr edit "$PR" --body-file "$RUNNER_TEMP/body.md" >/dev/null
-          fi
+          git show "$GITHUB_SHA:.github/agent/claude-wip.sh" | bash -s -- candidate
 
       - name: Show Claude failure reason
         if: failure() && steps.claude.outputs.execution_file != ''
@@ -256,13 +194,104 @@ jobs:
           jq -r 'if type=="array" then . else [.] end
                  | (map(select(.type=="result")) | last | {subtype, is_error, num_turns, result: ((.result // "") | tostring | .[0:1500])}),
                    (map(select(.type=="assistant")) | last | .message.content // [] | map(select(.type=="text") | .text) | join("\n") | .[0:1500])' "$EXEC_FILE" || true
-      - name: Pause on failure
-        if: failure() || cancelled()
+      - name: Prepare interrupted candidate
+        id: bundle
+        if: (failure() || cancelled()) && steps.claude.outcome != '' && steps.claude.outcome != 'skipped'
+        env:
+          ID: ${{ steps.info.outputs.id }}
+          BASE_SHA: ${{ steps.resume.outputs.base }}
+        run: |
+          set -euo pipefail
+          git show "$GITHUB_SHA:.github/agent/claude-wip.sh" | bash -s -- bundle
+      - uses: actions/upload-artifact@v4
+        id: upload
+        if: always() && (steps.candidate.outputs.wip != '' || steps.bundle.outputs.wip != '')
+        with:
+          name: claude-wip-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/claude-wip.bundle
+            ${{ runner.temp }}/claude-report.md
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    needs: claude
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.verify.outputs.commit }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: control
+      - uses: actions/download-artifact@v4
+        with:
+          name: claude-wip-${{ needs.claude.outputs.attempt }}
+          path: ${{ runner.temp }}/archive
+      - name: Verify bundled candidate
+        id: verify
+        env:
+          ISSUE: ${{ inputs.issue }}
+          PR: ${{ inputs.pr }}
+          WIP: ${{ needs.claude.outputs.wip }}
+          ATTEMPT: ${{ needs.claude.outputs.attempt }}
+          PG_SERVICE: ${{ job.services.postgres.id }}
+        run: |
+          bash control/.github/agent/claude-candidate.sh verify
+
+  publish:
+    needs: [claude, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      checks: read
+      statuses: read
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          path: control
+      - uses: actions/download-artifact@v4
+        with:
+          name: claude-wip-${{ needs.claude.outputs.attempt }}
+          path: ${{ runner.temp }}/archive
+      - name: Publish verified commit
         env:
           GH_TOKEN: ${{ github.token }}
+          USER_PAT: ${{ secrets.USER_PAT }}
           GH_REPO: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ISSUE: ${{ inputs.issue }}
+          PR: ${{ inputs.pr }}
+          WIP: ${{ needs.claude.outputs.wip }}
+          ATTEMPT: ${{ needs.claude.outputs.attempt }}
+          VERIFIED_COMMIT: ${{ needs.verify.outputs.commit }}
         run: |
-          gh label create agent-paused --color b60205 --description "자동 루프 일시중단" --force >/dev/null
-          printf 'Claude 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. **원인을 해결한 뒤 이 이슈를 닫으면 같은 Claude 작업이 자동으로 다시 실행됩니다.**\n\n<!-- resume:claude issue=%s pr=%s -->\n' "$ISSUE" "$RUN_URL" "$ISSUE" "$PR" > "$RUNNER_TEMP/p.md"
-          gh issue create --title "자동 루프 일시중단: Claude 작업 #$ISSUE" --label agent-paused --body-file "$RUNNER_TEMP/p.md"
+          bash control/.github/agent/claude-candidate.sh publish
+
+  interrupted:
+    needs: [claude, verify, publish]
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    permissions:
+      contents: write
+      issues: write
+    uses: ./.github/workflows/agent-claude-interrupted.yml
+    with:
+      issue: ${{ inputs.issue }}
+      pr: ${{ inputs.pr }}
+      wip: ${{ needs.claude.outputs.wip }}
+      attempt: ${{ needs.claude.outputs.attempt }}
