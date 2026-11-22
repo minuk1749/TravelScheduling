@@ -13,7 +13,7 @@ test('00:30 departure has a flight on day 3 and a previous-night transfer editab
   const input = { ...view.input, flights: [...view.input.flights, { direction: 'DEPARTURE' as const,
     airport: view.input.flights[0].airport, localDateTime: D3 + 'T00:30' }] };
   const airport = place('airport');
-  const f = resultFixture({ ...view, input, places: { ...view.places, [airport]: { ...view.places[airport],
+  const f = resultFixture({ ...view, input, places: { ...view.places, [airport]: { ...view.places[airport]!,
     attributions: [{ provider: 'Haneda Airport', providerUri: 'https://example.org/airport' }] } } });
   const data = plan();
   data.comparisons.push({ ...data.comparisons[0], date: D3, departure: '2026-12-04T12:10:00Z',
