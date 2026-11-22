@@ -150,8 +150,10 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       day={day} close={() => setSheet(null)}
       apply={edit => {
         setSheet(null);
-        const previousDate = editing.start ? day.date : editOf(edit.id).fixedDate;
-        itinerary.apply({ kind: 'VISIT', visitId: edit.id, date: edit.fixedDate, previousDate }, withVisit(constraints, edit));
+        const before = editOf(edit.id);
+        const previousDate = editing.start ? day.date : before.fixedDate;
+        const placementOrder = { before: before.fixedOrder, after: edit.fixedOrder };
+        itinerary.apply({ kind: 'VISIT', visitId: edit.id, date: edit.fixedDate, previousDate, placementOrder }, withVisit(constraints, edit));
       }} />}
     {sheet?.kind === 'WISH' && <WishSheet wishes={wishes} visitId={sheet.visitId} date={sheet.date} days={days}
       onChoose={sheet.chooseVisit ? visitId => setSheet({ ...sheet, visitId }) : undefined}

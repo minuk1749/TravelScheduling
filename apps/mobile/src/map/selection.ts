@@ -97,12 +97,23 @@ export function pendingLegKeys(days: readonly DayModel[], change: Change | null,
   const placed = findVisit(days, change.visitId);
   const card = placed && selectedCard(days, placed);
   const keys = visitLegKeys(card);
-  const destination = reversing ? change.previousDate : change.date;
-  if (destination && !(card?.start && placed?.date === destination)) {
-    // The scheduler chooses the insertion point. The day's visit legs may change, while
-    // airport transfers are calculated separately from the day's place order.
-    const target = days.find(day => day.date === destination);
-    for (const leg of target?.legs ?? []) if (leg.kind === 'DAY') keys.add(leg.key);
+  const requestedDate = reversing ? change.previousDate : change.date;
+  const targetDate = requestedDate ?? (change.kind === 'VISIT' ? placed?.date : null);
+  const target = days.find(day => day.date === targetDate);
+  if (!target) return keys;
+  const order = change.kind === 'VISIT' && change.placementOrder
+    ? change.placementOrder[reversing ? 'before' : 'after'] : undefined;
+  if (!card?.start || placed?.date !== targetDate || order === null) {
+    // A visit without a confirmed insertion point may replace any visit leg on that date.
+    for (const leg of target.legs) if (leg.kind === 'DAY') keys.add(leg.key);
+  } else if (order !== undefined && order !== (card.number ?? 0) - 1) {
+    // Remove the old visit first. Besides its two old legs, the new position splits the
+    // existing connection from the preceding stop to the following stop (or daily anchor).
+    const others = target.cards.filter(item => item.start && item.visitId !== card.visitId);
+    const slot = Math.min(order, others.length);
+    const leaving = others[slot - 1]?.departure, arriving = others[slot]?.arrival;
+    if (leaving) keys.add(leaving.key);
+    if (arriving) keys.add(arriving.key);
   }
   return keys;
 }

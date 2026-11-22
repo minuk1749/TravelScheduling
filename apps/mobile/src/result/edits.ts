@@ -7,7 +7,8 @@ import { shiftLabel } from './format';
 /** What the user changed; also tells the map which legs are being recalculated (3-5). */
 export type Change =
   | { kind: 'MODE'; leg: { key: string; date: string; from: string; to: string }; mode: TravelModeName }
-  | { kind: 'VISIT'; visitId: string; date?: string | null; previousDate?: string | null }
+  | { kind: 'VISIT'; visitId: string; date?: string | null; previousDate?: string | null;
+      placementOrder?: { before: number | null; after: number | null } }
   | { kind: 'WISH'; visitId: string; date: string; previousDate?: string | null }
   | { kind: 'UNDO'; of: Change }
   | { kind: 'RETRY' };

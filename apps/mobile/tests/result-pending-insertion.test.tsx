@@ -61,3 +61,65 @@ test('moving a scheduled visit hides its source edges and potential insertion ed
   const reverse = pendingLegKeys(days, { kind: 'UNDO', of: { ...move, visitId: 'shrine' } });
   expect(reverse).toEqual(new Set(days.flatMap(day => day.legs.filter(leg => leg.kind === 'DAY').map(leg => leg.key))));
 });
+
+test('moving the third visit to first hides the old first arrival and restores the old schedule on undo', async () => {
+  const initial = withCafeBetweenVisits();
+  const f = resultFixture();
+  f.generate.mockResolvedValueOnce(json(trip(view.revision, initial)));
+  await openResult(f);
+  const oldFirst = legId(D1, 'hotel', 'museum'), unchanged = legId(D1, 'museum', 'cafe');
+  const airport = legId(D1, 'airport', 'hotel', 'AIRPORT');
+  await press('지도 아메요코 시장');
+  await press('이 장소 수정');
+  const sheet = within(screen.getByTestId('form-sheet'));
+  await fireEvent(sheet.getByLabelText('날짜 고정'), 'valueChange', true);
+  await fireEvent(sheet.getByLabelText('순서 고정'), 'valueChange', true);
+  await fireEvent.press(sheet.getByRole('button', { name: '순서 앞당기기' }));
+  await fireEvent.press(sheet.getByRole('button', { name: '순서 앞당기기' }));
+  expect(sheet.getByText('1번째')).toBeVisible();
+  const request = deferred<Response>();
+  f.generate.mockReturnValueOnce(request.promise);
+  await fireEvent.press(sheet.getByRole('button', { name: '적용하고 다시 계산' }));
+  await waitFor(() => expect(f.generate).toHaveBeenCalledTimes(2));
+  expect(routes()[oldFirst]).toBeUndefined();
+  expect(routes()[legId(D1, 'cafe', 'market')]).toBeUndefined();
+  expect(routes()[legId(D1, 'market', 'hotel')]).toBeUndefined();
+  expect(routes()[unchanged]).toMatch(/ STRONG /);
+  expect(routes()[airport]).toMatch(/ STRONG /);
+  await press('2일 12.4');
+  expect(routes()[legId(D2, 'hotel', 'shrine')]).toMatch(/ STRONG /);
+
+  const moved = withCafeBetweenVisits();
+  moved.comparisons = moved.comparisons.map(leg => {
+    if (leg.from === place('hotel') && leg.to === place('museum')) return { ...leg, to: place('market'), departure: at(D1, '09:15') };
+    if (leg.from === place('market')) return { ...leg, to: place('museum'), departure: at(D1, '10:30') };
+    if (leg.to === place('market')) return { ...leg, to: place('hotel') };
+    return leg;
+  });
+  moved.stops[D1] = [{ kind: 'VISIT', visitId: 'market', start: at(D1, '09:40'), end: at(D1, '10:25') },
+    ...moved.stops[D1].filter(stop => stop.kind !== 'VISIT' || stop.visitId !== 'market')];
+  await act(async () => request.resolve(json(trip(f.current().revision, moved))));
+  expect(await screen.findByRole('button', { name: '1번 아메요코 시장, 09:40부터 10:25까지', selected: true })).toBeVisible();
+  expect(routes()[legId(D1, 'hotel', 'market')]).toMatch(/ STRONG /);
+  expect(routes()[legId(D1, 'market', 'museum')]).toBeDefined();
+  expect(routes()[oldFirst]).toBeUndefined();
+
+  const undo = deferred<Response>();
+  f.generate.mockReturnValueOnce(undo.promise);
+  await press('되돌리기');
+  await waitFor(() => expect(f.generate).toHaveBeenCalledTimes(3));
+  expect(routes()[legId(D1, 'cafe', 'hotel')]).toBeUndefined();
+  expect(routes()[airport]).toMatch(/ STRONG /);
+  await act(async () => undo.resolve(json(trip(f.current().revision, initial))));
+  expect(routes()[oldFirst]).toBeDefined();
+});
+
+test('undoing a same-day reorder uses the previous fixed slot; releasing the slot leaves the destination open', () => {
+  const days = buildDays(view, trip(view.revision, withCafeBetweenVisits()), null);
+  const marketThird = { kind: 'VISIT' as const, visitId: 'market', date: D1, previousDate: D1,
+    placementOrder: { before: 0, after: 2 } };
+  const restoreFirst = pendingLegKeys(days, { kind: 'UNDO', of: marketThird });
+  expect(restoreFirst).toEqual(new Set([legId(D1, 'cafe', 'market'), legId(D1, 'market', 'hotel'), legId(D1, 'hotel', 'museum')]));
+  const release = pendingLegKeys(days, { ...marketThird, date: null, placementOrder: { before: 2, after: null } });
+  expect(release).toEqual(new Set(days[0].legs.filter(leg => leg.kind === 'DAY').map(leg => leg.key)));
+});
