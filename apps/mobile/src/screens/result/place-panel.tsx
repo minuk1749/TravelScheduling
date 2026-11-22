@@ -1,5 +1,7 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import { colors, radius, result, shadows, size, spacing, text } from '../../theme';
+import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import type { ResultMap } from '../../map/provider';
+import { ActionButton } from '../../components/action-button';
+import { colors, layout, radius, result, shadows, size, spacing, text } from '../../theme';
 import { pagerState } from '../../map/selection';
 import type { CardModel, DayModel } from '../../result/days';
 import { dateTitle, durationLabel, timeRange } from '../../result/format';
@@ -24,14 +26,37 @@ function summary(day: DayModel) {
   return `${window}장소 ${placed}곳 · 이동 ${durationLabel(day.travelMinutes)}`;
 }
 
+function CalculationSummary({ label }: { label: string }) {
+  return <View accessibilityLiveRegion="polite" style={styles.inline}>
+    <ActivityIndicator color={colors.sky.primary} />
+    <Text style={styles.summary}>{label}</Text>
+  </View>;
+}
+
+/** No completed day, place cards or legs are available during the first generation request. */
+export function InitialResult({ map: Map, back }: { map: ResultMap; back(): void }) {
+  const height = useWindowDimensions().height * result.panel.ratio;
+  return <View style={layout.screen}>
+    <Map markers={[]} routes={[]} selectedId={null} focusIds={[]} topInset={0} bottomInset={height}
+      dimmed={false} locateRequest={0} onSelectMarker={() => {}} />
+    <View testID="initial-place-panel" style={[styles.panel, { minHeight: height }]}>
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.handle} />
+      <View style={styles.dateRow}>
+        <View style={styles.flex}>
+          <Text accessibilityRole="header" style={text.title}>동선 만들기</Text>
+          <CalculationSummary label="동선을 만드는 중" />
+        </View>
+      </View>
+      <ActionButton label="저장한 여행 보기" secondary onPress={back} />
+    </View>
+  </View>;
+}
+
 function DateRow({ day, status, onSchedule }: { day: DayModel; status: PanelStatus; onSchedule(): void }) {
   return <View style={styles.dateRow}>
     <View style={styles.flex}>
       <Text accessibilityRole="header" style={text.title}>{dateTitle(day.date)}</Text>
-      {status.kind === 'CALCULATING' ? <View accessibilityLiveRegion="polite" style={styles.inline}>
-        <ActivityIndicator size="small" color={colors.sky.primary} />
-        <Text style={styles.summary}>다시 계산 중</Text>
-      </View> : status.kind === 'CONFLICT' ? <Text accessibilityRole="alert" style={[styles.summary, styles.conflict]}>
+      {status.kind === 'CALCULATING' ? <CalculationSummary label="다시 계산 중" /> : status.kind === 'CONFLICT' ? <Text accessibilityRole="alert" style={[styles.summary, styles.conflict]}>
         ⚠ 고정 조건 충돌 {status.count}건
       </Text> : <Text style={styles.summary}>{summary(day)}</Text>}
     </View>

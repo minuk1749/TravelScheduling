@@ -149,12 +149,16 @@ export function resultFixture(initial: ResultView = view) {
   return { ...f, generate, save, read, shapes, current: () => current };
 }
 
-export async function openResult(f: ReturnType<typeof resultFixture>) {
+export async function renderResult(f: ReturnType<typeof resultFixture>) {
   await renderRouter({
     _layout: () => <AuthProvider runtime={f.runtime}><MapAdapterProvider map={FakeResultMap}><RootNavigator /></MapAdapterProvider></AuthProvider>,
     login: () => null, '(app)/index': () => null, '(app)/trips/[id]/index': () => <Text>저장한 여행</Text>,
     '(app)/trips/[id]/settings': () => <Text>하루 생활</Text>, '(app)/trips/[id]/generate': Generate,
   }, { initialUrl: '/trips/trip/generate' });
+}
+
+export async function openResult(f: ReturnType<typeof resultFixture>) {
+  await renderResult(f);
   await screen.findByTestId('place-panel');
 }
 
