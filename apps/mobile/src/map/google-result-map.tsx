@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type RefObject, type ComponentRef
 import { PermissionsAndroid, Platform, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { colors, radius, result, shadows, size, spacing, text } from '../theme';
+import { useReducedMotion } from '../theme/use-reduced-motion';
+import { PlacedMapMarker } from './placed-map-marker';
 import { isMapConfigured } from './config';
 import { arcPoints, midpointHeading, offscreenSide, withAlpha } from './geometry';
 import type { LatLng, MapMarkerSpec, MapRouteSpec, ResultMapProps } from './types';
@@ -43,20 +45,13 @@ function Route({ route, dimmed }: { route: MapRouteSpec; dimmed: boolean }) {
 }
 
 function MarkerBody({ marker, selected }: { marker: MapMarkerSpec; selected: boolean }) {
-  if (marker.kind === 'PLACED') {
-    return <View style={[styles.ring, selected && styles.selectedRing]}>
-      <View style={[styles.placed, selected && styles.selectedPlaced]}>
-        <Text style={[text.tinyStrong, { color: selected ? colors.card : colors.sky.text }]}>{marker.order ?? '!'}</Text>
-      </View>
-    </View>;
-  }
   if (marker.kind === 'WISH') {
     return <View style={[styles.wish, selected && styles.selectedWish]}>
       <Text style={[text.tinyStrong, { color: colors.peach.text }]}>{ICONS.WISH} {marker.label}</Text>
     </View>;
   }
   return <View style={[styles.endpoint, marker.kind === 'AIRPORT' && styles.airport]}>
-    <Text style={[text.tinyStrong, { color: colors.card }]}>{ICONS[marker.kind]}</Text>
+    <Text style={[text.tinyStrong, { color: colors.card }]}>{marker.kind === 'AIRPORT' ? ICONS.AIRPORT : ICONS.LODGING}</Text>
   </View>;
 }
 
@@ -109,6 +104,7 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
   const [mapReady, setMapReady] = useState(false);
   const [cameraVersion, setCameraVersion] = useState(0);
   const [viewport, setViewport] = useState<MapSize>({ width: 0, height: 0 });
+  const reduced = useReducedMotion();
   const [showUser, setShowUser] = useState(false);
   const user = useRef<LatLng | null>(null);
   const permission = useRef<Promise<boolean> | null>(null);
@@ -157,9 +153,11 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
       {markers.map(marker => {
         const selected = marker.id === selectedId;
         const opacity = (dimmed ? result.route.dimOpacity * 2 : 1) * (marker.kind === 'WISH' && !selected ? result.marker.wishOpacity : 1);
+        if (marker.kind === 'PLACED') return <PlacedMapMarker key={marker.id} marker={marker} selected={selected}
+          reduced={reduced} opacity={opacity} onPress={() => onSelectMarker(marker.id)} />;
         return <Marker key={marker.id} identifier={marker.id} coordinate={marker.coordinate} anchor={{ x: 0.5, y: 0.5 }}
-          zIndex={selected ? 10 : marker.kind === 'PLACED' ? 5 : 3} opacity={opacity} tracksViewChanges={selected}
-          onPress={() => { if (marker.kind === 'PLACED' || marker.kind === 'WISH') onSelectMarker(marker.id); }}>
+          zIndex={selected ? 10 : 3} opacity={opacity} tracksViewChanges={selected}
+          onPress={() => { if (marker.kind === 'WISH') onSelectMarker(marker.id); }}>
           <MarkerBody marker={marker} selected={selected} />
         </Marker>;
       })}
@@ -172,11 +170,6 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
 
 const styles = StyleSheet.create({
   unavailable: { backgroundColor: colors.gray.divider, alignItems: 'center', justifyContent: 'center' },
-  ring: { padding: result.marker.ring, borderRadius: MARKER },
-  selectedRing: { backgroundColor: withAlpha(colors.sky.primary, 0.25), transform: [{ scale: result.marker.selectedScale }] },
-  placed: { width: MARKER, height: MARKER, borderRadius: MARKER / 2, borderWidth: 2, borderColor: colors.sky.primary,
-    backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
-  selectedPlaced: { backgroundColor: colors.sky.primary, borderColor: colors.card },
   wish: { flexDirection: 'row', paddingHorizontal: spacing.steps[1], paddingVertical: spacing.steps[0], borderRadius: radius.small,
     borderWidth: size.focusBorder, borderStyle: 'dashed', borderColor: colors.peach.marker, backgroundColor: colors.card },
   selectedWish: { backgroundColor: colors.peach.surface, borderStyle: 'solid' },
