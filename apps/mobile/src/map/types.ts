@@ -40,7 +40,7 @@ export type ResultMapProps = {
   selectedId: string | null;
   /** IDs the camera should fit (the day's places); markers outside the view get an edge label. */
   focusIds: readonly string[];
-  /** Height (pt) covered by the floating top bar and the bottom panel; used for camera fitting. */
+  /** Height (pt) covered by the floating top bar and the bottom panel; used for camera fitting and airport edge indicators. */
   topInset: number;
   bottomInset: number;
   /** 3-9: the shown result is a previous calculation; draw everything faded. */

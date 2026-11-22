@@ -112,14 +112,14 @@ export function midpointHeading(points: readonly LatLng[]): { point: LatLng; hea
   return { point: { latitude: (a.latitude + b.latitude) / 2, longitude: (a.longitude + b.longitude) / 2 }, heading };
 }
 
-export type Region = LatLng & { latitudeDelta: number; longitudeDelta: number };
 export type EdgeSide = 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT';
 
-/** Side of the visible region a coordinate lies beyond, or null when it is visible (off-screen label). */
-export function offscreenSide(region: Region, point: LatLng): EdgeSide | null {
-  const dLat = (point.latitude - region.latitude) / (region.latitudeDelta / 2);
-  const dLng = (point.longitude - region.longitude) / (region.longitudeDelta / 2);
-  if (Math.abs(dLat) <= 1 && Math.abs(dLng) <= 1) return null;
-  if (Math.abs(dLat) >= Math.abs(dLng)) return dLat > 0 ? 'TOP' : 'BOTTOM';
-  return dLng > 0 ? 'RIGHT' : 'LEFT';
+/** Compare native map projection (layout points) to the unobscured part of the map. */
+export function offscreenSide(point: { x: number; y: number }, width: number, top: number, bottom: number): EdgeSide | null {
+  if (width <= 0 || bottom <= top) return null;
+  const dx = 2 * point.x / width - 1;
+  const dy = 2 * (point.y - top) / (bottom - top) - 1;
+  if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) return null;
+  if (Math.abs(dy) >= Math.abs(dx)) return dy < 0 ? 'TOP' : 'BOTTOM';
+  return dx < 0 ? 'LEFT' : 'RIGHT';
 }

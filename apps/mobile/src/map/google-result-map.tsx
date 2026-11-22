@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject, type ComponentRef } from 'react';
 import { PermissionsAndroid, Platform, StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE, type Region as MapRegion } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { colors, radius, result, shadows, size, spacing, text } from '../theme';
 import { isMapConfigured } from './config';
-import { arcPoints, midpointHeading, offscreenSide, withAlpha, type EdgeSide, type Region } from './geometry';
+import { arcPoints, midpointHeading, offscreenSide, withAlpha } from './geometry';
 import type { LatLng, MapMarkerSpec, MapRouteSpec, ResultMapProps } from './types';
 
 const ROUTE_WIDTH = spacing.steps[0] + 1;
@@ -60,10 +60,33 @@ function MarkerBody({ marker, selected }: { marker: MapMarkerSpec; selected: boo
   </View>;
 }
 
-const EDGE: Record<EdgeSide, object> = {
-  TOP: { top: 0, alignSelf: 'center' }, BOTTOM: { bottom: 0, alignSelf: 'center' },
-  LEFT: { left: 0, top: '45%' }, RIGHT: { right: 0, top: '45%' },
-};
+type MapSize = { width: number; height: number };
+
+function AirportIndicator({ map, marker, viewport, topInset, bottomInset }: {
+  map: RefObject<ComponentRef<typeof MapView> | null>; marker: MapMarkerSpec; viewport: MapSize;
+  topInset: number; bottomInset: number;
+}) {
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
+  const { latitude, longitude } = marker.coordinate;
+  useEffect(() => {
+    let current = true;
+    void map.current?.pointForCoordinate({ latitude, longitude }).then(
+      projected => { if (current) setPoint(projected); },
+      () => { if (current) setPoint(null); },
+    );
+    return () => { current = false; };
+  }, [map, latitude, longitude]);
+  const bottom = viewport.height - bottomInset;
+  const side = point && offscreenSide(point, viewport.width, topInset, bottom);
+  if (!side) return null;
+  const middle = (topInset + bottom) / 2;
+  const position = side === 'TOP' ? { top: topInset, alignSelf: 'center' as const }
+    : side === 'BOTTOM' ? { bottom: bottomInset, alignSelf: 'center' as const }
+      : side === 'LEFT' ? { left: 0, top: middle } : { right: 0, top: middle };
+  return <View testID={`airport-edge-${marker.id}`} pointerEvents="none" style={[styles.edge, position]}>
+    <Text style={text.tiny}>{ICONS.AIRPORT} {marker.label} · 화면 밖</Text>
+  </View>;
+}
 
 export function GoogleResultMap(props: ResultMapProps) {
   if (!isMapConfigured()) {
@@ -76,7 +99,8 @@ export function GoogleResultMap(props: ResultMapProps) {
 
 function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottomInset, dimmed, locateRequest, onSelectMarker }: ResultMapProps) {
   const map = useRef<ComponentRef<typeof MapView>>(null);
-  const [region, setRegion] = useState<Region | null>(null);
+  const [cameraVersion, setCameraVersion] = useState(0);
+  const [viewport, setViewport] = useState<MapSize>({ width: 0, height: 0 });
   const [showUser, setShowUser] = useState(false);
   const user = useRef<LatLng | null>(null);
   // A primitive key refits the camera only when the day's places change, not on every selection.
@@ -104,15 +128,15 @@ function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottom
     return () => { active = false; };
   }, [locateRequest]);
 
-  const offscreen = region ? markers.filter(marker => marker.kind === 'AIRPORT').flatMap(marker => {
-    const side = offscreenSide(region, marker.coordinate);
-    return side ? [{ marker, side }] : [];
-  }) : [];
-
   return <View style={StyleSheet.absoluteFill}>
     <MapView ref={map} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} showsUserLocation={showUser}
       showsMyLocationButton={false} toolbarEnabled={false}
-      onRegionChangeComplete={(next: MapRegion) => setRegion(next)}
+      onLayout={event => {
+        const { width, height } = event.nativeEvent.layout;
+        setViewport({ width, height });
+      }}
+      onMapReady={() => setCameraVersion(version => version + 1)}
+      onRegionChangeComplete={() => setCameraVersion(version => version + 1)}
       onUserLocationChange={event => {
         const coordinate = event.nativeEvent.coordinate;
         const first = !user.current;
@@ -130,10 +154,9 @@ function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottom
         </Marker>;
       })}
     </MapView>
-    {offscreen.map(({ marker, side }) => <View key={marker.id} pointerEvents="none"
-      style={[styles.edge, EDGE[side], side === 'TOP' && { top: topInset }, side === 'BOTTOM' && { bottom: bottomInset }]}>
-      <Text style={text.tiny}>{ICONS.AIRPORT} {marker.label} · 화면 밖</Text>
-    </View>)}
+    {cameraVersion > 0 && viewport.width > 0 && viewport.height > 0 && markers.filter(marker => marker.kind === 'AIRPORT').map(marker =>
+      <AirportIndicator key={`${marker.id}:${marker.coordinate.latitude}:${marker.coordinate.longitude}:${cameraVersion}:${viewport.width}:${viewport.height}`}
+        marker={marker} map={map} viewport={viewport} topInset={topInset} bottomInset={bottomInset} />)}
   </View>;
 }
 

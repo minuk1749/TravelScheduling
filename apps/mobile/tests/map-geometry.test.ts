@@ -56,11 +56,14 @@ test('floating arcs keep both ends and lift the middle; arrows sit mid-path with
   expect(midpointHeading([hotel])).toBeNull();
 });
 
-test('off-screen side for edge labels such as a distant airport', () => {
-  const region = { ...hotel, latitudeDelta: 0.1, longitudeDelta: 0.1 };
-  expect(offscreenSide(region, ueno)).toBeNull();
-  expect(offscreenSide(region, { latitude: 35.55, longitude: 139.78 })).toBe('BOTTOM');
-  expect(offscreenSide(region, narita)).toBe('RIGHT');
-  expect(offscreenSide(region, { latitude: 35.9, longitude: 139.77 })).toBe('TOP');
-  expect(offscreenSide(region, meiji)).toBe('LEFT');
+test('airport edge labels use map points and exclude the top bar and bottom panel', () => {
+  const side = (x: number, y: number) => offscreenSide({ x, y }, 400, 80, 450);
+  expect(side(200, 600)).toBe('BOTTOM');
+  expect(side(200, 79)).toBe('TOP');
+  expect(side(200, 80)).toBeNull();
+  expect(side(200, 450)).toBeNull();
+  expect(side(200, 451)).toBe('BOTTOM');
+  expect(side(-1, 200)).toBe('LEFT');
+  expect(side(401, 200)).toBe('RIGHT');
+  expect(offscreenSide({ x: 200, y: 200 }, 400, 80, 80)).toBeNull();
 });
