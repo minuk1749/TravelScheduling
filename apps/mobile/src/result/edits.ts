@@ -1,3 +1,4 @@
+import type { TripInputs } from '@travel/core/contracts/itinerary';
 import type { Constraints, VisitEdit } from '@travel/core/contracts/results/model';
 import type { TravelModeName } from '../map/types';
 import type { DayModel } from './days';
@@ -28,6 +29,18 @@ export const asWish = (edit: VisitEdit): VisitEdit => ({ ...edit, priority: 'WIS
 
 /** 3-4: a wish is added to a date by fixing only that date; it stays a wish. */
 export const onDate = (edit: VisitEdit, date: string): VisitEdit => ({ ...edit, fixedDate: date, fixedTime: null, fixedOrder: null });
+
+/** Compare the booked visits shown before this calculation with the newly accepted result. */
+export function reservationSummary(before: TripInputs['visits'], after: TripInputs['visits']): string | null {
+  const previous = new Map(before.filter(visit => visit.fixedTime).map(visit => [visit.id, visit]));
+  const current = after.filter(visit => visit.fixedTime);
+  if (!previous.size && !current.length) return null;
+  const unchanged = previous.size === current.length && current.every(visit => {
+    const old = previous.get(visit.id);
+    return old?.fixedTime === visit.fixedTime && old?.fixedDate === visit.fixedDate;
+  });
+  return unchanged ? '고정 예약은 그대로예요' : '고정 예약이 바뀌었어요';
+}
 
 /** Toast detail after a recalculation: the first moved places, e.g. "도쿄 타워 15분 늦춰짐 외 1곳". */
 export function movedSummary(days: readonly DayModel[]): string | null {

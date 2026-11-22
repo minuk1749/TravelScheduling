@@ -5,7 +5,7 @@ import { ApiFailure } from '../../api/client';
 import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
 import { buildDays } from '../../result/days';
 import { dayNumberLabel } from '../../result/format';
-import { movedSummary, sameConstraints, type Change } from '../../result/edits';
+import { movedSummary, reservationSummary, sameConstraints, type Change } from '../../result/edits';
 import { errorMessage, fieldErrors } from '../trip-input/presentation';
 
 export type Phase =
@@ -45,10 +45,11 @@ function noticeTitle(change: Change, view: ResultView): string {
   return '수정하고 다시 계산했어요';
 }
 
-function notice(id: number, change: Change, view: ResultView, result: GeneratedTrip, base: GeneratedTrip | null, canUndo: boolean): Notice | null {
+function notice(id: number, change: Change, next: Calculation, previous: State, canUndo: boolean): Notice | null {
+  const { view, result } = next;
   if (result.status !== 'OK') return null;
-  const moved = movedSummary(buildDays(view, result, base));
-  const reserved = view.input.visits.some(visit => visit.fixedTime) ? '고정 예약은 그대로예요' : null;
+  const moved = movedSummary(buildDays(view, result, previous.base?.result ?? null));
+  const reserved = reservationSummary(previous.shown.view.input.visits, view.input.visits);
   const detail = [moved, reserved].filter(Boolean).join(' · ') || null;
   return { id, title: noticeTitle(change, view), detail, undo: canUndo };
 }
@@ -119,7 +120,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
         const base = generated.status === 'OK' ? shown : value.base;
         const previous = generated.status === 'OK' ? value.base?.result ?? null : value.previous;
         return { ...value, view: current, shown, base, previous, focusVisit: visit, phase: { kind: 'idle' },
-          notice: notice(++notices.current, change, current, generated, value.base?.result ?? null, restore !== null) };
+          notice: notice(++notices.current, change, shown, value, restore !== null) };
       });
     } catch (failure) {
       if (request.signal.aborted) return;
