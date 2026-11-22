@@ -1,10 +1,10 @@
 import type { PlaceProvider, PlaceLocation } from '../places';
 import type { RouteShapeProvider } from '../travel-time/shapes';
-import type { LegShape, RouteShapeRepository, RouteShapesResponse, ShapeLoad } from '../route-shapes/model';
+import type { LegShape, RouteShapeRepository, SavedRouteShapesResponse, ShapeLoad } from '../route-shapes/model';
 import { tripPlaceRefs } from './itinerary/display-places';
 
 export const SHAPE_CONCURRENCY = 4;
-export type ShapeOutcome = Exclude<ShapeLoad, { status: 'READY' }> | { status: 'OK'; response: RouteShapesResponse };
+export type ShapeOutcome = Exclude<ShapeLoad, { status: 'READY' }> | { status: 'OK'; response: SavedRouteShapesResponse };
 
 /** Only selected saved legs are queried. A failure rejects the entire request. */
 export class RouteShapeService {
@@ -14,8 +14,8 @@ export class RouteShapeService {
     private readonly provider: RouteShapeProvider,
   ) {}
 
-  async read(tripId: string, ownerId: string, inputHash: string): Promise<ShapeOutcome> {
-    const loaded = await this.repository.load(tripId, ownerId, inputHash);
+  async read(tripId: string, ownerId: string, inputHash: string, itineraryId?: string): Promise<ShapeOutcome> {
+    const loaded = await this.repository.load(tripId, ownerId, inputHash, itineraryId);
     if (loaded.status !== 'READY') return loaded;
     const { input, comparisons } = loaded.snapshot;
     const refs = new Map(tripPlaceRefs(input).map(ref => [ref.id, ref.googlePlaceId]));
@@ -48,6 +48,6 @@ export class RouteShapeService {
     // Drain in-flight workers on failure; do not dispatch further legs or return partial success.
     const results = await Promise.allSettled(Array.from({ length: Math.min(SHAPE_CONCURRENCY, comparisons.length) }, worker));
     for (const result of results) if (result.status === 'rejected') throw result.reason;
-    return { status: 'OK', response: { inputHash, legs } };
+    return { status: 'OK', response: { inputHash, itineraryId: loaded.snapshot.itineraryId, legs } };
   }
 }

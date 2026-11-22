@@ -7,8 +7,9 @@ import { PlaceProviderError } from '../src/places';
 import { encodedPolyline } from './fixtures/route-shapes';
 
 const inputHash = 'a'.repeat(64), url = 'https://app.example.test/api/trips/trip/itinerary/shapes';
+const itineraryId = '6cfc2a66-ad76-4136-a0b6-17b681ec888d';
 const request = (query = `inputHash=${inputHash}`) => new Request(`${url}?${query}`);
-const success: ShapeOutcome = { status: 'OK', response: { inputHash, legs: [{
+const success: ShapeOutcome = { status: 'OK', response: { inputHash, itineraryId, legs: [{
   date: '2026-12-01', kind: 'DAY', from: 'a', to: 'b', mode: 'TRANSIT', shape: { status: 'OK', encodedPolyline },
 }] } };
 
@@ -30,7 +31,7 @@ test('T19 HTTP ownership and authentication precede input/service/provider acces
   for (const [options, status, code] of [
     [{ user: undefined }, 401, 'UNAUTHENTICATED'], [{ owner: 'other' }, 403, 'FORBIDDEN'], [{ owner: null }, 404, 'NOT_FOUND'],
   ] as const) {
-    const s = setup(options), response = await s.handlers.get(request(), 'trip');
+    const s = setup(options), response = await s.handlers.get(request(`inputHash=${inputHash}&itineraryId=invalid`), 'trip');
     assert.equal(response.status, status);
     assert.equal((await response.json()).code, code);
     assert.equal(response.headers.get('cache-control'), 'private, no-store');
@@ -51,7 +52,22 @@ test('T19 HTTP requires exactly one SHA-256 input hash; request is passed to aut
   assert.deepEqual(await response.json(), success.response);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
   assert.equal(s.calls[0], req);
-  assert.deepEqual(s.calls[1], ['trip', 'owner', inputHash]);
+  assert.deepEqual(s.calls[1], ['trip', 'owner', inputHash, undefined]);
+});
+
+test('T22 HTTP accepts one optional itinerary UUID and rejects malformed or repeated IDs before lookup', async () => {
+  for (const value of ['', 'abc', itineraryId.toUpperCase(), itineraryId.replaceAll('-', ''), `${itineraryId}&itineraryId=${itineraryId}`]) {
+    const s = setup();
+    const response = await s.handlers.get(request(`inputHash=${inputHash}&itineraryId=${value}`), 'trip');
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, 'INVALID_INPUT');
+    assert.equal(s.created(), 0);
+  }
+  const s = setup();
+  const response = await s.handlers.get(request(`inputHash=${inputHash}&itineraryId=${itineraryId}`), 'trip');
+  assert.equal(response.status, 200);
+  assert.deepEqual(s.calls[1], ['trip', 'owner', inputHash, itineraryId]);
+  assert.deepEqual(await response.json(), success.response);
 });
 
 test('T19 HTTP distinguishes stale/unavailable and never returns a partial result on failure', async () => {

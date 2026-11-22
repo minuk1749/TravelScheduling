@@ -10,13 +10,14 @@ import { FixturePlaces, sampleTrip } from './fixtures/itinerary';
 import { encodedPolyline } from './fixtures/route-shapes';
 
 const inputHash = 'a'.repeat(64);
+const itineraryId = 'itinerary-from-storage';
 const comparison = (mode: LegComparison['selected']['mode'], index: number): LegComparison => ({
   date: '2026-12-01', kind: index === 0 ? 'AIRPORT' : 'DAY',
   from: index === 0 ? 'place-airport' : 'place-hotel', to: 'place-sensoji',
   departure: `2026-12-01T0${index % 10}:00:00Z`, selected: { mode, fixed: false, minutes: 30, fare: null },
   baseline: null, alternatives: {},
 });
-const snapshot: ShapeSnapshot = { input: sampleTrip(), comparisons: ['TAXI', 'WALK', 'TRANSIT'].map((mode, i) =>
+const snapshot: ShapeSnapshot = { itineraryId, input: sampleTrip(), comparisons: ['TAXI', 'WALK', 'TRANSIT'].map((mode, i) =>
   comparison(mode as LegComparison['selected']['mode'], i)) };
 const repository = (value: ShapeLoad = { status: 'READY', snapshot }) => ({ load: async () => value });
 
@@ -30,7 +31,7 @@ test('T19 all DAY/AIRPORT comparisons preserve keys/order, actual departure, TAX
   const result = await service.read('trip', 'owner', inputHash);
   assert.equal(result.status, 'OK');
   if (result.status !== 'OK') return;
-  assert.deepEqual(result.response, { inputHash, legs: snapshot.comparisons.map(leg => ({
+  assert.deepEqual(result.response, { inputHash, itineraryId, legs: snapshot.comparisons.map(leg => ({
     date: leg.date, kind: leg.kind, from: leg.from, to: leg.to, mode: leg.selected.mode,
     shape: leg.selected.mode === 'WALK' ? { status: 'NONE' } : { status: 'OK', encodedPolyline },
   })) });
@@ -49,7 +50,7 @@ test('T19 stale/missing results do not query providers; no selected legs yields 
     assert.deepEqual(await new RouteShapeService(repository({ status }), unused, unused).read('t', 'u', inputHash), { status });
   }
   const empty = new RouteShapeService(repository({ status: 'READY', snapshot: { ...snapshot, comparisons: [] } }), unused, unused);
-  assert.deepEqual(await empty.read('t', 'u', inputHash), { status: 'OK', response: { inputHash, legs: [] } });
+  assert.deepEqual(await empty.read('t', 'u', inputHash), { status: 'OK', response: { inputHash, itineraryId, legs: [] } });
 });
 
 test('T19 missing coordinates explicitly yield NONE, while Places failures propagate', async () => {

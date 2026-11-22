@@ -539,7 +539,7 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `GET /api/trips/[id]/settings` | — | `SettingsView` (`{ snapshot, calculation }`) | 401, 403, 404, 409 `INCOMPLETE_TRIP`(초 단위 시각 등 저장 형식 불일치), 500 |
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
 | `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (`status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
-| `GET /api/trips/[id]/itinerary/shapes` (T19 신규) | `?inputHash=` | `{ inputHash, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
+| `GET /api/trips/[id]/itinerary/shapes` | `inputHash` 필수, `itineraryId` 선택 (쿼리) | `{ inputHash, itineraryId, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `GET /api/trips/[id]/constraints` | — | `ResultView` (`{ input, revision, places }`) | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
 | `POST /api/trips/[id]/share` | — | `{ path: "/share/{token}" }`. 앱은 설정한 서버 주소와 합쳐 OS 공유 시트로 보냄 | 401, 403, 404, 405, 500 |
@@ -650,7 +650,9 @@ T18 검증: 가짜 RS256 키와 JWKS 픽스처(`apps/server/tests/helpers/google
   Authorization 헤더가 있는 요청은 쿠키로 우회하지 않고 401이다. T18 통합 때 `route-shapes/server.ts`에도 공통 RequestAuthenticator를 주입한다.
 - `GET /api/trips/[id]/itinerary/shapes?inputHash=` (T19). 인증·소유권 → 최신 저장 일정과 현재 입력 해시를 한 읽기 트랜잭션으로 조회
   (공유 결과 읽기 `shared-itinerary.ts`와 같은 방식) → 요청 해시·저장 해시·현재 해시가 다르면 409 `STALE_INPUT`, 결과가 없으면 409 `RESULT_UNAVAILABLE`.
-  inputHash는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.
+  `inputHash`는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.
+- 생성 응답의 `itineraryId`를 선택 쿼리로 보낼 수 있다(소문자 하이픈 UUID 하나). 해시가 일치해도 해당 여행의 최신 저장 ID와 다르면 409 `RESULT_UNAVAILABLE`이다.
+  ID를 생략하면 최신 결과를 읽는다. 성공 본문에는 두 경우 모두 실제 저장 행의 `itineraryId`가 들어간다. 지도 소비자는 응답을 적용하기 전에 ID와 해시가 표시 중인 일정과 모두 일치하는지 확인해야 한다.
 - 대상 구간은 저장된 `comparisons`(DAY·AIRPORT) 전부이고, 키는 `date`·`kind`·`from`·`to`(장소 ID)다. 좌표는 기존 좌표 캐시(`PlaceProvider.location`)로 얻는다.
 - 각 구간을 `computeRoutes`로 요청한다. 수단은 `selected.mode`(TAXI는 DRIVE), 출발은 저장된 `departure` instant(TRANSIT만 시간표에 전달, DRIVE는 `TRAFFIC_UNAWARE`, §4).
   field mask는 `routes.polyline.encodedPolyline` 하나다. 요청당 최대 4개 구간 작업을 실행하고 응답은 저장 구간 순서대로 돌려준다.
@@ -668,7 +670,9 @@ export type LegShape = {
   date: string; kind: 'DAY' | 'AIRPORT'; from: string; to: string; mode: 'TRANSIT' | 'WALK' | 'TAXI';
   shape: { status: 'OK'; encodedPolyline: string } | { status: 'NONE' };
 };
-export type RouteShapesResponse = { inputHash: string; legs: LegShape[] };
+export type RouteShapesQuery = { inputHash: string; itineraryId?: string };
+export type RouteShapesResponse = RouteShapesQuery & { legs: LegShape[] }; // 구형 서버 응답도 읽는 클라이언트용
+export type SavedRouteShapesResponse = RouteShapesResponse & { itineraryId: string }; // 현재 서버의 성공 응답
 export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터페이스 분리)
   shape(request: { from: { latitude: number; longitude: number }; to: { latitude: number; longitude: number };
     mode: 'TRANSIT' | 'WALK' | 'DRIVE'; departure: string; timeZone: string }): Promise<{ encodedPolyline: string } | null>;
