@@ -69,6 +69,7 @@ export function ScheduleSheet({ day, places, currency, efficiency, estimated, cl
   close(): void; select(visitId: string): void; onSwap?(leg: LegModel, mode: LegModel['mode']): void;
 }) {
   const placeIds = new Set([...day.cards.map(card => card.placeId), ...day.legs.flatMap(leg => [leg.from, leg.to])]);
+  for (const row of day.rows) if (row.kind === 'ENDPOINT') placeIds.add(row.placeId);
   return <FormSheet title={`${dateTitle(day.date)} 전체 일정`} close={close}>
     {day.rows.length === 0 && <Text style={text.body}>배치된 장소 없음</Text>}
     {day.rows.map((row, index) => <Row key={index} row={row} zone={day.timeZone} currency={currency} select={select} onSwap={onSwap} />)}
