@@ -10,7 +10,7 @@ import {
   type MapFocus, type Selection,
 } from '../../map/selection';
 import { conflictCauses } from '../../result/conflicts';
-import { buildDays, placedVisitIds, type CardModel, type DayModel } from '../../result/days';
+import { buildDays, placedVisitIds, type DayModel, type LegModel } from '../../result/days';
 import { onDate, withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
 import { colors, result } from '../../theme';
@@ -96,8 +96,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     const index = day.cards.findIndex(item => item.visitId === id);
     if (index >= 0) select({ date: day.date, index });
   };
-  const swap = (target: CardModel) => {
-    const leg = target.arrival, mode = leg?.swap?.mode;
+  const swap = (leg: LegModel | null) => {
+    const mode = leg?.swap?.mode;
     if (!leg || !mode) return;
     itinerary.apply({ kind: 'MODE', leg: { key: leg.key, date: leg.date, from: leg.from, to: leg.to }, mode },
       withLegMode(constraints, leg, mode));
@@ -124,12 +124,13 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       onLayout={event => { const bottom = event.nativeEvent.layout.height; setInsets(value => ({ ...value, bottom })); }}
       actions={{
         onIndex: index => select({ date: day.date, index }), onSchedule: () => setSheet({ kind: 'SCHEDULE' }),
-        onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: swap,
+        onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: target => swap(target.arrival),
         onAddWish: () => setSheet({ kind: 'WISH', visitId: null, date: day.date }),
         onShowPrevious: () => setPreviousFor(phase), onRetry: itinerary.retry,
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />
     {sheet?.kind === 'SCHEDULE' && <ScheduleSheet day={day} places={view.places} currency={currency} efficiency={displayed?.efficiency ?? null}
+      onSwap={status.kind === 'READY' ? leg => { setSheet(null); swap(leg); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
       select={visitId => { setSheet(null); const found = findVisit(days, visitId); if (found) select(found); }} />}
     {sheet?.kind === 'EDIT' && editing && <EditSheet view={view} card={editing} days={days} current={editOf(editing.visitId)}

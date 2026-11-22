@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Animated, Easing, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { localTime } from '@travel/core/presentation';
 import { kindLabels } from '../trip-input/presentation';
-import { colors, motion, result, size, spacing, text } from '../../theme';
+import { colors, motion, result, spacing, text } from '../../theme';
 import { useReducedMotion } from '../../theme/use-reduced-motion';
 import { swipeTarget } from '../../map/selection';
 import type { CardModel } from '../../result/days';
-import { durationLabel, legLabel, shiftLabel, swapLabel, timeRange } from '../../result/format';
+import { durationLabel, legLabel, shiftLabel, timeRange } from '../../result/format';
+import { SwapChip } from './swap-chip';
 import { MODE_ICONS } from './icons';
 
 const STRIDE = result.cardRow.width + result.cardRow.gap;
@@ -29,13 +30,7 @@ function ArrivalRows({ card, currency, zone, active, onSwap }: {
     <View style={styles.modeRow}>
       <Text importantForAccessibility="no" style={styles.modeIcon}>{MODE_ICONS[leg.mode]}</Text>
       <Text style={[text.secondary, styles.modeText]} numberOfLines={1}>{legLabel(leg.mode, leg.minutes, leg.fare, currency)}</Text>
-      {swap && <Pressable accessibilityRole="button" accessibilityLabel={`${swapLabel(swap, currency)}${swap.estimate ? '로 바꾸기' : ''}`}
-        accessibilityState={{ disabled: !swap.estimate || !active }} disabled={!swap.estimate || !active}
-        onPress={() => onSwap(card)} style={styles.chipTouch}>
-        <Text style={[text.tinyStrong, styles.chip, !swap.estimate && styles.chipDisabled]}>
-          {swap.estimate ? '⇄ ' : ''}{swapLabel(swap, currency)}
-        </Text>
-      </Pressable>}
+      {swap && <SwapChip swap={swap} currency={currency} active={active} onPress={() => onSwap(card)} />}
     </View>
   </>;
 }
@@ -128,8 +123,4 @@ const styles = StyleSheet.create({
   modeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.steps[1] },
   modeIcon: { ...text.secondary, color: colors.sky.primary },
   modeText: { flex: 1 },
-  chipTouch: { minHeight: size.touch, justifyContent: 'center' },
-  chip: { height: result.switchChip.height, lineHeight: result.switchChip.height, borderRadius: result.switchChip.height / 2,
-    paddingHorizontal: spacing.cardGap, backgroundColor: colors.gray.button, color: colors.gray.secondary, overflow: 'hidden' },
-  chipDisabled: { color: colors.gray.disabled },
 });

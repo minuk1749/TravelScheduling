@@ -35,7 +35,13 @@ export function EditSheet({ view, card, day, days, current, close, apply }: {
   const error = validation(edit, view);
   const update = (value: Partial<VisitEdit>) => setDraft(previous => ({ ...previous, ...value }));
   const start = card.start ? localTime(card.start, day.timeZone) : view.input.activity.start;
-  const lastPosition = Math.max(day.cards.filter(item => item.start).length - 1, 0);
+  const hasPlacements = days.some(row => row.cards.some(item => item.start !== null));
+  const lastPositionOn = (date: string) => {
+    if (!hasPlacements) return view.input.visits.length - 1;
+    const target = days.find(row => row.date === date);
+    return target?.cards.filter(item => item.start !== null && item.visitId !== card.visitId).length ?? 0;
+  };
+  const lastPosition = lastPositionOn(edit.fixedDate ?? day.date);
   const order = edit.fixedOrder ?? 0;
   const unchanged = JSON.stringify(edit) === JSON.stringify(current);
   return <FormSheet title={card.name} close={close} footer={<>
@@ -45,7 +51,8 @@ export function EditSheet({ view, card, day, days, current, close, apply }: {
   </>}>
     <Toggle label="날짜 고정" value={edit.fixedDate !== null} disabled={wish}
       onChange={on => update(on ? { fixedDate: day.date } : { fixedDate: null, fixedTime: null, fixedOrder: null })} />
-    {edit.fixedDate !== null && <Choice value={edit.fixedDate} options={dayOptions(days)} onChange={fixedDate => update({ fixedDate })} />}
+    {edit.fixedDate !== null && <Choice value={edit.fixedDate} options={dayOptions(days)} onChange={fixedDate =>
+      update({ fixedDate, fixedOrder: edit.fixedOrder === null ? null : Math.min(edit.fixedOrder, lastPositionOn(fixedDate)) })} />}
     <Toggle label="시각 고정" value={edit.fixedTime !== null} disabled={wish || edit.fixedDate === null}
       onChange={on => update({ fixedTime: on ? start : null })} />
     {edit.fixedTime !== null && <Field label="고정 시각" value={edit.fixedTime} keyboardType="numbers-and-punctuation"
