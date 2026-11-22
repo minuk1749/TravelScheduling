@@ -4,7 +4,7 @@ import { decodePolyline } from '../../map/geometry';
 import type { LatLng } from '../../map/types';
 import { legKey } from '../../result/days';
 
-type Loaded = { hash: string; shapes: ReadonlyMap<string, readonly LatLng[]>; failed: boolean };
+type Loaded = { tripId: string; inputHash: string; itineraryId: string; shapes: ReadonlyMap<string, readonly LatLng[]>; failed: boolean };
 const NONE: ReadonlyMap<string, readonly LatLng[]> = new Map();
 
 function decoded(encoded: string): LatLng[] | null {
@@ -17,23 +17,25 @@ function decoded(encoded: string): LatLng[] | null {
  */
 export function useRouteShapes(tripId: string, result: GeneratedTrip | null) {
   const api = useTripApi();
-  const hash = result && result.comparisons.length ? result.inputHash : null;
+  const inputHash = result?.comparisons.length ? result.inputHash : null;
+  const itineraryId = result?.itineraryId;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!hash) return;
+    if (!inputHash || !itineraryId) return;
+    const key = { tripId, inputHash, itineraryId };
     const request = new AbortController();
-    api.shapes(tripId, hash, request.signal).then(response => {
-      if (request.signal.aborted || response.inputHash !== hash) return;
+    api.shapes(tripId, inputHash, itineraryId, request.signal).then(legs => {
+      if (request.signal.aborted) return;
       const shapes = new Map<string, readonly LatLng[]>();
-      for (const leg of response.legs) {
+      for (const leg of legs) {
         const points = leg.shape.status === 'OK' ? decoded(leg.shape.encodedPolyline) : null;
         if (points) shapes.set(legKey(leg), points);
       }
-      setLoaded({ hash, shapes, failed: false });
-    }, () => { if (!request.signal.aborted) setLoaded({ hash, shapes: NONE, failed: true }); });
+      setLoaded({ ...key, shapes, failed: false });
+    }, () => { if (!request.signal.aborted) setLoaded({ ...key, shapes: NONE, failed: true }); });
     return () => request.abort();
-  }, [api, tripId, hash, attempt]);
-  const current = loaded?.hash === hash ? loaded : null;
+  }, [api, tripId, inputHash, itineraryId, attempt]);
+  const current = loaded?.tripId === tripId && loaded.inputHash === inputHash && loaded.itineraryId === itineraryId ? loaded : null;
   return { shapes: current?.shapes ?? NONE, failed: !!current?.failed, retry: () => setAttempt(value => value + 1) };
 }

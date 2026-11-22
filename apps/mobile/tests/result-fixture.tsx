@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import type { LegComparison, TripInputs } from '@travel/core/contracts/itinerary';
 import { parseConstraints } from '@travel/core/contracts/results/input';
 import type { ResultView } from '@travel/core/contracts/results/model';
-import type { RouteShapesResponse } from '@travel/core/contracts/route-shapes';
+import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import Generate from '../app/(app)/trips/[id]/generate';
 import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
@@ -14,6 +14,7 @@ import { fixture, json, session } from './helpers';
 
 export const [D1, D2, D3] = ['2026-12-03', '2026-12-04', '2026-12-05'];
 export const REVISION = 'a'.repeat(64);
+export const ITINERARY_A = '468dbb8e-0da8-48ef-92db-98618031e476';
 const names = {
   airport: '하네다 공항', hotel: '도쿄 호텔', museum: '도쿄 국립박물관', market: '아메요코 시장',
   shrine: '메이지 신궁', cafe: '아사쿠사 카페',
@@ -94,7 +95,7 @@ export function trip(inputHash: string, { comparisons, stops }: Plan = plan()): 
     legs: comparisons.filter(row => row.date === date && row.kind === 'DAY').map(scheduleLeg) }));
   const schedule = { days, unplaced: [], issues: [] };
   return {
-    itineraryId: 'itinerary', inputHash, status: 'OK', verification: { verified: true, attempts: 2 },
+    itineraryId: ITINERARY_A, inputHash, status: 'OK', verification: { verified: true, attempts: 2 },
     transferIssues: [], flightConflicts: [], skippedMeals: [], comparisons,
     efficiency: { currency: 'JPY', transitMinutes: 205, selectedMinutes: 175, transitFare: 1340, selectedFare: 4040 },
     capacity: { status: 'OK', unplaced: [], issues: [], recommendation: { requiredCount: 3, requiredVisitIds: ['museum', 'market', 'shrine'], schedule },
@@ -113,9 +114,9 @@ export function conflictTrip(inputHash: string): GeneratedTrip {
 /** Polyline of two points near the hotel and museum (Google sample encoding). */
 export const ROAD = '_p~iF~ps|U_ulLnnqC';
 
-export function resultFixture() {
+export function resultFixture(initial: ResultView = view) {
   const f = fixture(JSON.stringify(session));
-  let current: ResultView = view;
+  let current = initial;
   let revision = 0;
   const generate = jest.fn<Promise<Response>, []>().mockImplementation(async () => json(trip(current.revision)));
   const save = jest.fn<Promise<Response>, [RequestInit]>().mockImplementation(async options => {
@@ -132,12 +133,12 @@ export function resultFixture() {
     return json({ input: current.input, revision: current.revision });
   });
   const read = jest.fn(() => json(current));
-  const shapes = jest.fn<Promise<Response>, [URL]>().mockImplementation(async url => json({
-    inputHash: url.searchParams.get('inputHash')!,
+  const shapes = jest.fn<Promise<Response>, [URL]>().mockImplementation(async () => json({
+    inputHash: current.revision, itineraryId: ITINERARY_A,
     legs: trip(current.revision).comparisons.map(row => ({ date: row.date, kind: row.kind, from: row.from, to: row.to,
       mode: row.selected.mode, shape: row.from === place('hotel') && row.to === place('museum')
         ? { status: 'OK', encodedPolyline: ROAD } : { status: 'NONE' } })),
-  } satisfies RouteShapesResponse));
+  } satisfies SavedRouteShapesResponse));
   f.transport.mockImplementation(async (input, options = {}) => {
     const url = new URL(String(input));
     if (url.pathname === '/api/trips/trip/itinerary' && options.method === 'POST') return generate();

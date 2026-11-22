@@ -700,7 +700,7 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
 - `ResultFlow`는 `GET …/constraints`로 입력을 읽는다. revision이 응답의 `inputHash`와 같으면 응답을 그대로 쓰고, 다르면 한 번 다시 계산한다. 서버 API·DB는 바꾸지 않는다.
 - 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `constraintsFrom`으로 만든 제약을 `withVisit`·`withLegMode`로 바꿔 `PUT …/constraints`(core `parseConstraints`로 검증) → `POST …/itinerary` → `verifyRevision` 순서로 처리한다. 저장 직전 제약은 `변경 취소`·`되돌리기`에 쓰고, POST 실패 뒤에는 저장된 입력으로 POST만 다시 실행한다.
 - 순수 모델: `apps/mobile/src/result/days.ts`가 저장 입력과 결과에서 날짜별 카드(도착 구간·대기·숙소 복귀·당겨짐/늦춰짐·고정 조건)·구간(순서 색·도심 밖·바꿀 수단)·전체 일정 줄을 만든다. `conflicts.ts`는 3-8 원인, `edits.ts`는 제약 수정, `format.ts`는 문구다.
-- 경로 모양은 OK 결과의 `inputHash`로 `GET …/itinerary/shapes`를 요청해 메모리에만 둔다. 실패하거나 `NONE`이면 직선으로 그린다. 상세: [T22 결정](decisions/T22-mobile-result-screen.md)
+- 경로 모양은 OK 결과의 `inputHash`와 `itineraryId`로 `GET …/itinerary/shapes`를 요청한다. 앱은 응답의 두 값이 일치할 때만 구간을 받고, 여행·해시·일정 ID가 표시 중인 결과와 일치하는 메모리 데이터만 사용한다. 결과를 바꾸면 이전 요청을 취소한다. [T22 결정](decisions/T22-mobile-result-screen.md)
 
 ### 13.5 지도 어댑터 인터페이스 (앱)
 
