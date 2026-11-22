@@ -9,7 +9,7 @@ import {
   dayOf, findVisit, initialSelection, pendingLegKeys, reconcileSelection, selectDate, selectedCard,
   type MapFocus, type Selection,
 } from '../../map/selection';
-import { conflictCauses } from '../../result/conflicts';
+import { conflictCauses, conflictingModeFixes } from '../../result/conflicts';
 import { buildDays, placedVisitIds, type DayModel, type LegModel } from '../../result/days';
 import { onDate, withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
@@ -99,6 +99,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     : failed ? (showPrevious ? { kind: 'PREVIOUS' } : { kind: 'FAILED', message: phase.message, hasPrevious: !!previousSchedule })
       : conflict ? { kind: 'CONFLICT', count: causes.length, canUndo,
         target: card?.issue ? card : day.cards.find(item => item.issue) ?? null,
+        modeFixes: conflictingModeFixes(view, day.date, causes),
         messages: causes.filter(cause => !cause.visitId && (!cause.date || cause.date === day.date)).map(cause => cause.message) }
         : { kind: 'READY' };
 
@@ -144,6 +145,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
           const first = wishes[0];
           if (first) setSheet({ kind: 'WISH', visitId: first.visitId, date: day.date, chooseVisit: true });
         },
+        onReleaseMode: leg => itinerary.apply({ kind: 'MODE', leg, mode: null }, withLegMode(constraints, leg, null)),
         onShowPrevious: () => setPreviousFor(phase), onRetry: itinerary.retry,
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />

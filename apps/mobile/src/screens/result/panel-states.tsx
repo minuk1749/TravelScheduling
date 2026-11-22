@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { LegEdit } from '@travel/core/contracts/results/model';
 import { colors, radius, size, spacing, text } from '../../theme';
 import type { CardModel } from '../../result/days';
 
@@ -42,15 +43,22 @@ export function PreviousBadge({ onRetry }: { onRetry?(): void }) {
 }
 
 /** 3-8: fixed places are never moved automatically; offer to edit the cause or undo the change. */
-export function ConflictActions({ status, onEdit, onRevert, onEditConditions }: {
-  status: { messages: readonly string[]; target: CardModel | null; canUndo: boolean };
-  onEdit(card: CardModel): void; onRevert(): void; onEditConditions(): void;
+export type ConflictStatus = {
+  kind: 'CONFLICT'; count: number; messages: readonly string[]; target: CardModel | null; canUndo: boolean;
+  modeFixes: { fix: LegEdit; label: string }[];
+};
+
+export function ConflictActions({ status, onEdit, onReleaseMode, onRevert, onEditConditions }: {
+  status: ConflictStatus;
+  onEdit(card: CardModel): void; onReleaseMode(leg: LegEdit): void; onRevert(): void; onEditConditions(): void;
 }) {
   const target = status.target;
   return <View style={styles.block}>
     {status.messages.map(message => <Text key={message} style={[text.tiny, { color: colors.red.text }]}>⚠ {message}</Text>)}
     <Text style={styles.secondary}>고정된 장소는 자동으로 옮기지 않아요</Text>
     <View style={styles.row}>
+      {status.modeFixes.map(({ fix, label }) =>
+        <Button key={JSON.stringify([fix.date, fix.from, fix.to])} label={label} onPress={() => onReleaseMode(fix)} />)}
       {target ? <Button label={`${target.name} 고정 수정`} onPress={() => onEdit(target)} />
         : <Button label="여행 조건 수정" onPress={onEditConditions} />}
       {status.canUndo && <Button label="변경 취소" primary onPress={onRevert} />}

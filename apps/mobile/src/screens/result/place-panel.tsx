@@ -1,4 +1,5 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import type { LegEdit } from '@travel/core/contracts/results/model';
 import type { ResultMap } from '../../map/provider';
 import { ActionButton } from '../../components/action-button';
 import { colors, layout, radius, result, shadows, size, spacing, text } from '../../theme';
@@ -6,18 +7,18 @@ import { pagerState } from '../../map/selection';
 import type { CardModel, DayModel } from '../../result/days';
 import { dateTitle, durationLabel, timeRange } from '../../result/format';
 import { CardRow, PlaceCard } from './place-cards';
-import { ConflictActions, EmptyDay, FailureBlock, PreviousBadge } from './panel-states';
+import { ConflictActions, EmptyDay, FailureBlock, PreviousBadge, type ConflictStatus } from './panel-states';
 
 export type PanelStatus =
   | { kind: 'READY' }
   | { kind: 'CALCULATING' }
-  | { kind: 'CONFLICT'; count: number; messages: readonly string[]; target: CardModel | null; canUndo: boolean }
+  | ConflictStatus
   | { kind: 'FAILED'; message: string; hasPrevious: boolean }
   | { kind: 'PREVIOUS' };
 
 export type PanelActions = {
   onIndex(index: number): void; onSchedule(): void; onEdit(card: CardModel): void; onSwap(card: CardModel): void;
-  onAddWish(): void; onShowPrevious(): void; onRetry(): void; onRevert(): void; onEditConditions(): void;
+  onReleaseMode(leg: LegEdit): void; onAddWish(): void; onShowPrevious(): void; onRetry(): void; onRevert(): void; onEditConditions(): void;
 };
 
 function summary(day: DayModel) {
@@ -106,7 +107,8 @@ export function PlacePanel({ day, index, status, currency, freeTime, canAddWish,
     {status.kind === 'FAILED' ? <FailureBlock message={status.message}
       onShowPrevious={status.hasPrevious ? actions.onShowPrevious : undefined} onRetry={actions.onRetry} />
       : day.cards.length === 0 ? (status.kind === 'CONFLICT'
-        ? <ConflictActions status={status} onEdit={actions.onEdit} onRevert={actions.onRevert} onEditConditions={actions.onEditConditions} />
+        ? <ConflictActions status={status} onEdit={actions.onEdit} onReleaseMode={actions.onReleaseMode}
+          onRevert={actions.onRevert} onEditConditions={actions.onEditConditions} />
         : <EmptyDay freeTime={freeTime} canAddWish={canAddWish && interactive} onAddWish={actions.onAddWish} />)
       : <>
         <View testID="place-card-row" style={busy && { opacity: result.overlay.busy }} pointerEvents={busy ? 'none' : 'auto'}>
@@ -116,7 +118,8 @@ export function PlacePanel({ day, index, status, currency, freeTime, canAddWish,
           </CardRow>
         </View>
         {status.kind === 'CONFLICT'
-          ? <ConflictActions status={status} onEdit={actions.onEdit} onRevert={actions.onRevert} onEditConditions={actions.onEditConditions} />
+          ? <ConflictActions status={status} onEdit={actions.onEdit} onReleaseMode={actions.onReleaseMode}
+            onRevert={actions.onRevert} onEditConditions={actions.onEditConditions} />
           : <Pager index={index} count={day.cards.length} disabled={!interactive || !selected?.start}
             onIndex={actions.onIndex} onEdit={() => { if (selected) actions.onEdit(selected); }} />}
       </>}

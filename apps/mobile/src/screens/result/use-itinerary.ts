@@ -35,7 +35,8 @@ type State = {
 const SWITCHED = { TAXI: '택시로', TRANSIT: '대중교통으로', WALK: '도보로' } as const;
 
 function noticeTitle(change: Change, view: ResultView): string {
-  if (change.kind === 'MODE') return `${SWITCHED[change.mode]} 바꾸고 다시 계산했어요`;
+  if (change.kind === 'MODE') return change.mode === null
+    ? '이동수단 고정을 해제하고 다시 계산했어요' : `${SWITCHED[change.mode]} 바꾸고 다시 계산했어요`;
   if (change.kind === 'WISH') {
     const number = Math.round((Date.parse(change.date) - Date.parse(view.input.startDate)) / 86_400_000) + 1;
     return `${dayNumberLabel(number)}에 추가하고 다시 계산했어요`;

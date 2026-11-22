@@ -8,7 +8,7 @@ type ModeConstraintLeg = Pick<LegEdit, 'date' | 'from' | 'to'>;
 
 /** What the user changed; also tells the map which legs are being recalculated (3-5). */
 export type Change =
-  | { kind: 'MODE'; leg: ModeConstraintLeg; mode: TravelModeName }
+  | { kind: 'MODE'; leg: ModeConstraintLeg; mode: TravelModeName | null }
   | { kind: 'VISIT'; visitId: string; date?: string | null; previousDate?: string | null;
       placementOrder?: { before: number | null; after: number | null } }
   | { kind: 'WISH'; visitId: string; date: string; previousDate?: string | null }
@@ -22,10 +22,10 @@ export function sameModeConstraint(a: ModeConstraintLeg, b: ModeConstraintLeg): 
   return a.date === b.date && a.from === b.from && a.to === b.to;
 }
 
-/** Fixes one leg's mode, replacing an earlier fix of the same date and direction. */
-export function withLegMode(constraints: Constraints, leg: ModeConstraintLeg, mode: TravelModeName): Constraints {
+/** Sets or releases the fix for one date and direction. */
+export function withLegMode(constraints: Constraints, leg: ModeConstraintLeg, mode: TravelModeName | null): Constraints {
   const rest = constraints.legModes.filter(row => !sameModeConstraint(row, leg));
-  return { ...constraints, legModes: [...rest, { date: leg.date, from: leg.from, to: leg.to, mode }] };
+  return { ...constraints, legModes: mode === null ? rest : [...rest, { date: leg.date, from: leg.from, to: leg.to, mode }] };
 }
 
 export function withVisit(constraints: Constraints, edit: VisitEdit): Constraints {

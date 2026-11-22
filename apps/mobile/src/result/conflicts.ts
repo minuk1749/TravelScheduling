@@ -1,6 +1,7 @@
 import type { ItineraryResult } from '@travel/core/contracts/itinerary';
 import type { ResultView } from '@travel/core/contracts/results/model';
-import { MEALS, placeName, REASONS } from '@travel/core/presentation';
+import { MEALS, MODES, placeName, REASONS } from '@travel/core/presentation';
+import { sameModeConstraint } from './edits';
 
 /** One line of "고정 조건 충돌 N건": a visit that could not be placed, or a day/leg-level problem. */
 export type ConflictCause = {
@@ -42,4 +43,11 @@ export function conflictCauses(view: ResultView, result: ItineraryResult | null)
     causes.push({ visitId: null, date: null, message: '실제 출발 시각의 이동시간 검증을 완료하지 못했어요', leg: null });
   }
   return causes;
+}
+
+/** The stored date and directed endpoints identify a mode fix even if there is no previous schedule. */
+export function conflictingModeFixes(view: ResultView, date: string, causes: readonly ConflictCause[]) {
+  return (view.input.legModes ?? [])
+    .filter(fix => fix.date === date && causes.some(cause => cause.leg && sameModeConstraint(cause.leg, fix)))
+    .map(fix => ({ fix, label: `${route(view, fix.from, fix.to)} · ${MODES[fix.mode]} 고정 해제하고 다시 계산` }));
 }
