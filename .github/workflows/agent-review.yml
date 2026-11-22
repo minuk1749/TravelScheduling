@@ -25,6 +25,7 @@ jobs:
       issues: write
       pull-requests: write
     outputs:
+      context: ${{ steps.g.outputs.context }}
       go: ${{ steps.g.outputs.go }}
       task: ${{ steps.g.outputs.task }}
       issue: ${{ steps.g.outputs.issue }}
@@ -88,6 +89,8 @@ jobs:
 
           n=$(gh api --paginate "$R/issues/$issue/comments" --jq '.[] | select(.user.login == "github-actions[bot]") | .body' | grep -c '<!-- agent-review -->' || true)
           out round "$((n + 1))"
+          review_context=$(node .github/agent/resume-review.mjs context)
+          out context "$review_context"
           out go true
 
   test:
@@ -213,7 +216,7 @@ jobs:
             --json-schema '${{ steps.pick.outputs.schema }}'
             ${{ steps.pick.outputs.model && format('--model {0}', steps.pick.outputs.model) || '' }}
             ${{ steps.pick.outputs.effort && format('--effort {0}', steps.pick.outputs.effort) || '' }}
-      - name: Validate Claude review
+      - name: Validate Claude review ${{ needs.gate.outputs.context }}
         id: validate_review
         continue-on-error: true
         env:
@@ -228,7 +231,7 @@ jobs:
         if: steps.validate_review.outcome == 'failure'
         uses: anthropics/claude-code-action@v1
         with: *review_invocation
-      - name: Validate repeated Claude review
+      - name: Validate repeated Claude review ${{ needs.gate.outputs.context }}
         if: steps.validate_review.outcome == 'failure'
         env:
           RESULT: ${{ steps.retry_claude.outputs.structured_output }}
@@ -292,7 +295,8 @@ jobs:
           path: ${{ runner.temp }}/request.json
           overwrite: true
           retention-days: 14
-      - if: steps.request.outputs.ready == 'true'
+      - name: Publish verified Codex review request
+        if: steps.request.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

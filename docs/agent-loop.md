@@ -53,7 +53,7 @@ bash scripts/agent/install-launchd.sh
 |---|---|
 | 처음 한 번 | Actions → agent-start → Run workflow |
 | `needs-human` 라벨 PR | 직접 확인 후 처리 |
-| `agent-paused` 이슈 | 원인 해결 → **이슈 닫기만 하면 자동 재개** (Codex: 러너가 다음 실행에서 재개, Claude 작업: agent-resume이 다시 실행하며 이전 규칙에서 자체 리뷰를 건너뛴 PR은 먼저 재검사, 테스트·리뷰 실패: agent-resume이 PR을 다시 열어 재실행) |
+| `agent-paused` 이슈 | 원인 해결 → **이슈 닫기만 하면 자동 재개** (Codex: 러너가 다음 실행에서 재개, Claude 작업: agent-resume이 다시 실행하며 이전 규칙에서 자체 리뷰를 건너뛴 PR은 먼저 재검사, 리뷰 결과 검증 실패: PR·커밋·기준 브랜치·설명이 같으면 원래 실행 전체를 재시도한다. 원본 입력을 확인할 수 없는 실패가 현재 커밋에 남으면 새 커밋에서 재검사하고, 실패한 커밋이 이미 바뀌었으면 PR을 다시 열어 재검사한다) |
 | 주기적으로 | `docs/questions.md` 확인, `develop` → `main` 검토 후 머지 |
 | cloud 모드일 때만 | Codex 결과 댓글 알림이 오면 Codex 화면에서 PR 생성 버튼 클릭 |
 
