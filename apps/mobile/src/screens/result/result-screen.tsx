@@ -89,7 +89,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     .map((visit, index) => ({ visitId: visit.id, name: view.places[visit.place.id]?.name ??
       `희망 장소 ${index + 1} · ${kindLabels[visit.kind]} · ${visit.minutes}분` }));
   const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editSelection ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
-  const scene = mapScene({ view, day, days, card, focus, placed, causes,
+  const scene = mapScene({ view, day, card, focus, placed, causes,
     pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
   const constraints = constraintsFrom(view.input);
   const editOf = (visitId: string) => constraints.visits.find(visit => visit.id === visitId)!;

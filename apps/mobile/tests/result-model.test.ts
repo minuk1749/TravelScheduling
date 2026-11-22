@@ -110,7 +110,7 @@ test('highlighted legs: arriving leg (3-1), both legs of the edited place (3-3),
 });
 
 test('map scene: placed, wish, lodging and airport markers, line style by mode/outside, red conflict leg', () => {
-  const base = { view, days, card: first.cards[0], placed: placedVisitIds(days), causes: [], pending: new Set<string>() };
+  const base = { view, card: first.cards[0], placed: placedVisitIds(days), causes: [], pending: new Set<string>() };
   const scene = mapScene({ ...base, day: first, focus: 'BROWSE' });
   expect(scene.markers.map(marker => [marker.id, marker.kind, marker.order])).toEqual([
     ['lodging:place-hotel', 'LODGING', null], ['airport:place-airport', 'AIRPORT', null],
@@ -136,7 +136,7 @@ test('map scene: placed, wish, lodging and airport markers, line style by mode/o
 
 test('a conflict endpoint shares the existing airport marker and disappears from previous-result and ordinary days without a flight', () => {
   const cause = { visitId: null, date: D1, message: '공항 이동 불가', leg: { date: D1, from: place('airport'), to: place('hotel') } };
-  const base = { view, days, card: null, placed: placedVisitIds(days), causes: [cause], pending: new Set<string>() };
+  const base = { view, card: null, placed: placedVisitIds(days), causes: [cause], pending: new Set<string>() };
   const scheduled = mapScene({ ...base, day: first, focus: 'CONFLICT' });
   expect(scheduled.markers.filter(marker => marker.kind === 'AIRPORT')).toHaveLength(1);
   expect(scheduled.routes.filter(route => route.emphasis === 'CONFLICT')).toHaveLength(1);

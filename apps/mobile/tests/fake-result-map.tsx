@@ -16,7 +16,8 @@ export function FakeResultMap({ markers, routes, selectedId, dimmed, focusIds, o
     {markers.map(marker => <Text key={marker.id} testID={`coordinate-${marker.id}`}>{JSON.stringify(marker.coordinate)}</Text>)}
     {routes.map(route => <View key={route.id}>
       <Text testID={`route-${route.id}`}>{`${route.order} ${route.mode} ${route.line} ${route.emphasis} ${route.color} ${route.path.kind}`}</Text>
-      {route.path.kind === 'ROAD' && <Text testID={`points-${route.id}`}>{JSON.stringify(route.path.points)}</Text>}
+      {route.path.kind === 'ROAD' ? <Text testID={`points-${route.id}`}>{JSON.stringify(route.path.points)}</Text>
+        : <Text testID={`straight-${route.id}`}>{JSON.stringify([route.path.from, route.path.to])}</Text>}
     </View>)}
   </View>;
 }

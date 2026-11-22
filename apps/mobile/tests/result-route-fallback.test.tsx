@@ -1,6 +1,9 @@
 import { act, fireEvent, screen, waitFor } from 'expo-router/testing-library';
 import { deferred, json } from './helpers';
-import { D1, legId, openResult, place, resultFixture, REVISION, ROAD, routes, trip, view } from './result-fixture';
+import { at, D1, D2, D3, legId, openResult, place, resultFixture, REVISION, ROAD, routes, trip, view } from './result-fixture';
+
+const location = (id: string) => JSON.parse(screen.getByTestId('coordinate-' + id).props.children);
+const straight = (id: string) => JSON.parse(screen.getByTestId('straight-' + id).props.children);
 
 test('each leg keeps its own mode and falls back independently when a shape is unusable', async () => {
   const f = resultFixture();
@@ -42,7 +45,8 @@ test('scheduled legs use their road shapes even when one or both place lookups r
   expect(routes()[museumLeg]).toMatch(/TRANSIT SOLID STRONG .* ROAD$/);
   expect(JSON.parse(screen.getByTestId('points-' + museumLeg).props.children)).toContainEqual({ latitude: 35.7022, longitude: 139.769 });
   expect(routes()[marketLeg]).toMatch(/TAXI DOTTED DIM .* STRAIGHT$/);
-  expect(routes()[walkBack]).toBeUndefined();
+  expect(routes()[walkBack]).toMatch(/WALK DOTTED DIM .* STRAIGHT$/);
+  expect(straight(walkBack)).toEqual([location('market'), location('lodging:' + place('hotel'))]);
   await fireEvent.press(screen.getByRole('button', { name: '전체 일정' }));
   expect(screen.getByTestId('schedule-leg-' + airportLeg)).toHaveTextContent(/40분.*도심 밖/);
   expect(screen.getByTestId('schedule-leg-' + museumLeg)).toHaveTextContent(/10:30.*10:55/);
@@ -62,7 +66,6 @@ test('matching roads restore missing visit, lodging and airport markers on their
   await act(async () => response.resolve(json(tokyoShapes({
     [place('market')]: 'cv~xEsubtYja@oA', [place('shrine')]: 'c_xxE_hatYr]jgL',
   }))));
-  const location = (id: string) => JSON.parse(screen.getByTestId('coordinate-' + id).props.children);
   const marker = (id: string) => screen.getByTestId('marker-' + id);
   const card = (name: RegExp, selected?: boolean) => screen.getByRole('button', { name, selected });
   expect(location('airport:' + place('airport'))).toEqual({ latitude: 35.5494, longitude: 139.7798 });
@@ -87,4 +90,50 @@ test('matching roads restore missing visit, lodging and airport markers on their
   expect(location('lodging:' + lodging.id)).toEqual({ latitude: 35.6812, longitude: 139.7671 });
   expect(screen.queryByTestId('marker-shrine')).toBeNull();
   expect(screen.queryByTestId('marker-airport:' + place('airport'))).toBeNull();
+});
+
+test('fallback endpoints use the displayed local day before other days of the same result, including overnight airport transfers', async () => {
+  const airport = place('airport'), hotel = place('hotel');
+  const f = resultFixture({ ...view, places: { ...view.places, [airport]: null, [hotel]: null },
+    input: { ...view.input, flights: [...view.input.flights, { direction: 'DEPARTURE', airport: view.input.flights[0]!.airport,
+      localDateTime: D3 + 'T03:00' }] } });
+  const generated = trip(REVISION);
+  const returnLeg = { ...generated.comparisons[0]!, date: D3, from: hotel, to: airport, departure: at(D2, '23:40') };
+  f.generate.mockResolvedValueOnce(json({ ...generated, comparisons: [...generated.comparisons, returnLeg] }));
+  const response = tokyoShapes();
+  response.legs = response.legs.map(leg => leg.kind === 'AIRPORT' ? { ...leg, shape: { status: 'NONE' } } : leg);
+  response.legs.push({ date: D3, kind: 'AIRPORT', from: hotel, to: airport, mode: 'TRANSIT',
+    shape: { status: 'OK', encodedPolyline: 'w_xxEshatY~wXcmA' } });
+  f.shapes.mockResolvedValueOnce(json(response));
+  await openResult(f);
+  const outbound = legId(D1, 'airport', 'hotel', 'AIRPORT');
+  await waitFor(() => expect(routes()[outbound]).toMatch(/TRANSIT DOTTED DIM .* STRAIGHT$/));
+  expect(straight(outbound)).toEqual([location('airport:' + airport), location('lodging:' + hotel)]);
+  expect(location('lodging:' + hotel)).toEqual({ latitude: 35.6812, longitude: 139.7671 });
+  await fireEvent.press(screen.getByRole('button', { name: '전체 일정' }));
+  expect(screen.getByTestId('schedule-leg-' + outbound)).toHaveTextContent(/40분.*도심 밖/);
+  await fireEvent.press(screen.getByRole('button', { name: '닫기' }));
+  await fireEvent.press(screen.getByRole('button', { name: '2일 12.4' }));
+  expect(location('lodging:' + hotel)).toEqual({ latitude: 35.6814, longitude: 139.7673 });
+  expect(straight(legId(D2, 'shrine', 'hotel'))).toEqual([location('shrine'), location('lodging:' + hotel)]);
+  const overnight = legId(D3, 'hotel', 'airport', 'AIRPORT');
+  expect(routes()[overnight]).toMatch(/ROAD$/);
+  expect(JSON.parse(screen.getByTestId('points-' + overnight).props.children)).toEqual([
+    { latitude: 35.6814, longitude: 139.7673 }, { latitude: 35.5494, longitude: 139.7798 },
+  ]);
+  await fireEvent.press(screen.getByRole('button', { name: '3일 12.5' }));
+  expect(routes()[overnight]).toBeUndefined();
+});
+
+test('missing place details and no usable road endpoint leave that place and its incident lines absent', async () => {
+  const f = resultFixture({ ...view, places: { ...view.places, [place('market')]: null, [place('hotel')]: null } });
+  f.shapes.mockResolvedValueOnce(json(tokyoShapes({ [place('market')]: '??' })));
+  await openResult(f);
+  await screen.findByTestId('points-' + legId(D1, 'hotel', 'museum'));
+  expect(screen.queryByTestId('marker-market')).toBeNull();
+  expect(routes()[legId(D1, 'museum', 'market')]).toBeUndefined();
+  const walk = legId(D1, 'market', 'hotel');
+  expect(routes()[walk]).toBeUndefined();
+  await fireEvent.press(screen.getByRole('button', { name: '전체 일정' }));
+  expect(screen.getByTestId('schedule-leg-' + walk)).toHaveTextContent(/도보 30분/);
 });

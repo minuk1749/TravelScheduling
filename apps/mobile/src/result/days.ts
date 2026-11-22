@@ -49,6 +49,7 @@ export type TimelineRow =
 export type DayModel = {
   date: string; number: number; timeZone: string;
   cards: CardModel[]; legs: LegModel[]; rows: TimelineRow[];
+  coordinates: ReadonlyMap<string, LatLng>;
   start: string | null; end: string | null; travelMinutes: number;
 };
 
@@ -68,7 +69,6 @@ const localDate = (instant: string, zone: string) =>
 
 const instantAfter = (start: string, minutes: number) =>
   Temporal.Instant.from(start).add({ milliseconds: Math.round(minutes * 60_000) }).toString();
-const point = (view: ResultView, id: string): LatLng | null => view.places[id]?.coordinates ?? null;
 
 /** Group by when the traveler sees the event, independent of the saved calculation date. */
 function byLocalDate<T>(items: readonly T[], zone: string, instant: (item: T) => string): Map<string, T[]> {
@@ -84,13 +84,49 @@ function byLocalDate<T>(items: readonly T[], zone: string, instant: (item: T) =>
 
 type RoadShapes = ReadonlyMap<string, readonly LatLng[]>;
 
-function legModels(view: ResultView, legs: readonly LegComparison[], shapes?: RoadShapes): LegModel[] {
+type LegRoad = { leg: LegComparison; key: string; road: readonly LatLng[] | null };
+
+function legRoad(leg: LegComparison, shapes?: RoadShapes): LegRoad {
+  const key = legKey(leg);
+  const points = shapes?.get(roadShapeKey(key, leg.selected.mode));
+  return { leg, key, road: points && points.length >= 2 ? points : null };
+}
+
+export function placeDetailCoordinates(view: ResultView) {
+  const coordinates = new Map<string, LatLng>();
+  for (const [id, place] of Object.entries(view.places)) {
+    if (place) coordinates.set(id, place.coordinates);
+  }
+  return coordinates;
+}
+
+/** Index actual road endpoints before building straight lines. A place detail always wins,
+ * then the first access point on the displayed local date, then the first in this itinerary. */
+function coordinatesByDay(view: ResultView, dates: readonly string[], departures: ReadonlyMap<string, LegRoad[]>) {
+  const itineraryCoordinates = placeDetailCoordinates(view);
+  const daily = new Map<string, Map<string, LatLng>>();
+  for (const date of dates) {
+    const local = new Map<string, LatLng>();
+    daily.set(date, local);
+    for (const { leg, road } of departures.get(date) ?? []) {
+      if (!road) continue;
+      for (const [id, coordinate] of [[leg.from, road[0]!], [leg.to, road.at(-1)!]] as const) {
+        if (view.places[id]) continue;
+        if (!local.has(id)) local.set(id, coordinate);
+        if (!itineraryCoordinates.has(id)) itineraryCoordinates.set(id, coordinate);
+      }
+    }
+  }
+  return new Map([...daily].map(([date, local]) => [date,
+    local.size ? new Map([...itineraryCoordinates, ...local]) : itineraryCoordinates,
+  ]));
+}
+
+function legModels(view: ResultView, roads: readonly LegRoad[], coordinates: ReadonlyMap<string, LatLng>): LegModel[] {
   const centre = CITY_CENTRES[view.input.cityCode];
-  return legs.map((leg, index) => {
-    const key = legKey(leg), mode = leg.selected.mode;
-    const points = shapes?.get(roadShapeKey(key, mode));
-    const road = points && points.length >= 2 ? points : null;
-    const from = point(view, leg.from) ?? road?.[0], to = point(view, leg.to) ?? road?.at(-1);
+  return roads.map(({ leg, key, road }, index) => {
+    const mode = leg.selected.mode;
+    const from = coordinates.get(leg.from), to = coordinates.get(leg.to);
     const path: MapRoutePath | null = road ? { kind: 'ROAD', points: road }
       : from && to ? { kind: 'STRAIGHT', from, to } : null;
     const target = mode === 'TAXI' ? 'TRANSIT' as const : 'TAXI' as const;
@@ -102,7 +138,7 @@ function legModels(view: ResultView, legs: readonly LegComparison[], shapes?: Ro
       alternatives: leg.alternatives,
       swap: mode === 'WALK' ? null : { mode: target, estimate: leg.alternatives[target] ?? null },
       outside: !!from && !!to && isOutsideCityCentre({ mode, from, to }, centre),
-      color: legColor(index, legs.length), path,
+      color: legColor(index, roads.length), path,
     };
   });
 }
@@ -204,17 +240,20 @@ export function buildDays(view: ResultView, shown: ItineraryResult | null, previ
   const context: Context = { view, before: displayedSchedule(previous) ? placements(previous) : null };
   const zone = view.input.timeZone;
   const comparisons = [...shown?.comparisons ?? []].sort((a, b) => Temporal.Instant.compare(a.departure, b.departure));
-  const byDeparture = byLocalDate(comparisons, zone, leg => leg.departure);
+  const dates = tripDates(view.input.startDate, view.input.endDate);
+  const byDeparture = byLocalDate(comparisons.map(leg => legRoad(leg, shapes)), zone, source => source.leg.departure);
+  const coordinates = coordinatesByDay(view, dates, byDeparture);
   const events = byLocalDate(schedule ? endpoints(view, comparisons) : [], zone, row => row.at);
-  const days = tripDates(view.input.startDate, view.input.endDate).map((date, index): DayModel => {
+  const days = dates.map((date, index): DayModel => {
     const scheduled = schedule?.days.find(day => day.date === date);
     const stops = scheduled?.stops ?? [];
-    const legs = legModels(view, byDeparture.get(date) ?? [], shapes);
+    const dayCoordinates = coordinates.get(date)!;
+    const legs = legModels(view, byDeparture.get(date) ?? [], dayCoordinates);
     const visits = stops.filter((stop): stop is Extract<Stop, { kind: 'VISIT' }> => stop.kind === 'VISIT');
     const cards = visits.flatMap((stop, position) =>
       card(context, date, stop, stop.visitId, position + 1, legs, position === visits.length - 1) ?? []);
     const travelMinutes = Math.ceil(legs.reduce((sum, leg) => sum + leg.minutes, 0));
-    return { date, number: index + 1, timeZone: scheduled?.timeZone ?? view.input.timeZone, cards, legs,
+    return { date, number: index + 1, timeZone: scheduled?.timeZone ?? view.input.timeZone, cards, legs, coordinates: dayCoordinates,
       rows: timeline(events.get(date) ?? [], stops, cards, legs), ...bounds(stops, legs), travelMinutes };
   });
   // A failed move leaves the last successful stop on its original day. The cause belongs to the

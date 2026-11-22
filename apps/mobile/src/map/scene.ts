@@ -2,7 +2,7 @@ import { colors } from '@travel/design-tokens';
 import { placeName } from '@travel/core/presentation';
 import type { ResultView } from '@travel/core/contracts/results/model';
 import type { ConflictCause } from '../result/conflicts';
-import type { CardModel, DayModel } from '../result/days';
+import { placeDetailCoordinates, type CardModel, type DayModel } from '../result/days';
 import { legEmphasis, type MapFocus } from './selection';
 import type { LatLng, MapMarkerSpec, MapRouteSpec } from './types';
 
@@ -10,7 +10,6 @@ export type SceneInput = {
   view: ResultView;
   /** Selected date; undefined while nothing has been calculated (3-5 first generation). */
   day: DayModel | undefined;
-  days: readonly DayModel[];
   card: CardModel | null;
   focus: MapFocus;
   pending: ReadonlySet<string>;
@@ -20,24 +19,6 @@ export type SceneInput = {
 
 export const lodgingMarkerId = (placeId: string) => `lodging:${placeId}`;
 export const airportMarkerId = (placeId: string) => `airport:${placeId}`;
-
-/** Place details take precedence over snapped road endpoints. Prefer the current day’s endpoints when the same place has different access points. */
-function placeCoordinates({ view, day, days }: SceneInput) {
-  const coordinates = new Map<string, LatLng>();
-  for (const [id, place] of Object.entries(view.places)) {
-    if (place) coordinates.set(id, place.coordinates);
-  }
-  const orderedDays = day ? [day, ...days.filter(other => other.date !== day.date)] : [];
-  for (const source of orderedDays) {
-    for (const leg of source.legs) {
-      if (leg.path?.kind !== 'ROAD') continue;
-      const { points } = leg.path;
-      if (!coordinates.has(leg.from)) coordinates.set(leg.from, points[0]!);
-      if (!coordinates.has(leg.to)) coordinates.set(leg.to, points.at(-1)!);
-    }
-  }
-  return coordinates;
-}
 
 function placesMarkers({ view, day, placed }: SceneInput, coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
   const markers: MapMarkerSpec[] = [];
@@ -105,7 +86,7 @@ function conflictRoutes(coordinates: ReadonlyMap<string, LatLng>, legs: readonly
 export function mapScene(input: SceneInput) {
   const conflictLegs = input.focus === 'CONFLICT' ? input.causes.flatMap(({ leg }, index) =>
     leg && leg.date === input.day?.date ? [{ from: leg.from, to: leg.to, index }] : []) : [];
-  const coordinates = placeCoordinates(input);
+  const coordinates = input.day?.coordinates ?? placeDetailCoordinates(input.view);
   const markers = [...endpointMarkers(input, conflictLegs, coordinates), ...placesMarkers(input, coordinates)];
   const routes = [...legRoutes(input), ...conflictRoutes(coordinates, conflictLegs)];
   const focusIds = markers.filter(marker => marker.kind === 'PLACED' || marker.kind === 'LODGING').map(marker => marker.id);

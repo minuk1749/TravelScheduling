@@ -46,6 +46,7 @@ test.each(['cached', 'in flight', 'malformed and in flight'])('same-input retry 
   expect(routes()[museumLeg]).toMatch(/TAXI .* STRAIGHT$/);
   expect(screen.queryByTestId(`points-${commonLeg}`)).toBeNull();
   expect(screen.queryByTestId('marker-market')).toBeNull();
+  expect(routes()[commonLeg]).toBeUndefined();
   await waitFor(() => expect(f.shapes).toHaveBeenCalledTimes(2));
   expect(f.shapes.mock.calls.map(([url]) => [url.searchParams.get('inputHash'), url.searchParams.get('itineraryId')]))
     .toEqual([[REVISION, ITINERARY_A], [REVISION, itineraryB]]);
