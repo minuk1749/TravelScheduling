@@ -24,7 +24,7 @@ import type { useItinerary } from './use-itinerary';
 import { useRouteShapes } from './use-route-shapes';
 import { WishSheet } from './wish-sheet';
 
-type Sheet = { kind: 'SCHEDULE' } | { kind: 'EDIT'; visitId: string } | { kind: 'WISH'; visitId: string | null; date: string };
+type Sheet = { kind: 'SCHEDULE' } | { kind: 'EDIT'; visitId: string } | { kind: 'WISH'; visitId: string; date: string; chooseVisit: boolean };
 type Picked = { days: readonly DayModel[]; result: unknown; selection: Selection; visitId: string | null };
 const NOTICE_MS = 6000;
 const NOTHING: ReadonlySet<string> = new Set();
@@ -99,7 +99,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   const chooseDate = (date: string) => { setSheet(null); select(selectDate(date)); };
   const selectMarker = (id: string) => {
-    if (wishes.some(wish => wish.visitId === id)) { if (phase.kind === 'idle') setSheet({ kind: 'WISH', visitId: id, date: day.date }); return; }
+    if (wishes.some(wish => wish.visitId === id)) { if (phase.kind === 'idle') setSheet({ kind: 'WISH', visitId: id, date: day.date, chooseVisit: false }); return; }
     const index = day.cards.findIndex(item => item.visitId === id);
     if (index >= 0) select({ date: day.date, index });
   };
@@ -132,7 +132,10 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       actions={{
         onIndex: index => select({ date: day.date, index }), onSchedule: () => setSheet({ kind: 'SCHEDULE' }),
         onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: target => swap(target.arrival),
-        onAddWish: () => setSheet({ kind: 'WISH', visitId: null, date: day.date }),
+        onAddWish: () => {
+          const first = wishes[0];
+          if (first) setSheet({ kind: 'WISH', visitId: first.visitId, date: day.date, chooseVisit: true });
+        },
         onShowPrevious: () => setPreviousFor(phase), onRetry: itinerary.retry,
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />
@@ -144,6 +147,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       day={days.find(row => row.cards.includes(editing)) ?? day} close={() => setSheet(null)}
       apply={edit => { setSheet(null); itinerary.apply({ kind: 'VISIT', visitId: edit.id }, withVisit(constraints, edit)); }} />}
     {sheet?.kind === 'WISH' && <WishSheet wishes={wishes} visitId={sheet.visitId} date={sheet.date} days={days}
+      onChoose={sheet.chooseVisit ? visitId => setSheet({ ...sheet, visitId }) : undefined}
       close={() => setSheet(null)} apply={(visitId, date) => {
         setSheet(null);
         itinerary.apply({ kind: 'WISH', visitId, date }, withVisit(constraints, onDate(editOf(visitId), date)));
