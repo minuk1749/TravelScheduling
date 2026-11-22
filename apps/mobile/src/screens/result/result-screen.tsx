@@ -82,7 +82,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const editing = sheet?.kind === 'EDIT' ? days.flatMap(row => row.cards).find(item => item.visitId === sheet.visitId) ?? null : null;
   const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : conflict ? 'CONFLICT' : editing ? 'EDIT' : 'BROWSE';
   const scene = mapScene({ view, day, card: editing ?? card, focus, placed, shapes, causes,
-    pending: calculating ? pendingLegKeys(days, phase.change, view.input) : NOTHING });
+    pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
   const constraints = constraintsFrom(view.input);
   const editOf = (visitId: string) => constraints.visits.find(visit => visit.id === visitId)!;
   const currency = displayed?.efficiency?.currency ?? null;

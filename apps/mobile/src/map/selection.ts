@@ -76,26 +76,33 @@ export function reconcileSelection(days: readonly DayModel[], previous: Selectio
   return day ? { date: day.date, index: clampIndex(previous.index, day.cards.length) } : previous;
 }
 
-/** Legs being recalculated: the changed leg, or every leg touching the changed visit. */
-export function pendingLegKeys(days: readonly DayModel[], change: Change | null, view: { visits: readonly { id: string; place: { id: string } }[] }): Set<string> {
+/** Only the placed visit's arrival and departure belong to that edit, even if a lodging shares its place ID. */
+function visitLegKeys(card: CardModel | null | undefined): Set<string> {
+  const keys = new Set<string>();
+  if (card?.arrival) keys.add(card.arrival.key);
+  if (card?.departure) keys.add(card.departure.key);
+  return keys;
+}
+
+export function pendingLegKeys(days: readonly DayModel[], change: Change | null): Set<string> {
   if (!change) return new Set();
-  if (change.kind === 'UNDO') return pendingLegKeys(days, change.of, view);
-  const legs = days.flatMap(day => day.legs);
-  if (change.kind === 'RETRY') return new Set(legs.map(leg => leg.key));
+  if (change.kind === 'UNDO') return pendingLegKeys(days, change.of);
+  if (change.kind === 'RETRY') return new Set(days.flatMap(day => day.legs.map(leg => leg.key)));
   if (change.kind === 'MODE') return new Set([change.leg.key]);
-  const placeId = view.visits.find(visit => visit.id === change.visitId)?.place.id;
-  return new Set(legs.filter(leg => leg.from === placeId || leg.to === placeId).map(leg => leg.key));
+  const card = days.flatMap(day => day.cards).find(item => item.visitId === change.visitId);
+  return visitLegKeys(card);
 }
 
 /** §6 state table: how each leg of the selected day is drawn. */
 export function legEmphasis(day: DayModel | undefined, card: CardModel | null, focus: MapFocus,
   pending: ReadonlySet<string> = new Set()): Map<string, LegEmphasis> {
   const emphasis = new Map<string, LegEmphasis>();
+  const editing = focus === 'EDIT' ? visitLegKeys(card) : null;
   for (const leg of day?.legs ?? []) {
     let value: LegEmphasis = 'DIM';
     if (focus === 'CALCULATING') value = pending.has(leg.key) ? 'HIDDEN' : 'STRONG';
     else if (focus === 'BROWSE') value = card?.arrival?.key === leg.key ? 'STRONG' : 'DIM';
-    else if (focus === 'EDIT') value = card && (leg.to === card.placeId || leg.from === card.placeId) ? 'STRONG' : 'DIM';
+    else if (editing?.has(leg.key)) value = 'STRONG';
     emphasis.set(leg.key, value);
   }
   return emphasis;

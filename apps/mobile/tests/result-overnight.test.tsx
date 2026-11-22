@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
+import { legEmphasis, pendingLegKeys } from '../src/map/selection';
 import { mapScene } from '../src/map/scene';
 import { buildDays, placedVisitIds } from '../src/result/days';
 import { timeRange } from '../src/result/format';
@@ -68,6 +69,7 @@ test('a wish alias for a lodging preserves both marker roles, actual lodging row
   const map = mapScene({ view: alias, day, card: null, focus: 'BROWSE', pending: new Set(), placed: placedVisitIds(days),
     shapes: new Map(), causes: [] });
   expect(map.markers.map(m => m.id)).toEqual(expect.arrayContaining(['lodging:' + lodging.id, 'cafe']));
+  expect([...pendingLegKeys(days, { kind: 'WISH', visitId: 'cafe', date: D1 })]).toEqual([]);
 });
 
 test('a scheduled visit at the lodging uses the leg before that visit and preserves later lodging anchors', () => {
@@ -77,10 +79,20 @@ test('a scheduled visit at the lodging uses the leg before that visit and preser
   const data = plan();
   data.comparisons = data.comparisons.filter(leg => leg.from !== place('market')).map(leg =>
     leg.to === place('market') ? { ...leg, to: hotel.id } : leg);
-  const [first] = buildDays(alias, trip(REVISION, data), null);
+  const days = buildDays(alias, trip(REVISION, data), null);
+  const [first, second] = days;
   const visit = first.cards.find(card => card.visitId === 'market')!;
   expect(visit.arrival).toMatchObject({ from: place('museum'), to: hotel.id, arrival: '2026-12-03T04:20:00Z' });
   expect(visit.departure).toBeNull();
+  const affected = legId(D1, 'museum', 'hotel');
+  const transfer = legId(D1, 'airport', 'hotel', 'AIRPORT');
+  const edit = legEmphasis(first, visit, 'EDIT');
+  expect([...edit].filter(([, emphasis]) => emphasis === 'STRONG').map(([key]) => key)).toEqual([affected]);
+  expect(edit.get(transfer)).toBe('DIM');
+  const pending = pendingLegKeys(days, { kind: 'VISIT', visitId: 'market' });
+  expect([...pending]).toEqual([affected]);
+  expect(legEmphasis(first, visit, 'CALCULATING', pending).get(transfer)).toBe('STRONG');
+  expect([...legEmphasis(second, null, 'CALCULATING', pending).values()]).toEqual(['STRONG', 'STRONG']);
   expect(first.rows.filter(row => row.kind === 'ENDPOINT').map(row => row.role))
     .toEqual(['AIRPORT_ARRIVAL', 'LODGING_IN', 'LODGING_OUT', 'LODGING_IN']);
 });

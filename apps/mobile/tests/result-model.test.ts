@@ -99,12 +99,12 @@ test('highlighted legs: arriving leg (3-1), both legs of the edited place (3-3),
   expect(by(legEmphasis(first, museum, 'BROWSE'))).toEqual({ 1: 'DIM', 2: 'STRONG', 3: 'DIM', 4: 'DIM' });
   expect(by(legEmphasis(first, market, 'EDIT'))).toEqual({ 1: 'DIM', 2: 'DIM', 3: 'STRONG', 4: 'STRONG' });
   const change = { kind: 'MODE' as const, leg: { key: legId(D1, 'hotel', 'museum'), date: D1, from: place('hotel'), to: place('museum') }, mode: 'TAXI' as const };
-  const pending = pendingLegKeys(days, change, view.input);
+  const pending = pendingLegKeys(days, change);
   expect(by(legEmphasis(first, museum, 'CALCULATING', pending))).toEqual({ 1: 'STRONG', 2: 'HIDDEN', 3: 'STRONG', 4: 'STRONG' });
-  expect([...pendingLegKeys(days, { kind: 'VISIT', visitId: 'market' }, view.input)]).toEqual([legId(D1, 'museum', 'market'), legId(D1, 'market', 'hotel')]);
-  expect(pendingLegKeys(days, { kind: 'UNDO', of: change }, view.input)).toEqual(pending);
-  expect(pendingLegKeys(days, { kind: 'RETRY' }, view.input).size).toBe(6);
-  expect(pendingLegKeys(days, null, view.input).size).toBe(0);
+  expect([...pendingLegKeys(days, { kind: 'VISIT', visitId: 'market' })]).toEqual([legId(D1, 'museum', 'market'), legId(D1, 'market', 'hotel')]);
+  expect(pendingLegKeys(days, { kind: 'UNDO', of: change })).toEqual(pending);
+  expect(pendingLegKeys(days, { kind: 'RETRY' }).size).toBe(6);
+  expect(pendingLegKeys(days, null).size).toBe(0);
   expect(new Set(legEmphasis(first, museum, 'CONFLICT').values())).toEqual(new Set(['DIM']));
   expect(new Set(legEmphasis(first, museum, 'PREVIOUS').values())).toEqual(new Set(['DIM']));
 });
