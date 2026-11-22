@@ -36,7 +36,7 @@ export function withVisit(constraints: Constraints, edit: VisitEdit): Constraint
 export const asWish = (edit: VisitEdit): VisitEdit => ({ ...edit, priority: 'WISH', fixedDate: null, fixedTime: null, fixedOrder: null });
 
 /** 3-4: a wish is added to a date by fixing only that date; it stays a wish. */
-export const onDate = (edit: VisitEdit, date: string): VisitEdit => ({ ...edit, fixedDate: date, fixedTime: null, fixedOrder: null });
+export const onDate = (edit: VisitEdit, date: string): VisitEdit => ({ ...edit, fixedDate: date });
 
 /** Compare the booked visits shown before this calculation with the newly accepted result. */
 export function reservationSummary(before: TripInputs['visits'], after: TripInputs['visits']): string | null {
