@@ -33,8 +33,10 @@ function CalculationSummary({ label }: { label: string }) {
   </View>;
 }
 
-/** No completed day, place cards or legs are available during the first generation request. */
-export function InitialResult({ map: Map, back }: { map: ResultMap; back(): void }) {
+/** No completed day, place cards or legs are available before the first successful generation. */
+export function InitialResult({ map: Map, back, failure }: {
+  map: ResultMap; back(): void; failure?: { message: string; retry(): void; editConditions(): void };
+}) {
   const height = useWindowDimensions().height * result.panel.ratio;
   return <View style={layout.screen}>
     <Map markers={[]} routes={[]} selectedId={null} focusDate={null} focusIds={[]} topInset={0} bottomInset={height}
@@ -44,9 +46,10 @@ export function InitialResult({ map: Map, back }: { map: ResultMap; back(): void
       <View style={styles.dateRow}>
         <View style={styles.flex}>
           <Text accessibilityRole="header" style={text.title}>동선 만들기</Text>
-          <CalculationSummary label="동선을 만드는 중" />
+          {!failure && <CalculationSummary label="동선을 만드는 중" />}
         </View>
       </View>
+      {failure && <FailureBlock message={failure.message} onRetry={failure.retry} onEditConditions={failure.editConditions} />}
       <ActionButton label="저장한 여행 보기" secondary onPress={back} />
     </View>
   </View>;
@@ -100,8 +103,8 @@ export function PlacePanel({ day, index, status, currency, freeTime, canAddWish,
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.handle} />
     <DateRow day={day} status={status} onSchedule={actions.onSchedule} />
     {status.kind === 'PREVIOUS' && <PreviousBadge onRetry={actions.onRetry} />}
-    {status.kind === 'FAILED' ? <FailureBlock message={status.message} hasPrevious={status.hasPrevious}
-      onShowPrevious={actions.onShowPrevious} onRetry={actions.onRetry} />
+    {status.kind === 'FAILED' ? <FailureBlock message={status.message}
+      onShowPrevious={status.hasPrevious ? actions.onShowPrevious : undefined} onRetry={actions.onRetry} />
       : day.cards.length === 0 ? (status.kind === 'CONFLICT'
         ? <ConflictActions status={status} onEdit={actions.onEdit} onRevert={actions.onRevert} onEditConditions={actions.onEditConditions} />
         : <EmptyDay freeTime={freeTime} canAddWish={canAddWish && interactive} onAddWish={actions.onAddWish} />)

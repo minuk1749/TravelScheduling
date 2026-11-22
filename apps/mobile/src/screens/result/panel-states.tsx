@@ -18,15 +18,16 @@ export function EmptyDay({ freeTime, canAddWish, onAddWish }: { freeTime: string
 }
 
 /** 3-9: the calculation failed; saved places and fixed conditions remain. */
-export function FailureBlock({ message, hasPrevious, onShowPrevious, onRetry }: {
-  message: string; hasPrevious: boolean; onShowPrevious(): void; onRetry(): void;
+export function FailureBlock({ message, onShowPrevious, onRetry, onEditConditions }: {
+  message: string; onShowPrevious?(): void; onRetry(): void; onEditConditions?(): void;
 }) {
   return <View style={styles.block}>
     <Text accessibilityRole="alert" style={text.name}>⚠ 동선을 계산하지 못했어요</Text>
     <Text style={styles.secondary}>입력한 장소와 고정 조건은 그대로 있어요</Text>
     <Text style={[text.tiny, { color: colors.gray.description }]}>{message}</Text>
     <View style={styles.row}>
-      {hasPrevious && <Button label="이전 일정 보기" onPress={onShowPrevious} />}
+      {onShowPrevious && <Button label="이전 일정 보기" onPress={onShowPrevious} />}
+      {onEditConditions && <Button label="여행 조건 수정" onPress={onEditConditions} />}
       <Button label="다시 계산" primary onPress={onRetry} />
     </View>
   </View>;

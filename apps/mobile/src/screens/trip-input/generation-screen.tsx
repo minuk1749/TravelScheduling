@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Text } from 'react-native';
 import { useTripApi, type GeneratedTrip } from '../../api/trips';
-import { ActionButton } from '../../components/action-button';
-import { FormCard, FormError, FormScreen } from '../../components/input/form-layout';
 import { useResultMap } from '../../map/provider';
-import { text } from '../../theme';
 import { InitialResult } from '../result/place-panel';
 import { OutcomeFlow } from '../result/result-flow';
 import { errorMessage } from './presentation';
@@ -20,26 +16,23 @@ export function GenerationScreen() {
   const [generation, setGeneration] = useState<Generation>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    let current = true;
-    void api.generate(id).then(
-      result => { if (current) setGeneration({ status: 'ready', result }); },
-      error => { if (current) setGeneration({ status: 'error', message: errorMessage(error) }); },
+    const request = new AbortController();
+    void api.generate(id, request.signal).then(
+      result => { if (!request.signal.aborted) setGeneration({ status: 'ready', result }); },
+      error => { if (!request.signal.aborted) setGeneration({ status: 'error', message: errorMessage(error) }); },
     );
-    return () => { current = false; };
+    return () => request.abort();
   }, [api, id, attempt]);
 
   const openTrip = () => router.dismissTo({ pathname: '/trips/[id]', params: { id } });
+  const editConditions = () => router.replace({ pathname: '/trips/[id]/settings', params: { id } });
   if (generation.status === 'ready') {
-    return <OutcomeFlow key={`${id}:${attempt}`} tripId={id} initial={generation.result} back={openTrip}
-      editConditions={() => router.replace({ pathname: '/trips/[id]/settings', params: { id } })} />;
+    return <OutcomeFlow key={`${id}:${attempt}`} tripId={id} initial={generation.result} back={openTrip} editConditions={editConditions} />;
   }
-  if (generation.status === 'loading') return <InitialResult map={ResultMap} back={openTrip} />;
-  return <FormScreen title="동선 만들기" back={openTrip} footer={<>
-    <ActionButton label="다시 계산" onPress={() => {
-      setGeneration({ status: 'loading' }); setAttempt(value => value + 1);
-    }} />
-    <ActionButton label="저장한 여행 보기" secondary onPress={openTrip} />
-  </>}>
-    <FormCard><FormError message={generation.message} /><Text style={text.body}>여행 입력은 저장되어 있어요.</Text></FormCard>
-  </FormScreen>;
+  const retry = () => {
+    setGeneration({ status: 'loading' });
+    setAttempt(value => value + 1);
+  };
+  return <InitialResult map={ResultMap} back={openTrip} failure={generation.status === 'error'
+    ? { message: generation.message, retry, editConditions } : undefined} />;
 }
