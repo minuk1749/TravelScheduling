@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
 import { legColors } from '@travel/design-tokens';
 import { colors, result } from '../src/theme';
-import { json } from './helpers';
+import { json, session } from './helpers';
 import { D1, D2, legId, openResult, resultFixture, REVISION, routes } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
@@ -43,7 +43,12 @@ test('3-1: map-first layout selects the first card and highlights only the leg a
     [legId(D1, 'market', 'hotel')]: `4 WALK DOTTED DIM ${legColors[3]} STRAIGHT`,
   });
   expect(f.shapes).toHaveBeenCalledTimes(1);
-  expect(f.shapes.mock.calls[0][0].searchParams.get('inputHash')).toBe(REVISION);
+  const [shapesUrl] = f.shapes.mock.calls[0];
+  expect(shapesUrl.searchParams.get('inputHash')).toBe(REVISION);
+  const request = f.transport.mock.calls.find(([url]) => url === shapesUrl.href);
+  expect(new Headers(request?.[1]?.headers).get('Authorization')).toBe(`Bearer ${session.token}`);
+  expect(f.auth.getSnapshot().status).toBe('signedIn');
+  expect(await f.storage.read()).toBe(JSON.stringify(session));
   expect(screen.getByTestId('map-legend')).toHaveTextContent('━ 이동 · ┈ 도보 · ⌒ 도심 밖 · ★ 희망 1');
 });
 

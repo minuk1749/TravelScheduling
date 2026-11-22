@@ -589,7 +589,7 @@ export const documentedApiErrors: [
 | 폐기 | 로그아웃 `DELETE /api/session`이 해당 해시 행 삭제. 앱은 응답과 관계없이 보안 저장소의 토큰을 지운다 |
 | 탈퇴 | `DELETE /api/account` → 기존 `deleteUser` → FK cascade로 여행 데이터와 **모든** 세션 삭제 |
 | 앱 저장 | `expo-secure-store`(iOS Keychain, Android Keystore)에 `{ token, expiresAt }`. AsyncStorage·로그에 쓰지 않음. 401을 받으면 지우고 로그인 화면으로 |
-| 소유권 연결 | 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)가 받는 `userId()`를 `userId(request)`로 바꾸고, 각 `server.ts`가 같은 `RequestAuthenticator`를 주입한다. 처리기를 거치지 않고 `auth()`를 직접 부르는 API 라우트 `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 `RequestAuthenticator.userId(request)`로 바꾼다. 그러면 API 라우트 중 `apps/server/src/auth.ts`를 참조하는 것은 Auth.js 라우트뿐이고, 나머지 참조(웹 화면 `apps/server/src/app/page.tsx`·`apps/server/src/app/actions.ts`)와 함께 T25에서 지운다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다 |
+| 소유권 연결 | `trips`, `places`, `itineraries`, `route-shapes`, `settings`, `results`, `sharing`의 `server.ts`가 공통 `requestAuthenticator.userId(request)`를 주입한다. `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 인증을 거친다. 소유자 전용 라우트에서는 `authorizeTrip`이 접근 권한(401/403/404)을 검사하고 저장소가 `owner_id`로 조회 범위를 제한한다. T25에서 Auth.js 라우트와 웹 화면(`apps/server/src/app/page.tsx`·`apps/server/src/app/actions.ts`)의 `apps/server/src/auth.ts` 참조를 제거한다 |
 | 전환 기간 (T18–T25) | `Authorization` 헤더가 있으면 Bearer만 검사하고 실패면 401(쿠키로 넘어가지 않음). 헤더가 없으면 Auth.js 쿠키 세션. T25가 쿠키 경로와 Auth.js를 지운다 |
 | 공유 토큰 | 별개. 공유 토큰은 읽기 전용 GET만 허용하고 세션으로 승격되지 않는다(T14) |
 
@@ -646,8 +646,7 @@ T18 검증: 가짜 RS256 키와 JWKS 픽스처(`apps/server/tests/helpers/google
 - T19 구현: `route-shapes/http.ts` → `services/route-shapes.ts` → `repositories/route-shapes.ts`·`PlaceProvider.location`·`travel-time/shapes.ts`의 `RouteShapeProvider`.
   구체 Google 모양 어댑터는 `travel-time/google-shapes.ts`이며 기존 이동시간 어댑터와 `google-client.ts`의 HTTP·시간 옵션만 공유한다.
   [T19 결정](decisions/T19-route-shapes.md)에 오류 우선순위·동시성·인증 연결을 기록한다.
-- T19 시작 기준 develop에는 T18 인증 구현이 아직 없다. HTTP의 `userId(request)`는 T18 계약을 받지만 조립은 현재 Auth.js 쿠키를 사용하며,
-  Authorization 헤더가 있는 요청은 쿠키로 우회하지 않고 401이다. T18 통합 때 `route-shapes/server.ts`에도 공통 RequestAuthenticator를 주입한다.
+- `route-shapes/server.ts`는 일정 생성 라우트와 같은 `requestAuthenticator`를 사용한다(§13.3). 소유자의 유효한 Bearer 세션으로 경로 모양을 조회할 수 있다.
 - `GET /api/trips/[id]/itinerary/shapes?inputHash=` (T19). 인증·소유권 → 최신 저장 일정과 현재 입력 해시를 한 읽기 트랜잭션으로 조회
   (공유 결과 읽기 `shared-itinerary.ts`와 같은 방식) → 요청 해시·저장 해시·현재 해시가 다르면 409 `STALE_INPUT`, 결과가 없으면 409 `RESULT_UNAVAILABLE`.
   inputHash는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.

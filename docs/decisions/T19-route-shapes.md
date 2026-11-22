@@ -28,11 +28,9 @@
 
 ## T18 병행 작업과 인증
 
-T19 시작 시 T18은 Claude가 진행 중이므로 그 인증 파일·기존 HTTP 처리기는 수정하지 않는다.
-새 처리기의 `userId(request)` 주입 계약은 T18 RequestAuthenticator와 호환된다. 현재 조립은 Auth.js 쿠키 인증이며,
-Authorization 헤더가 있으면 쿠키로 우회하지 않고 401이다. T18 통합 시 `route-shapes/server.ts`의 콜백을
-공통 RequestAuthenticator로 연결하고 이 경로의 Bearer 소유권 테스트를 포함해야 한다.
-T19는 T17만 선행 작업이므로 모바일 세션 자체를 중복 구현하지 않는다.
+T19를 T18과 병행하면서 처리기의 인증 포트를 `userId(request)`로 정했다.
+T18 통합 후 `route-shapes/server.ts`는 공통 `requestAuthenticator`를 주입한다. `Authorization` 헤더가 있으면
+Bearer 세션을 검증하고, 헤더가 없으면 Auth.js 쿠키를 사용한다. `authorizeTrip`이 인증된 사용자와 여행 소유자를 비교한다.
 
 ## 대안
 
@@ -46,5 +44,6 @@ T19는 T17만 선행 작업이므로 모바일 세션 자체를 중복 구현하
 - `route-shapes-service.test.ts`: DAY/AIRPORT 전체·순서/키·TAXI 변환·좌표 중복 제거·동시성·부분 실패 금지.
 - `route-shapes-http.test.ts`: 401/403/404·400 해시·409 상태·502/503/500·private/no-store.
 - `route-shapes-db.test.ts`: SQL 소유자·최신 결과·세 해시의 불일치·구형 결과·저장하지 않음(PostgreSQL 필요).
+- `e2e/route-shapes-auth.spec.ts`는 저장한 일정과 가짜 지도 응답으로 실제 GET의 소유자 200, 타인 403, 만료·무효 세션 401, 쿠키 인증 및 Bearer 우선순위를 검사한다.
 - 기존 `travel-time*.test.ts`: HTTP 코드 추출 후 이동시간·요금·캐시 동작 보존.
 - 루트 lint·typecheck·build·test를 실행한다. DB가 없는 Mac의 SQL 검사 실패는 CI PostgreSQL 16에서 확인한다.

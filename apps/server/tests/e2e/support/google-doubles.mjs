@@ -2,6 +2,7 @@
 // calls that would otherwise reach Google (OAuth/OpenID, Places, Routes) with deterministic local data, so
 // the real Auth.js, route handlers, services and PostgreSQL run unchanged. Test-only: nothing in src/ imports it.
 import { createSign, generateKeyPairSync } from 'node:crypto';
+import { shapeResponse } from '../../fixtures/route-shapes.ts';
 
 const realFetch = globalThis.fetch;
 const CLIENT_ID = process.env.AUTH_GOOGLE_ID ?? 'e2e-client';
@@ -99,6 +100,7 @@ function routes(url, init) {
     }))));
   }
   if (url.pathname === '/directions/v2:computeRoutes') {
+    if (body.polylineEncoding === 'ENCODED_POLYLINE') return json(shapeResponse);
     return json({ routes: [estimate(latLng(body.origin), latLng(body.destination), body.travelMode, body.departureTime)] });
   }
   return json({ error: 'unexpected Routes request' }, 404);

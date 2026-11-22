@@ -1,4 +1,4 @@
-import { auth } from '../auth';
+import { requestAuthenticator } from '../lib/auth/server';
 import { tripOwner } from '../lib/auth/store';
 import { createDatabasePool } from '../lib/db';
 import { placeProvider } from '../places/server';
@@ -11,8 +11,7 @@ let pool: ReturnType<typeof createDatabasePool> | undefined;
 const db = () => pool ??= createDatabasePool();
 
 export const handlers = routeShapeHandlers({
-  // T18 will supply RequestAuthenticator here. Do not fall back to cookies for a supplied Bearer.
-  userId: async request => request.headers.has('authorization') ? undefined : (await auth())?.user?.id,
+  userId: request => requestAuthenticator.userId(request),
   findOwner: tripOwner,
   service: () => new RouteShapeService(new PostgresRouteShapeRepository(db()), placeProvider(), createGoogleRouteShapeProvider()),
 });
