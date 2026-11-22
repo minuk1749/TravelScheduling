@@ -129,7 +129,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         onShowPrevious: () => setPreviousFor(phase), onRetry: itinerary.retry,
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />
-    {sheet?.kind === 'SCHEDULE' && <ScheduleSheet day={day} currency={currency} efficiency={displayed?.efficiency ?? null}
+    {sheet?.kind === 'SCHEDULE' && <ScheduleSheet day={day} places={view.places} currency={currency} efficiency={displayed?.efficiency ?? null}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
       select={visitId => { setSheet(null); const found = findVisit(days, visitId); if (found) select(found); }} />}
     {sheet?.kind === 'EDIT' && editing && <EditSheet view={view} card={editing} days={days} current={editOf(editing.visitId)}

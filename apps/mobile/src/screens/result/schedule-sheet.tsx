@@ -1,4 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { ResultView } from '@travel/core/contracts/results/model';
+import { PlaceCredits } from '../../components/input/place-search';
 import type { EfficiencySummary } from '@travel/core/contracts/itinerary';
 import { localTime, MEALS } from '@travel/core/presentation';
 import { FormSheet } from '../../components/input/form-layout';
@@ -48,14 +50,23 @@ export function EfficiencyRows({ summary, estimated }: { summary: EfficiencySumm
 }
 
 /** 3-2: the whole day as one list; pressing a place closes the sheet and selects its card. */
-export function ScheduleSheet({ day, currency, efficiency, estimated, close, select }: {
-  day: DayModel; currency: string | null; efficiency: EfficiencySummary | null; estimated: boolean;
+export function ScheduleSheet({ day, places, currency, efficiency, estimated, close, select }: {
+  day: DayModel; places: ResultView['places']; currency: string | null; efficiency: EfficiencySummary | null; estimated: boolean;
   close(): void; select(visitId: string): void;
 }) {
+  const placeIds = new Set([...day.cards.map(card => card.placeId), ...day.legs.flatMap(leg => [leg.from, leg.to])]);
   return <FormSheet title={`${dateTitle(day.date)} 전체 일정`} close={close}>
     {day.rows.length === 0 && <Text style={text.body}>배치된 장소 없음</Text>}
     {day.rows.map((row, index) => <Row key={index} row={row} zone={day.timeZone} currency={currency} select={select} />)}
     {efficiency && <EfficiencyRows summary={efficiency} estimated={estimated} />}
+    <Text style={text.secondary}>장소 정보 · Google Maps</Text>
+    {[...placeIds].map(id => {
+      const place = places[id];
+      return place?.attributions.length ? <View key={id}>
+        <Text style={text.secondary}>{place.name}</Text>
+        <PlaceCredits place={place} />
+      </View> : null;
+    })}
   </FormSheet>;
 }
 
