@@ -71,7 +71,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const [locate, setLocate] = useState(0);
   const [insets, setInsets] = useState({ top: 0, bottom: 0 });
   const { height } = useWindowDimensions();
-  const { shapes, failed: shapesFailed, retry: retryShapes } = useRouteShapes(tripId, shown.status === 'OK' ? shown : null);
+  const { shapes, failed: shapesFailed, retry: retryShapes } = useRouteShapes(tripId, displayed?.status === 'OK' ? displayed : null);
   const { dismissNotice } = itinerary;
   useEffect(() => {
     if (!notice) return;
@@ -99,9 +99,13 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   const chooseDate = (date: string) => { setSheet(null); select(selectDate(date)); };
   const selectMarker = (id: string) => {
-    if (wishes.some(wish => wish.visitId === id)) { if (phase.kind === 'idle') setSheet({ kind: 'WISH', visitId: id, date: day.date, chooseVisit: false }); return; }
-    const index = day.cards.findIndex(item => item.visitId === id);
-    if (index >= 0) select({ date: day.date, index });
+    const marker = scene.markers.find(item => item.id === id);
+    if (marker?.kind === 'PLACED') {
+      const index = day.cards.findIndex(item => item.visitId === id);
+      if (index >= 0) select({ date: day.date, index });
+    } else if (marker?.kind === 'WISH' && phase.kind === 'idle') {
+      setSheet({ kind: 'WISH', visitId: id, date: day.date, chooseVisit: false });
+    }
   };
   const swap = (leg: LegModel | null) => {
     const mode = leg?.swap?.mode;
@@ -122,7 +126,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       <DateChips days={days} selected={day.date} onSelect={chooseDate} />
     </SafeAreaView>
     {!notice && <Legend wishes={wishes.length} bottom={insets.bottom} />}
-    {shapesFailed && !notice && <ShapeRetry bottom={insets.bottom} onPress={retryShapes} />}
+    {shapesFailed && displayed === shown && !notice && <ShapeRetry bottom={insets.bottom} onPress={retryShapes} />}
     <LocateButton bottom={insets.bottom} onPress={() => setLocate(value => value + 1)} />
     {notice && <Toast notice={notice} bottom={insets.bottom} onClose={dismissNotice}
       onUndo={() => { dismissNotice(); itinerary.revert(); }} />}

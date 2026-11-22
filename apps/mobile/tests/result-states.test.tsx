@@ -1,7 +1,7 @@
-import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
+import { act, fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
 import { colors } from '../src/theme';
-import { json } from './helpers';
+import { deferred, json } from './helpers';
 import { conflictTrip, D1, legId, openResult, place, resultFixture, routes, trip, view } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
@@ -137,6 +137,12 @@ test('a conflict-only wish card falls back to the same visible card and marker i
   await fireEvent.press(sheet().getByRole('button', { name: '1일차에 추가하고 다시 계산' }));
   await screen.findByRole('button', { name: '아사쿠사 카페 고정 수정' });
   expect(screen.getByRole('button', { name: '지도 아사쿠사 카페', selected: true })).toBeVisible();
+  await press('지도 도쿄 국립박물관');
+  expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
+  await press('지도 아사쿠사 카페');
+  expect(screen.queryByTestId('form-sheet')).toBeNull();
+  expect(screen.getByRole('button', { name: '아사쿠사 카페, 배치되지 않음', selected: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: '지도 아사쿠사 카페', selected: true })).toHaveTextContent('PLACED -');
   await press('아사쿠사 카페 고정 수정');
   await fireEvent(sheet().getByLabelText('순서 고정'), 'valueChange', true);
   f.generate.mockRejectedValueOnce(new Error('offline'));
@@ -149,4 +155,51 @@ test('a conflict-only wish card falls back to the same visible card and marker i
   expect(screen.getByRole('button', { name: '다음 장소' })).toBeDisabled();
   await press('이전 장소');
   expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
+});
+
+test('the last OK timeline keeps its matched road geometry during a conflict and subsequent failed calculation', async () => {
+  const f = resultFixture();
+  const museum = legId(D1, 'hotel', 'museum'), points = 'points-' + museum;
+  const road = JSON.stringify([{ latitude: 38.5, longitude: -120.2 }, { latitude: 40.7, longitude: -120.95 }]);
+  await openResult(f);
+  expect(await screen.findByTestId(points)).toHaveTextContent(road);
+  f.generate.mockImplementationOnce(async () => json({ ...conflictTrip(f.current().revision),
+    itineraryId: '3f6291ea-888b-41ff-b5b9-845fa2ab8a44' }));
+  await moveMarketFirst(f);
+  await screen.findByText('⚠ 고정 조건 충돌 2건');
+  expect(screen.getByTestId(points)).toHaveTextContent(road);
+  expect(routes()[museum]).toMatch(/ DIM .* ROAD$/);
+  expect(Object.entries(routes()).filter(([, line]) => / CONFLICT /.test(line)).map(([id]) => id)).toEqual(['conflict:1']);
+
+  f.generate.mockResolvedValueOnce(json({ code: 'PROVIDER_UNAVAILABLE', error: '계산 실패' }, 503));
+  await press('변경 취소');
+  await screen.findByText('계산 실패');
+  await press('이전 일정 보기');
+  expect(screen.getByText('이전 계산 결과 · 갱신 실패')).toBeVisible();
+  expect(screen.getByTestId(points)).toHaveTextContent(road);
+  expect(routes()[museum]).toMatch(/ DIM .* ROAD$/);
+  expect(routes()['conflict:1']).toBeUndefined();
+  expect(f.shapes).toHaveBeenCalledTimes(1);
+
+  // Generating a new OK result after the recovery immediately stops showing the old geometry.
+  const nextId = 'acb2f5ce-e627-4539-85eb-0b70fa4cedbb';
+  const nextShapes = deferred<Response>();
+  f.generate.mockImplementationOnce(async () => json({ ...trip(f.current().revision), itineraryId: nextId }));
+  f.shapes.mockReturnValueOnce(nextShapes.promise);
+  await press('다시 계산');
+  await waitFor(() => expect(f.shapes).toHaveBeenCalledTimes(2));
+  const [url] = f.shapes.mock.calls[1];
+  expect(url.searchParams.get('itineraryId')).toBe(nextId);
+  expect(screen.queryByTestId(points)).toBeNull();
+  expect(routes()[museum]).toMatch(/ STRAIGHT$/);
+  await act(async () => nextShapes.resolve(json({
+    inputHash: f.current().revision, itineraryId: nextId,
+    legs: trip(f.current().revision).comparisons.map(leg => ({
+      date: leg.date, kind: leg.kind, from: leg.from, to: leg.to, mode: leg.selected.mode,
+      shape: { status: 'OK', encodedPolyline: '??_ibE_ibE' },
+    })),
+  })));
+  expect(await screen.findByTestId(points)).toHaveTextContent(JSON.stringify([
+    { latitude: 0, longitude: 0 }, { latitude: 1, longitude: 1 },
+  ]));
 });
