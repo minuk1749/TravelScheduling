@@ -20,7 +20,10 @@ export function durationLabel(minutes: number): string {
 /** §5: estimated fares start with "약", unknown fares are "—". */
 export function moneyLabel(amount: number | null, currency: string | null, estimated = false): string {
   if (amount === null || !currency) return '요금 —';
-  const value = Math.round(amount).toLocaleString('ko-KR');
+  const digits = !Number.isInteger(amount) && /^[A-Z]{3}$/i.test(currency)
+    ? new Intl.NumberFormat('ko-KR', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits
+    : 0;
+  const value = amount.toLocaleString('ko-KR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
   const symbol = SYMBOLS[currency];
   return `${estimated ? '약 ' : ''}${symbol ? `${symbol}${value}` : `${value} ${currency}`}`;
 }
