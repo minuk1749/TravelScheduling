@@ -1,14 +1,16 @@
 import { colors } from '@travel/design-tokens';
+import { placeName } from '@travel/core/presentation';
 import type { ResultView } from '@travel/core/contracts/results/model';
 import type { ConflictCause } from '../result/conflicts';
 import type { CardModel, DayModel } from '../result/days';
 import { legEmphasis, type MapFocus } from './selection';
-import type { MapMarkerSpec, MapRouteSpec } from './types';
+import type { LatLng, MapMarkerSpec, MapRouteSpec } from './types';
 
 export type SceneInput = {
   view: ResultView;
   /** Selected date; undefined while nothing has been calculated (3-5 first generation). */
   day: DayModel | undefined;
+  days: readonly DayModel[];
   card: CardModel | null;
   focus: MapFocus;
   pending: ReadonlySet<string>;
@@ -19,18 +21,35 @@ export type SceneInput = {
 export const lodgingMarkerId = (placeId: string) => `lodging:${placeId}`;
 export const airportMarkerId = (placeId: string) => `airport:${placeId}`;
 
-function placesMarkers({ view, day, placed }: SceneInput): MapMarkerSpec[] {
+/** Place details take precedence over snapped road endpoints. Prefer the current day’s endpoints when the same place has different access points. */
+function placeCoordinates({ view, day, days }: SceneInput) {
+  const coordinates = new Map<string, LatLng>();
+  for (const [id, place] of Object.entries(view.places)) {
+    if (place) coordinates.set(id, place.coordinates);
+  }
+  const orderedDays = day ? [day, ...days.filter(other => other.date !== day.date)] : [];
+  for (const source of orderedDays) {
+    for (const leg of source.legs) {
+      if (leg.path?.kind !== 'ROAD') continue;
+      const { points } = leg.path;
+      if (!coordinates.has(leg.from)) coordinates.set(leg.from, points[0]!);
+      if (!coordinates.has(leg.to)) coordinates.set(leg.to, points.at(-1)!);
+    }
+  }
+  return coordinates;
+}
+
+function placesMarkers({ view, day, placed }: SceneInput, coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
   const markers: MapMarkerSpec[] = [];
-  const at = (id: string) => view.places[id]?.coordinates;
   for (const card of day?.cards ?? []) {
-    const coordinate = at(card.placeId);
+    const coordinate = coordinates.get(card.placeId);
     if (coordinate) markers.push({ id: card.visitId, coordinate, kind: 'PLACED', order: card.number, label: card.name });
   }
   for (const visit of view.input.visits) {
-    const coordinate = at(visit.place.id), place = view.places[visit.place.id];
-    if (visit.priority === 'WISH' && !placed.has(visit.id) && coordinate && place
+    const coordinate = coordinates.get(visit.place.id);
+    if (visit.priority === 'WISH' && !placed.has(visit.id) && coordinate
       && !markers.some(marker => marker.id === visit.id)) {
-      markers.push({ id: visit.id, coordinate, kind: 'WISH', order: null, label: place.name });
+      markers.push({ id: visit.id, coordinate, kind: 'WISH', order: null, label: placeName(view, visit.place.id) });
     }
   }
   return markers;
@@ -38,11 +57,11 @@ function placesMarkers({ view, day, placed }: SceneInput): MapMarkerSpec[] {
 
 type ConflictMapLeg = { index: number; from: string; to: string };
 
-function endpointMarkers({ view, day }: SceneInput, conflictLegs: readonly ConflictMapLeg[]): MapMarkerSpec[] {
+function endpointMarkers({ view, day }: SceneInput, conflictLegs: readonly ConflictMapLeg[], coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
   const markers = new Map<string, MapMarkerSpec>();
   const add = (id: string, placeId: string, kind: 'LODGING' | 'AIRPORT') => {
-    const place = view.places[placeId];
-    if (place && !markers.has(id)) markers.set(id, { id, coordinate: place.coordinates, kind, order: null, label: place.name });
+    const coordinate = coordinates.get(placeId);
+    if (coordinate && !markers.has(id)) markers.set(id, { id, coordinate, kind, order: null, label: placeName(view, placeId) });
   };
   for (const lodging of view.input.lodgings) {
     if (!day || (lodging.checkIn <= day.date && day.date <= lodging.checkOut)) add(lodgingMarkerId(lodging.place.id), lodging.place.id, 'LODGING');
@@ -70,9 +89,9 @@ function legRoutes(input: SceneInput): MapRouteSpec[] {
   });
 }
 
-function conflictRoutes(view: ResultView, legs: readonly ConflictMapLeg[]): MapRouteSpec[] {
+function conflictRoutes(coordinates: ReadonlyMap<string, LatLng>, legs: readonly ConflictMapLeg[]): MapRouteSpec[] {
   return legs.flatMap(leg => {
-    const from = view.places[leg.from]?.coordinates, to = view.places[leg.to]?.coordinates;
+    const from = coordinates.get(leg.from), to = coordinates.get(leg.to);
     if (!from || !to) return [];
     return [{ id: `conflict:${leg.index}`, order: leg.index + 1, mode: 'TRANSIT', color: colors.red.text, line: 'FLOATING',
       emphasis: 'CONFLICT', path: { kind: 'STRAIGHT', from, to } }];
@@ -86,8 +105,9 @@ function conflictRoutes(view: ResultView, legs: readonly ConflictMapLeg[]): MapR
 export function mapScene(input: SceneInput) {
   const conflictLegs = input.focus === 'CONFLICT' ? input.causes.flatMap(({ leg }, index) =>
     leg && leg.date === input.day?.date ? [{ from: leg.from, to: leg.to, index }] : []) : [];
-  const markers = [...endpointMarkers(input, conflictLegs), ...placesMarkers(input)];
-  const routes = [...legRoutes(input), ...conflictRoutes(input.view, conflictLegs)];
+  const coordinates = placeCoordinates(input);
+  const markers = [...endpointMarkers(input, conflictLegs, coordinates), ...placesMarkers(input, coordinates)];
+  const routes = [...legRoutes(input), ...conflictRoutes(coordinates, conflictLegs)];
   const focusIds = markers.filter(marker => marker.kind === 'PLACED' || marker.kind === 'LODGING').map(marker => marker.id);
   return { markers, routes, focusIds: focusIds.length ? focusIds : markers.map(marker => marker.id) };
 }

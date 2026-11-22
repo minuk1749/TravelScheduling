@@ -3,7 +3,7 @@ import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shap
 import type { GeneratedTrip } from '../src/api/trips';
 import * as geometry from '../src/map/geometry';
 import { deferred, json } from './helpers';
-import { D1, ITINERARY_A, legId, openResult, plan, resultFixture, REVISION, ROAD, routes, trip, view } from './result-fixture';
+import { D1, ITINERARY_A, legId, openResult, place, plan, resultFixture, REVISION, ROAD, routes, trip, view } from './result-fixture';
 
 const itineraryB = '24542ffe-2457-4ccf-894b-7b0e46d25b87';
 const commonLeg = legId(D1, 'museum', 'market'); // TAXI in both results, with different road coordinates.
@@ -19,7 +19,7 @@ function shapes(result: GeneratedTrip, encodedPolyline: string): SavedRouteShape
 
 test.each(['cached', 'in flight', 'malformed and in flight'])('same-input retry displays B when A’s road shapes are %s', async stateOfA => {
   // Re-selecting the wish's existing date recalculates without changing any saved constraints.
-  const f = resultFixture({ ...view, input: { ...view.input, visits: view.input.visits.map(visit =>
+  const f = resultFixture({ ...view, places: { ...view.places, [place('market')]: null }, input: { ...view.input, visits: view.input.visits.map(visit =>
     visit.id === 'cafe' ? { ...visit, fixedDate: D1 } : visit) } });
   const a = trip(REVISION);
   const b = { ...trip(REVISION, plan({ museumLeg: 'TAXI', marketStart: '13:10' })), itineraryId: itineraryB };
@@ -34,6 +34,7 @@ test.each(['cached', 'in flight', 'malformed and in flight'])('same-input retry 
     expect(await screen.findByTestId(`points-${commonLeg}`)).toHaveTextContent(JSON.stringify([
       { latitude: 38.5, longitude: -120.2 }, { latitude: 40.7, longitude: -120.95 },
     ]));
+    expect(screen.getByTestId('coordinate-market')).toHaveTextContent(JSON.stringify({ latitude: 40.7, longitude: -120.95 }));
   }
 
   await press('지도 아사쿠사 카페');
@@ -44,6 +45,7 @@ test.each(['cached', 'in flight', 'malformed and in flight'])('same-input retry 
   expect(f.save).not.toHaveBeenCalled();
   expect(routes()[museumLeg]).toMatch(/TAXI .* STRAIGHT$/);
   expect(screen.queryByTestId(`points-${commonLeg}`)).toBeNull();
+  expect(screen.queryByTestId('marker-market')).toBeNull();
   await waitFor(() => expect(f.shapes).toHaveBeenCalledTimes(2));
   expect(f.shapes.mock.calls.map(([url]) => [url.searchParams.get('inputHash'), url.searchParams.get('itineraryId')]))
     .toEqual([[REVISION, ITINERARY_A], [REVISION, itineraryB]]);
@@ -60,6 +62,7 @@ test.each(['cached', 'in flight', 'malformed and in flight'])('same-input retry 
   }
   expect(screen.getByTestId(`points-${commonLeg}`)).toHaveTextContent(bPoints);
   expect(screen.getByTestId(`points-${museumLeg}`)).toHaveTextContent(bPoints);
+  expect(screen.getByTestId('coordinate-market')).toHaveTextContent(JSON.stringify({ latitude: 1, longitude: 1 }));
   await press('다음 장소');
   expect(screen.getByText('13:10 – 13:55')).toBeVisible();
   expect(screen.getByTestId(`points-${commonLeg}`)).toHaveTextContent(bPoints);
