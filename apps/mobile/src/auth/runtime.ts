@@ -19,7 +19,7 @@ export function createRuntime(deps: {
       create: idToken => api.request('/api/session', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }),
       }, false),
-      revoke: () => api.request<void>('/api/session', { method: 'DELETE' }),
+      revoke: () => api.request<void>('/api/session', { method: 'DELETE', allowNoContent: true }),
     },
   };
 }

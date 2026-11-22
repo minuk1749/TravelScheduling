@@ -83,3 +83,26 @@ test('late 401 for a previous session does not delete a new session', async () =
   await expect(oldRequest).rejects.toMatchObject({ status: 401 });
   expect(await f.auth.accessToken()).toBe(next.token);
 });
+
+test.each<[string, () => Response]>([
+  ['empty', () => new Response('', { status: 200 })],
+  ['truncated', () => new Response('{"revision":', { status: 200 })],
+  ['null', () => json(null)], ['array', () => json([])], ['number', () => json(1)],
+  ['string', () => json('ok')], ['boolean', () => json(false)], ['204', () => new Response(null, { status: 204 })],
+])('a JSON request rejects a successful %s body without clearing the session', async (_label, response) => {
+  const f = fixture(JSON.stringify(session));
+  await f.auth.restore();
+  f.transport.mockResolvedValueOnce(response());
+  await expect(f.api.request('/api/trips')).rejects.toThrow('서버 응답을 확인하지 못했어요');
+  expect(await f.auth.accessToken()).toBe(session.token);
+});
+
+test('a genuine no-content logout never reads a JSON body', async () => {
+  const f = fixture(JSON.stringify(session));
+  await f.auth.restore();
+  const response = new Response(null, { status: 204 });
+  const read = jest.spyOn(response, 'json');
+  f.transport.mockResolvedValueOnce(response);
+  await expect(f.sessions.revoke()).resolves.toBeUndefined();
+  expect(read).not.toHaveBeenCalled();
+});

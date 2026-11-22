@@ -8,6 +8,7 @@ import type { LivingSettings, SettingsView } from '@travel/core/contracts/settin
 import type { TripCreation, TripSummary } from '@travel/core/contracts/trips/create';
 import { useRuntime } from '../auth/provider';
 import { ApiFailure, type ApiClient } from './client';
+import { validGeneratedTrip, validResultView, validSnapshot } from './result-response';
 
 const trips = '/api/trips';
 const trip = (id: string) => `${trips}/${encodeURIComponent(id)}`;
@@ -42,10 +43,10 @@ class TripApi {
     return this.api.request<{ place: PlaceLocation }>(`${place(id)}?fields=location`, { signal });
   }
   savedInput(id: string, signal: AbortSignal) {
-    return this.api.request<ResultView>(`${trip(id)}/constraints`, { signal });
+    return this.api.request<ResultView>(`${trip(id)}/constraints`, { signal, validate: validResultView });
   }
   saveConstraints(id: string, revision: string, constraints: Constraints, signal: AbortSignal) {
-    return this.api.request<ResultSnapshot>(`${trip(id)}/constraints`, { ...json('PUT', { revision, constraints }), signal });
+    return this.api.request<ResultSnapshot>(`${trip(id)}/constraints`, { ...json('PUT', { revision, constraints }), signal, validate: validSnapshot });
   }
   settings(id: string, signal: AbortSignal) {
     return this.api.request<SettingsView>(`${trip(id)}/settings`, { signal });
@@ -54,7 +55,7 @@ class TripApi {
     return this.api.request<SettingsView>(`${trip(id)}/settings`, json('PUT', { revision, settings }));
   }
   generate(id: string, signal?: AbortSignal) {
-    return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST', signal });
+    return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST', signal, validate: validGeneratedTrip });
   }
   /** T19 road shapes for the saved result; kept in memory only (never persisted). */
   async shapes(id: string, inputHash: string, itineraryId: string, signal: AbortSignal) {

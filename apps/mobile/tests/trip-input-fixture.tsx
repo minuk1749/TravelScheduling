@@ -2,6 +2,7 @@ import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { calculateSettings } from '@travel/core/contracts/settings/calculate';
 import type { SettingsSnapshot } from '@travel/core/contracts/settings/model';
 import { parseTripCreation, type TripCreation } from '@travel/core/contracts/trips/create';
+import type { ResultView } from '@travel/core/contracts/results/model';
 import { flightBuffers } from '@travel/core/contracts/settings/defaults';
 import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
@@ -74,12 +75,17 @@ export function tripFixture() {
     }
     if (pathname.endsWith('/constraints') && created) {
       return json({ revision: snapshot.revision,
-        input: { ...created, id, activity: { start: '09:00', end: '21:00' }, daySettings: [], legModes: [],
-          visits: created.visits.map(visit => ({ ...visit, id: visit.googlePlaceId, place: ref(visit.googlePlaceId) })),
+        input: { ...created, id, activity: { start: snapshot.settings.departureTime, end: snapshot.settings.returnTime },
+          mealSlots: snapshot.settings.mealSlots, mealWindows: snapshot.settings.mealWindows, daySettings: snapshot.settings.days,
+          arrivalBufferMinutes: flightBuffers.ARRIVAL, departureBufferMinutes: flightBuffers.DEPARTURE, legModes: [],
+          visits: created.visits.map(visit => ({ ...visit, id: visit.googlePlaceId, place: ref(visit.googlePlaceId),
+            fixedDate: visit.fixedDate ?? undefined, fixedTime: visit.fixedTime ?? undefined, fixedOrder: visit.fixedOrder ?? undefined })),
           flights: created.flights.map(flight => ({ ...flight, airport: ref(flight.googlePlaceId) })),
           lodgings: created.lodgings.map(lodging => ({ ...lodging, place: ref(lodging.googlePlaceId) })),
-        }, places: Object.fromEntries(Object.keys(names).map(id => [id, place(id)])),
-      });
+        }, places: Object.fromEntries(Object.keys(names).map(id => [id, {
+          ...place(id), coordinates: { latitude: 35.68, longitude: 139.76 },
+        }])),
+      } satisfies ResultView);
     }
     return json({ code: 'NOT_FOUND', error: '요청을 찾을 수 없어요.' }, 404);
   });

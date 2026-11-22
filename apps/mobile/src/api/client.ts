@@ -23,6 +23,11 @@ function errorBody(raw: unknown, status: number): ApiFailure {
     status === 401 ? '다시 로그인해 주세요.' : '서버 응답을 확인하지 못했어요. 다시 시도해 주세요.');
 }
 
+type RequestOptions = RequestInit & {
+  allowNoContent?: boolean;
+  validate?: (body: unknown) => boolean;
+};
+
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
@@ -30,7 +35,7 @@ export class ApiClient {
     private readonly transport: typeof fetch = fetch,
   ) {}
 
-  async request<T>(path: string, options: RequestInit = {}, authenticated = true): Promise<T> {
+  async request<T>(path: string, { allowNoContent, validate, ...options }: RequestOptions = {}, authenticated = true): Promise<T> {
     let base: URL;
     try { base = new URL(this.baseUrl); } catch {
       throw new Error('서버 주소 설정을 확인해 주세요.');
@@ -58,9 +63,13 @@ export class ApiClient {
     }
     // Clear credentials before reading the body, including malformed/empty 401 responses.
     if (response.status === 401 && token) await this.session.invalidate(token);
-    if (response.status === 204) return undefined as T;
-    const body: unknown = await response.json().catch(() => null);
+    if (response.status === 204 && allowNoContent) return undefined as T;
+    let body: unknown;
+    try { body = await response.json(); } catch { body = null; }
     if (!response.ok) throw errorBody(body, response.status);
+    if (!body || typeof body !== 'object' || Array.isArray(body) || (validate && !validate(body))) {
+      throw new Error('서버 응답을 확인하지 못했어요. 다시 시도해 주세요.');
+    }
     return body as T;
   }
 }
