@@ -49,7 +49,7 @@ test('late arrival and transfer appear on their local dates; an arrival exactly 
   const arrival = { ...result.comparisons[0], departure: '2026-12-03T15:30:00Z' }; // 00:30, Tokyo day 2.
   const days = buildDays(localView, { ...result, comparisons: [arrival] }, null);
   const scene = (day: typeof days[number]) => mapScene({ view: localView, day, card: null, focus: 'BROWSE',
-    pending: new Set(), placed: placedVisitIds(days), shapes: new Map(), causes: [] });
+    pending: new Set(), placed: placedVisitIds(days), causes: [] });
   expect(days[0].rows).toContainEqual(expect.objectContaining({ role: 'AIRPORT_ARRIVAL', at: '2026-12-03T14:00:00Z' }));
   expect(scene(days[0]).routes).toHaveLength(0);
   expect(scene(days[1]).routes.map(route => route.id)).toEqual([key]);
@@ -71,7 +71,7 @@ test('a wish alias for a lodging preserves both marker roles, actual lodging row
   expect(day.rows.filter(row => row.kind === 'ENDPOINT').map(row => row.role))
     .toEqual(['AIRPORT_ARRIVAL', 'LODGING_IN', 'LODGING_OUT', 'LODGING_IN']);
   const map = mapScene({ view: alias, day, card: null, focus: 'BROWSE', pending: new Set(), placed: placedVisitIds(days),
-    shapes: new Map(), causes: [] });
+    causes: [] });
   expect(map.markers.map(m => m.id)).toEqual(expect.arrayContaining(['lodging:' + lodging.id, 'cafe']));
   const pending = pendingLegKeys(days, { kind: 'WISH', visitId: 'cafe', date: D1 });
   expect(pending).toEqual(new Set(day.legs.filter(leg => leg.kind === 'DAY').map(leg => leg.key)));

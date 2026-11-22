@@ -48,7 +48,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const view = (previousSchedule ?? calculation).view;
   const displayed = previousSchedule?.result ?? (conflict ? base?.result ?? null : shown);
   const causes = useMemo(() => conflictCauses(view, previousSchedule?.result ?? shown), [view, previousSchedule, shown]);
-  const days = useMemo(() => buildDays(view, displayed, conflict ? null : previous, causes), [view, displayed, conflict, previous, causes]);
+  const { shapes, failed: shapesFailed, retry: retryShapes } = useRouteShapes(tripId, displayed?.status === 'OK' ? displayed : null);
+  const days = useMemo(() => buildDays(view, displayed, conflict ? null : previous, causes, shapes), [view, displayed, conflict, previous, causes, shapes]);
 
   const [picked, setPicked] = useState<Picked>(() => pick(days, shown, initialSelection(days, causes)));
   let current = picked;
@@ -76,7 +77,6 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const [locate, setLocate] = useState(0);
   const [insets, setInsets] = useState({ top: 0, bottom: 0 });
   const { height } = useWindowDimensions();
-  const { shapes, failed: shapesFailed, retry: retryShapes } = useRouteShapes(tripId, displayed?.status === 'OK' ? displayed : null);
   const { dismissNotice } = itinerary;
   useEffect(() => {
     if (!notice) return;
@@ -88,7 +88,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const wishes = view.input.visits.filter(visit => visit.priority === 'WISH' && !placed.has(visit.id))
     .map(visit => ({ visitId: visit.id, name: placeName(view, visit.place.id) }));
   const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editSelection ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
-  const scene = mapScene({ view, day, card, focus, placed, shapes, causes,
+  const scene = mapScene({ view, day, card, focus, placed, causes,
     pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
   const constraints = constraintsFrom(view.input);
   const editOf = (visitId: string) => constraints.visits.find(visit => visit.id === visitId)!;

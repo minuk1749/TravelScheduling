@@ -2,9 +2,8 @@ import { colors } from '@travel/design-tokens';
 import type { ResultView } from '@travel/core/contracts/results/model';
 import type { ConflictCause } from '../result/conflicts';
 import type { CardModel, DayModel } from '../result/days';
-import { roadShapeKey } from './geometry';
 import { legEmphasis, type MapFocus } from './selection';
-import type { LatLng, MapMarkerSpec, MapRouteSpec } from './types';
+import type { MapMarkerSpec, MapRouteSpec } from './types';
 
 export type SceneInput = {
   view: ResultView;
@@ -14,7 +13,6 @@ export type SceneInput = {
   focus: MapFocus;
   pending: ReadonlySet<string>;
   placed: ReadonlySet<string>;
-  shapes: ReadonlyMap<string, readonly LatLng[]>;
   causes: readonly ConflictCause[];
 };
 
@@ -66,15 +64,9 @@ function legRoutes(input: SceneInput): MapRouteSpec[] {
   const emphasis = legEmphasis(input.day, input.card, input.focus, input.pending);
   return (input.day?.legs ?? []).flatMap((leg): MapRouteSpec[] => {
     const value = emphasis.get(leg.key) ?? 'DIM';
-    if (value === 'HIDDEN' || !leg.fromPoint || !leg.toPoint) return [];
-    const points = input.shapes.get(roadShapeKey(leg.key, leg.mode));
-    const road = points && points.length >= 2;
-    const line = !road ? 'DOTTED' : leg.outside ? 'FLOATING' : leg.mode === 'WALK' ? 'DOTTED' : 'SOLID';
-    return [{
-      id: leg.key, order: leg.order, mode: leg.mode, color: leg.color, emphasis: value,
-      line,
-      path: road ? { kind: 'ROAD', points } : { kind: 'STRAIGHT', from: leg.fromPoint, to: leg.toPoint },
-    }];
+    if (value === 'HIDDEN' || !leg.path) return [];
+    const line = leg.path.kind === 'STRAIGHT' ? 'DOTTED' : leg.outside ? 'FLOATING' : leg.mode === 'WALK' ? 'DOTTED' : 'SOLID';
+    return [{ id: leg.key, order: leg.order, mode: leg.mode, color: leg.color, emphasis: value, line, path: leg.path }];
   });
 }
 

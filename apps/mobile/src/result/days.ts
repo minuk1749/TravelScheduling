@@ -3,8 +3,8 @@ import type { ItineraryResult, LegComparison } from '@travel/core/contracts/itin
 import type { ResultView } from '@travel/core/contracts/results/model';
 import { displayedSchedule, placeName } from '@travel/core/presentation';
 import type { MealSlot, RouteEstimate } from '@travel/core/scheduler';
-import { CITY_CENTRES, isOutsideCityCentre, legColor } from '../map/geometry';
-import type { LatLng, TravelModeName } from '../map/types';
+import { CITY_CENTRES, isOutsideCityCentre, legColor, roadShapeKey } from '../map/geometry';
+import type { LatLng, MapRoutePath, TravelModeName } from '../map/types';
 import type { ConflictCause } from './conflicts';
 import { fixedLabel, minutesBetween } from './format';
 
@@ -18,7 +18,7 @@ export type LegModel = {
   /** Card switch chip target; null for walking legs. A null estimate is "택시 정보 없음". */
   swap: { mode: 'TRANSIT' | 'TAXI'; estimate: RouteEstimate | null } | null;
   outside: boolean; color: string;
-  fromPoint: LatLng | null; toPoint: LatLng | null;
+  path: MapRoutePath | null;
 };
 
 export type CardModel = {
@@ -82,21 +82,27 @@ function byLocalDate<T>(items: readonly T[], zone: string, instant: (item: T) =>
   return groups;
 }
 
-function legModels(view: ResultView, legs: readonly LegComparison[]): LegModel[] {
+type RoadShapes = ReadonlyMap<string, readonly LatLng[]>;
+
+function legModels(view: ResultView, legs: readonly LegComparison[], shapes?: RoadShapes): LegModel[] {
   const centre = CITY_CENTRES[view.input.cityCode];
   return legs.map((leg, index) => {
-    const fromPoint = point(view, leg.from), toPoint = point(view, leg.to);
-    const mode = leg.selected.mode;
+    const key = legKey(leg), mode = leg.selected.mode;
+    const points = shapes?.get(roadShapeKey(key, mode));
+    const road = points && points.length >= 2 ? points : null;
+    const from = point(view, leg.from) ?? road?.[0], to = point(view, leg.to) ?? road?.at(-1);
+    const path: MapRoutePath | null = road ? { kind: 'ROAD', points: road }
+      : from && to ? { kind: 'STRAIGHT', from, to } : null;
     const target = mode === 'TAXI' ? 'TRANSIT' as const : 'TAXI' as const;
     return {
-      key: legKey(leg), order: index + 1, date: leg.date, kind: leg.kind, from: leg.from, to: leg.to,
+      key, order: index + 1, date: leg.date, kind: leg.kind, from: leg.from, to: leg.to,
       fromName: placeName(view, leg.from), toName: placeName(view, leg.to),
       departure: leg.departure, arrival: instantAfter(leg.departure, leg.selected.minutes),
       mode, minutes: leg.selected.minutes, fare: leg.selected.fare, fixed: leg.selected.fixed,
       alternatives: leg.alternatives,
       swap: mode === 'WALK' ? null : { mode: target, estimate: leg.alternatives[target] ?? null },
-      outside: !!fromPoint && !!toPoint && isOutsideCityCentre({ mode, from: fromPoint, to: toPoint }, centre),
-      color: legColor(index, legs.length), fromPoint, toPoint,
+      outside: !!from && !!to && isOutsideCityCentre({ mode, from, to }, centre),
+      color: legColor(index, legs.length), path,
     };
   });
 }
@@ -193,7 +199,7 @@ function bounds(stops: readonly Stop[], legs: readonly LegModel[]) {
  * on their fixed date (or the first date) so 3-8 can select them first.
  */
 export function buildDays(view: ResultView, shown: ItineraryResult | null, previous: ItineraryResult | null,
-  causes: readonly ConflictCause[] = []): DayModel[] {
+  causes: readonly ConflictCause[] = [], shapes?: RoadShapes): DayModel[] {
   const schedule = displayedSchedule(shown);
   const context: Context = { view, before: displayedSchedule(previous) ? placements(previous) : null };
   const zone = view.input.timeZone;
@@ -203,7 +209,7 @@ export function buildDays(view: ResultView, shown: ItineraryResult | null, previ
   const days = tripDates(view.input.startDate, view.input.endDate).map((date, index): DayModel => {
     const scheduled = schedule?.days.find(day => day.date === date);
     const stops = scheduled?.stops ?? [];
-    const legs = legModels(view, byDeparture.get(date) ?? []);
+    const legs = legModels(view, byDeparture.get(date) ?? [], shapes);
     const visits = stops.filter((stop): stop is Extract<Stop, { kind: 'VISIT' }> => stop.kind === 'VISIT');
     const cards = visits.flatMap((stop, position) =>
       card(context, date, stop, stop.visitId, position + 1, legs, position === visits.length - 1) ?? []);

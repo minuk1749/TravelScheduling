@@ -110,7 +110,7 @@ test('highlighted legs: arriving leg (3-1), both legs of the edited place (3-3),
 });
 
 test('map scene: placed, wish, lodging and airport markers, line style by mode/outside, red conflict leg', () => {
-  const base = { view, card: first.cards[0], placed: placedVisitIds(days), shapes: new Map(), causes: [], pending: new Set<string>() };
+  const base = { view, card: first.cards[0], placed: placedVisitIds(days), causes: [], pending: new Set<string>() };
   const scene = mapScene({ ...base, day: first, focus: 'BROWSE' });
   expect(scene.markers.map(marker => [marker.id, marker.kind, marker.order])).toEqual([
     ['lodging:place-hotel', 'LODGING', null], ['airport:place-airport', 'AIRPORT', null],
@@ -120,12 +120,12 @@ test('map scene: placed, wish, lodging and airport markers, line style by mode/o
     [1, 'DOTTED', 'DIM', 'STRAIGHT'], [2, 'DOTTED', 'STRONG', 'STRAIGHT'], [3, 'DOTTED', 'DIM', 'STRAIGHT'], [4, 'DOTTED', 'DIM', 'STRAIGHT']]);
   const road = [{ latitude: 1, longitude: 2 }, { latitude: 3, longitude: 4 }];
   const shapes = new Map(first.legs.map(leg => [roadShapeKey(leg.key, leg.mode), road]));
-  const withRoads = mapScene({ ...base, day: first, focus: 'BROWSE', shapes }).routes;
+  const withRoads = mapScene({ ...base, day: buildDays(view, trip(REVISION), null, [], shapes)[0], focus: 'BROWSE' }).routes;
   expect(withRoads.map(route => route.line)).toEqual(['FLOATING', 'SOLID', 'SOLID', 'DOTTED']);
   for (const route of withRoads) expect(route.path).toEqual({ kind: 'ROAD', points: road });
   const wrongMode = new Map([[roadShapeKey(first.legs[1].key, 'TAXI'), road]]);
-  const fallback = mapScene({ ...base, day: first, focus: 'BROWSE', shapes: wrongMode }).routes[1];
-  expect(fallback).toMatchObject({ line: 'DOTTED', path: { kind: 'STRAIGHT', from: first.legs[1].fromPoint, to: first.legs[1].toPoint } });
+  const fallback = mapScene({ ...base, day: buildDays(view, trip(REVISION), null, [], wrongMode)[0], focus: 'BROWSE' }).routes[1];
+  expect(fallback).toMatchObject({ line: 'DOTTED', path: { kind: 'STRAIGHT', from: view.places[place('hotel')]!.coordinates, to: view.places[place('museum')]!.coordinates } });
   expect(mapScene({ ...base, day: third, card: null, focus: 'BROWSE' }).markers.map(marker => marker.kind)).toEqual(['LODGING', 'WISH']);
   const causes = conflictCauses(view, conflictTrip(REVISION));
   const conflict = mapScene({ ...base, day: first, focus: 'CONFLICT', causes });
@@ -136,7 +136,7 @@ test('map scene: placed, wish, lodging and airport markers, line style by mode/o
 
 test('a conflict endpoint shares the existing airport marker and disappears from previous-result and ordinary days without a flight', () => {
   const cause = { visitId: null, date: D1, message: '공항 이동 불가', leg: { date: D1, from: place('airport'), to: place('hotel') } };
-  const base = { view, card: null, placed: placedVisitIds(days), shapes: new Map(), causes: [cause], pending: new Set<string>() };
+  const base = { view, card: null, placed: placedVisitIds(days), causes: [cause], pending: new Set<string>() };
   const scheduled = mapScene({ ...base, day: first, focus: 'CONFLICT' });
   expect(scheduled.markers.filter(marker => marker.kind === 'AIRPORT')).toHaveLength(1);
   expect(scheduled.routes.filter(route => route.emphasis === 'CONFLICT')).toHaveLength(1);
