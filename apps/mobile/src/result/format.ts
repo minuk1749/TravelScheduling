@@ -39,6 +39,7 @@ export function legLabel(mode: TravelModeName, minutes: number, fare: number | n
 /** Switch chip: "택시 14분 약 ¥2,300", or "택시 정보 없음" when that mode has no route. */
 export function swapLabel(swap: { mode: TravelModeName; estimate: { minutes: number; fare: number | null } | null }, currency: string | null): string {
   if (!swap.estimate) return `${MODES[swap.mode]} 정보 없음`;
+  if (swap.mode === 'WALK') return legLabel('WALK', swap.estimate.minutes, swap.estimate.fare, currency);
   return `${MODES[swap.mode]} ${durationLabel(swap.estimate.minutes)} ${moneyLabel(swap.estimate.fare, currency, estimated(swap.mode))}`;
 }
 

@@ -11,21 +11,27 @@ import { kindLabels } from '../trip-input/presentation';
 import { SwapChip } from './swap-chip';
 import { ENDPOINT_ICONS, ENDPOINT_LABELS, MODE_ICONS } from './icons';
 
+const COMPARED_MODES = ['TRANSIT', 'TAXI', 'WALK'] as const;
+
 function Row({ row, zone, currency, select, onSwap }: {
-  row: TimelineRow; zone: string; currency: string | null; select(visitId: string): void; onSwap?(leg: LegModel): void;
+  row: TimelineRow; zone: string; currency: string | null; select(visitId: string): void; onSwap?(leg: LegModel, mode: LegModel['mode']): void;
 }) {
   const time = <Text style={styles.time}>{localTime(row.at, zone)}</Text>;
   if (row.kind === 'LEG') {
     const { leg } = row;
-    return <View style={styles.row}>
+    return <View testID={'schedule-leg-' + leg.key} style={styles.row}>
       <View style={[styles.tile, { backgroundColor: leg.color }]}><Text style={[text.tinyStrong, styles.tileText]}>{leg.order}</Text></View>
       <Text importantForAccessibility="no" style={[text.secondary, { color: leg.color }]}>{MODE_ICONS[leg.mode]}</Text>
       <View style={styles.flex}>
         <Text style={text.secondary}>{timeRange(leg.departure, leg.arrival, zone)}</Text>
         <Text style={text.secondary}>{leg.fromName} → {leg.toName}</Text>
         <Text style={styles.move}>{legLabel(leg.mode, leg.minutes, leg.fare, currency)}{leg.outside ? ' · 도심 밖' : ''}</Text>
+        <View style={styles.alternatives}>
+          {COMPARED_MODES.filter(mode => mode !== leg.mode && (mode !== 'WALK' || leg.alternatives.WALK)).map(mode =>
+            <SwapChip key={mode} swap={{ mode, estimate: leg.alternatives[mode] ?? null }} currency={currency}
+              active={!!onSwap} onPress={() => onSwap?.(leg, mode)} />)}
+        </View>
       </View>
-      {leg.swap && <SwapChip swap={leg.swap} currency={currency} active={!!onSwap} onPress={() => onSwap?.(leg)} />}
     </View>;
   }
   if (row.kind === 'ENDPOINT') {
@@ -60,7 +66,7 @@ export function EfficiencyRows({ summary, estimated }: { summary: EfficiencySumm
 /** 3-2: the whole day as one list; pressing a place closes the sheet and selects its card. */
 export function ScheduleSheet({ day, places, currency, efficiency, estimated, close, select, onSwap }: {
   day: DayModel; places: ResultView['places']; currency: string | null; efficiency: EfficiencySummary | null; estimated: boolean;
-  close(): void; select(visitId: string): void; onSwap?(leg: LegModel): void;
+  close(): void; select(visitId: string): void; onSwap?(leg: LegModel, mode: LegModel['mode']): void;
 }) {
   const placeIds = new Set([...day.cards.map(card => card.placeId), ...day.legs.flatMap(leg => [leg.from, leg.to])]);
   return <FormSheet title={`${dateTitle(day.date)} 전체 일정`} close={close}>
@@ -80,6 +86,7 @@ export function ScheduleSheet({ day, places, currency, efficiency, estimated, cl
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  alternatives: { flexDirection: 'row', flexWrap: 'wrap', columnGap: spacing.cardGap },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.cardGap, minHeight: size.touch },
   time: { ...text.secondary, width: size.iconTile + spacing.cardGap, color: colors.gray.secondary },
   tile: { width: size.iconTile, height: size.iconTile / 2, borderRadius: radius.small, alignItems: 'center', justifyContent: 'center' },

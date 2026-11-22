@@ -14,7 +14,8 @@ export type LegModel = {
   from: string; to: string; fromName: string; toName: string;
   departure: string; arrival: string;
   mode: TravelModeName; minutes: number; fare: number | null; fixed: boolean;
-  /** Switch chip target; null for walking legs. A null estimate is "택시 정보 없음". */
+  alternatives: LegComparison['alternatives'];
+  /** Card switch chip target; null for walking legs. A null estimate is "택시 정보 없음". */
   swap: { mode: 'TRANSIT' | 'TAXI'; estimate: RouteEstimate | null } | null;
   outside: boolean; color: string;
   fromPoint: LatLng | null; toPoint: LatLng | null;
@@ -92,6 +93,7 @@ function legModels(view: ResultView, legs: readonly LegComparison[]): LegModel[]
       fromName: placeName(view, leg.from), toName: placeName(view, leg.to),
       departure: leg.departure, arrival: instantAfter(leg.departure, leg.selected.minutes),
       mode, minutes: leg.selected.minutes, fare: leg.selected.fare, fixed: leg.selected.fixed,
+      alternatives: leg.alternatives,
       swap: mode === 'WALK' ? null : { mode: target, estimate: leg.alternatives[target] ?? null },
       outside: !!fromPoint && !!toPoint && isOutsideCityCentre({ mode, from: fromPoint, to: toPoint }, centre),
       color: legColor(index, legs.length), fromPoint, toPoint,

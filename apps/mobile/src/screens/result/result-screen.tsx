@@ -107,9 +107,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       setSheet({ kind: 'WISH', visitId: id, date: day.date, chooseVisit: false });
     }
   };
-  const swap = (leg: LegModel | null) => {
-    const mode = leg?.swap?.mode;
-    if (!leg || !mode) return;
+  const swap = (leg: LegModel | null, mode: LegModel['mode'] | undefined) => {
+    if (!leg || !mode || !leg.alternatives[mode]) return;
     itinerary.apply({ kind: 'MODE', leg: { key: leg.key, date: leg.date, from: leg.from, to: leg.to }, mode },
       withLegMode(constraints, leg, mode));
   };
@@ -135,7 +134,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       onLayout={event => { const bottom = event.nativeEvent.layout.height; setInsets(value => ({ ...value, bottom })); }}
       actions={{
         onIndex: index => select({ date: day.date, index }), onSchedule: () => setSheet({ kind: 'SCHEDULE' }),
-        onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: target => swap(target.arrival),
+        onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: target => swap(target.arrival, target.arrival?.swap?.mode),
         onAddWish: () => {
           const first = wishes[0];
           if (first) setSheet({ kind: 'WISH', visitId: first.visitId, date: day.date, chooseVisit: true });
@@ -144,7 +143,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />
     {sheet?.kind === 'SCHEDULE' && <ScheduleSheet day={day} places={view.places} currency={currency} efficiency={displayed?.efficiency ?? null}
-      onSwap={status.kind === 'READY' ? leg => { setSheet(null); swap(leg); } : undefined}
+      onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
       select={visitId => { setSheet(null); const found = findVisit(days, visitId); if (found) select(found); }} />}
     {sheet?.kind === 'EDIT' && editing && <EditSheet view={view} card={editing} days={days} current={editOf(editing.visitId)}
