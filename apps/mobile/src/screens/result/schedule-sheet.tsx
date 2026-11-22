@@ -3,8 +3,8 @@ import type { ResultView } from '@travel/core/contracts/results/model';
 import { PlaceCredits } from '../../components/input/place-search';
 import type { EfficiencySummary } from '@travel/core/contracts/itinerary';
 import { localTime, MEALS } from '@travel/core/presentation';
-import { FormSheet } from '../../components/input/form-layout';
-import { colors, radius, size, spacing, text } from '../../theme';
+import { ExpandedFormSheet } from '../../components/input/form-layout';
+import { colors, radius, result, size, spacing, text } from '../../theme';
 import type { DayModel, LegModel, TimelineRow } from '../../result/days';
 import { dateTitle, durationLabel, legLabel, moneyLabel, timeRange } from '../../result/format';
 import { kindLabels } from '../trip-input/presentation';
@@ -71,7 +71,7 @@ export function ScheduleSheet({ day, places, currency, efficiency, estimated, pr
 }) {
   const placeIds = new Set([...day.cards.map(card => card.placeId), ...day.legs.flatMap(leg => [leg.from, leg.to])]);
   for (const row of day.rows) if (row.kind === 'ENDPOINT') placeIds.add(row.placeId);
-  return <FormSheet title={`${dateTitle(day.date)} 전체 일정`} close={close}>
+  return <ExpandedFormSheet topOffset={result.topBar.top + result.topBar.height} title={`${dateTitle(day.date)} 전체 일정`} close={close}>
     {previous && <PreviousBadge />}
     {day.rows.length === 0 && <Text style={text.body}>배치된 장소 없음</Text>}
     {day.rows.map((row, index) => <Row key={index} row={row} zone={day.timeZone} currency={currency} select={select} onSwap={onSwap} />)}
@@ -84,7 +84,7 @@ export function ScheduleSheet({ day, places, currency, efficiency, estimated, pr
         <PlaceCredits place={place} />
       </View> : null;
     })}
-  </FormSheet>;
+  </ExpandedFormSheet>;
 }
 
 const styles = StyleSheet.create({

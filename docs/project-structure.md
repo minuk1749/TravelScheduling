@@ -154,6 +154,7 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 ## T22 모바일 결과 화면 (지도 우선 · 장소 카드)
 
+- 전체 일정은 일반 입력 시트와 헤더·스크롤 본문 구조를 공유하고, `ExpandedFormSheet`로 상단 바 아래까지 펼친다.
 - `/trips/[id]/generate`(T21 생성 화면) → POST 응답 → `screens/result/result-flow.tsx`의 `OutcomeFlow`: OK·CONFLICT는 `ResultFlow`(GET `/constraints`로 입력, revision이 다르면 한 번 재계산), OVER_CAPACITY는 T23 `CapacityFlow`. T23 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름을 메모리로 오간다.
 - `result-screen.tsx`가 선택 `{ date, index }` 하나로 카드·지도 마커·강조 구간을 계산한다(`map/selection.ts`·`scene.ts`, `result/days.ts`). 지도는 `MapAdapterProvider`로 주입한 `ResultMapProps` 구현만 그린다(앱: `GoogleResultMap`, 테스트: `tests/fake-result-map.tsx`).
 - 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `use-itinerary.ts`가 기존 `PUT /constraints` → `POST /itinerary` → `verifyRevision`으로 처리하고, 저장 직전 제약으로 `변경 취소`·`되돌리기`를 한다. T19 GET은 표시 중인 일정 ID와 해시를 대조하며, `use-route-shapes.ts`는 여행·해시·일정 ID가 일치하는 경로만 지도에 전달한다.
