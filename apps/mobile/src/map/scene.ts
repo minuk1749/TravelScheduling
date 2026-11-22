@@ -38,7 +38,9 @@ function placesMarkers({ view, day, placed }: SceneInput): MapMarkerSpec[] {
   return markers;
 }
 
-function endpointMarkers({ view, day }: SceneInput): MapMarkerSpec[] {
+type ConflictMapLeg = { index: number; from: string; to: string };
+
+function endpointMarkers({ view, day }: SceneInput, conflictLegs: readonly ConflictMapLeg[]): MapMarkerSpec[] {
   const markers = new Map<string, MapMarkerSpec>();
   const add = (id: string, placeId: string, kind: 'LODGING' | 'AIRPORT') => {
     const place = view.places[placeId];
@@ -53,8 +55,8 @@ function endpointMarkers({ view, day }: SceneInput): MapMarkerSpec[] {
     }
   }
   const airports = new Set(view.input.flights.map(flight => flight.airport.id));
-  for (const leg of day?.legs ?? []) {
-    if (leg.kind !== 'AIRPORT') continue;
+  const transfers = day?.legs.filter(leg => leg.kind === 'AIRPORT') ?? [];
+  for (const leg of [...transfers, ...conflictLegs]) {
     for (const id of [leg.from, leg.to]) if (airports.has(id)) add(airportMarkerId(id), id, 'AIRPORT');
   }
   return [...markers.values()];
@@ -76,11 +78,11 @@ function legRoutes(input: SceneInput): MapRouteSpec[] {
   });
 }
 
-function conflictRoutes({ view, day, causes }: SceneInput): MapRouteSpec[] {
-  return causes.flatMap((cause, index): MapRouteSpec[] => {
-    const from = cause.leg && view.places[cause.leg.from]?.coordinates, to = cause.leg && view.places[cause.leg.to]?.coordinates;
-    if (!cause.leg || cause.leg.date !== day?.date || !from || !to) return [];
-    return [{ id: `conflict:${index}`, order: index + 1, mode: 'TRANSIT', color: colors.red.text, line: 'FLOATING',
+function conflictRoutes(view: ResultView, legs: readonly ConflictMapLeg[]): MapRouteSpec[] {
+  return legs.flatMap(leg => {
+    const from = view.places[leg.from]?.coordinates, to = view.places[leg.to]?.coordinates;
+    if (!from || !to) return [];
+    return [{ id: `conflict:${leg.index}`, order: leg.index + 1, mode: 'TRANSIT', color: colors.red.text, line: 'FLOATING',
       emphasis: 'CONFLICT', path: { kind: 'STRAIGHT', from, to } }];
   });
 }
@@ -90,8 +92,10 @@ function conflictRoutes({ view, day, causes }: SceneInput): MapRouteSpec[] {
  * by the §6 state table. The camera fits the day's places and lodging; airports may lie off screen.
  */
 export function mapScene(input: SceneInput) {
-  const markers = [...endpointMarkers(input), ...placesMarkers(input)];
-  const routes = [...legRoutes(input), ...(input.focus === 'CONFLICT' ? conflictRoutes(input) : [])];
+  const conflictLegs = input.focus === 'CONFLICT' ? input.causes.flatMap(({ leg }, index) =>
+    leg && leg.date === input.day?.date ? [{ from: leg.from, to: leg.to, index }] : []) : [];
+  const markers = [...endpointMarkers(input, conflictLegs), ...placesMarkers(input)];
+  const routes = [...legRoutes(input), ...conflictRoutes(input.view, conflictLegs)];
   const focusIds = markers.filter(marker => marker.kind === 'PLACED' || marker.kind === 'LODGING').map(marker => marker.id);
   return { markers, routes, focusIds: focusIds.length ? focusIds : markers.map(marker => marker.id) };
 }

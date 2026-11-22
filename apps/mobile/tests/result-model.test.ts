@@ -134,6 +134,20 @@ test('map scene: placed, wish, lodging and airport markers, line style by mode/o
   expect(mapScene({ ...base, day: second, focus: 'CONFLICT', causes }).routes.every(route => route.emphasis === 'DIM')).toBe(true);
 });
 
+test('a conflict endpoint shares the existing airport marker and disappears from previous-result and ordinary days without a flight', () => {
+  const cause = { visitId: null, date: D1, message: '공항 이동 불가', leg: { date: D1, from: place('airport'), to: place('hotel') } };
+  const base = { view, card: null, placed: placedVisitIds(days), shapes: new Map(), causes: [cause], pending: new Set<string>() };
+  const scheduled = mapScene({ ...base, day: first, focus: 'CONFLICT' });
+  expect(scheduled.markers.filter(marker => marker.kind === 'AIRPORT')).toHaveLength(1);
+  expect(scheduled.routes.filter(route => route.emphasis === 'CONFLICT')).toHaveLength(1);
+  const [empty] = buildDays(view, null, null);
+  for (const focus of ['BROWSE', 'PREVIOUS'] as const) {
+    const scene = mapScene({ ...base, day: empty, focus });
+    expect(scene.markers.some(marker => marker.kind === 'AIRPORT')).toBe(false);
+    expect(scene.routes).toEqual([]);
+  }
+});
+
 test('labels for times, fares, swaps, dates, fixed conditions and free time', () => {
   expect([durationLabel(45), durationLabel(60), durationLabel(135), durationLabel(14.2)]).toEqual(['45분', '1시간', '2시간 15분', '15분']);
   expect([moneyLabel(240, 'JPY'), moneyLabel(2300, 'JPY', true), moneyLabel(null, 'JPY'), moneyLabel(5, 'CHF')]).toEqual(['¥240', '약 ¥2,300', '요금 —', '5 CHF']);
