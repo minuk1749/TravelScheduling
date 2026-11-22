@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject, type ComponentRef } from 'react';
-import { PermissionsAndroid, Platform, StyleSheet, Text, View } from 'react-native';
+import { PermissionsAndroid, PixelRatio, Platform, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { colors, radius, result, shadows, size, spacing, text } from '../theme';
 import { useReducedMotion } from '../theme/use-reduced-motion';
@@ -20,25 +20,32 @@ function pathPoints(route: MapRouteSpec): readonly LatLng[] {
   return route.path.kind === 'ROAD' ? route.path.points : ends;
 }
 
-function strokeColor(route: MapRouteSpec, dimmed: boolean) {
-  if (route.emphasis === 'CONFLICT') return colors.red.text;
-  return route.emphasis === 'DIM' || dimmed ? withAlpha(route.color, result.route.dimOpacity) : route.color;
+/** Google Maps on Android takes pattern lengths in screen pixels and stroke widths in dp. */
+function dashPattern(line: MapRouteSpec['line']) {
+  if (line === 'SOLID') return undefined;
+  const scale = Platform.OS === 'android' ? PixelRatio.get() : 1;
+  return DASHES[line].map(length => length * scale);
 }
 
 /** Legs follow the road with a white outline; floating legs are a dashed arc over a ground shadow (§6). */
 function Route({ route, dimmed }: { route: MapRouteSpec; dimmed: boolean }) {
   const points = pathPoints(route) as LatLng[];
-  const color = strokeColor(route, dimmed);
+  const opacity = dimmed || route.emphasis === 'DIM' ? result.route.dimOpacity : 1;
+  const color = route.emphasis === 'CONFLICT' ? colors.red.text : route.color;
   const arrow = midpointHeading(points);
-  const z = route.emphasis === 'DIM' ? 1 : 2;
+  // Explicit overlay order keeps the ink above its outline and selected roads above dimmed roads.
+  const baseZ = route.emphasis === 'DIM' ? 0 : route.emphasis === 'CONFLICT' ? 4 : 2;
+  const pattern = dashPattern(route.line);
   const ground = route.path.kind === 'ROAD' ? [...route.path.points] : [route.path.from, route.path.to];
   return <>
     {route.line === 'FLOATING' && <Polyline coordinates={ground} strokeWidth={ROUTE_WIDTH}
-      strokeColor={withAlpha(colors.gray.text, 0.12)} zIndex={z} />}
-    {route.path.kind === 'ROAD' && route.line !== 'FLOATING' && <Polyline coordinates={points} strokeWidth={OUTLINE} strokeColor={colors.card} zIndex={z} />}
-    <Polyline coordinates={points} strokeWidth={ROUTE_WIDTH} strokeColor={color} zIndex={z} lineCap="round"
-      lineDashPattern={route.line === 'SOLID' ? undefined : [...DASHES[route.line]]} />
-    {arrow && <Marker coordinate={arrow.point} rotation={arrow.heading} flat anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
+      strokeColor={withAlpha(colors.gray.text, 0.12 * opacity)} zIndex={baseZ} />}
+    {route.path.kind === 'ROAD' && route.line !== 'FLOATING' && <Polyline coordinates={points} strokeWidth={OUTLINE}
+      strokeColor={withAlpha(colors.card, opacity)} zIndex={baseZ} lineCap="round" lineDashPattern={pattern} />}
+    <Polyline coordinates={points} strokeWidth={ROUTE_WIDTH} strokeColor={withAlpha(color, opacity)} zIndex={baseZ + 1}
+      lineCap={route.line === 'FLOATING' ? 'butt' : 'round'} lineDashPattern={pattern} />
+    {arrow && <Marker key={color} coordinate={arrow.point} rotation={arrow.heading} flat opacity={opacity}
+      anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>
       <Text style={[text.tiny, { color }]}>▲</Text>
     </Marker>}
   </>;
@@ -149,7 +156,8 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
         user.current = { latitude: coordinate.latitude, longitude: coordinate.longitude };
         if (first) map.current?.animateCamera({ center: user.current });
       }}>
-      {routes.map(route => <Route key={route.id} route={route} dimmed={dimmed} />)}
+      {/* Removing a dash pattern leaves cached strokes on both native Google adapters. */}
+      {routes.map(route => <Route key={`${route.id}:${route.line}`} route={route} dimmed={dimmed} />)}
       {markers.map(marker => {
         const selected = marker.id === selectedId;
         const opacity = (dimmed ? result.route.dimOpacity * 2 : 1) * (marker.kind === 'WISH' && !selected ? result.marker.wishOpacity : 1);

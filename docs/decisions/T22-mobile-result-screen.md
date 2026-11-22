@@ -39,6 +39,7 @@
 - `apps/mobile/tests/result-model.test.ts`, `map-geometry.test.ts`: 날짜 모델, 선택·이전/다음·스와이프, 강조·재계산 중 구간, 장면, 도심 밖, 색 보간, polyline, 문구.
 - `packages/design-tokens/tests/design.test.ts`: §4 그림자, §6–7 결과 화면 값.
 - `apps/mobile/tests/result-expanded-sheet.test.tsx`는 짧은 날과 긴 날에 전체 일정이 상단 안전 영역과 상단 바 아래에서 화면 하단까지 열리고, 목록과 닫기 버튼이 동작하는지 확인한다. 애니메이션을 중간 지점에서 멈춘 컴포넌트 테스트로 260ms 이동과 동작 줄이기 페이드를 구분한다. 실기기에서의 프레임과 터치 감각은 별도 확인 항목이다.
+- `apps/mobile/tests/result-map-route-styles.test.tsx`는 Google 지도 SDK 대역으로 구간 색과 흰 테두리의 알파·그리기 순서, 방향 화살표와 그림자의 흐림, 도보 점선의 공통 간격과 이동수단 변경 후 실선 복원을 검사한다.
 - 실제 지도 모양(선·곡선·그림자·마커 확대), 현재 위치 권한, 제스처 감각은 기기에서 사람이 확인한다.
 
 제약 PUT의 응답을 받지 못하면 제출한 초안을 보관한다. 다시 계산할 때 저장 입력을 조회하고, 이미 초안이 반영됐으면 POST부터 진행한다. 처음 편집한 revision이 유지되면 PUT을 다시 시도한다. 다른 수정이 저장된 경우 최신 입력을 다시 계산한 뒤 편집을 재개한다. 되돌리기는 해당 수정이 저장된 revision에서만 허용한다. `apps/mobile/tests/result-edit-recovery.test.tsx`에서 저장 전 실패, 응답 유실, 다른 기기의 변경 및 희망 마커 편집을 검증한다.
