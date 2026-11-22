@@ -47,8 +47,14 @@ function endpointMarkers({ view, day }: SceneInput): MapMarkerSpec[] {
   for (const lodging of view.input.lodgings) {
     if (!day || (lodging.checkIn <= day.date && day.date <= lodging.checkOut)) add(lodgingMarkerId(lodging.place.id), lodging.place.id, 'LODGING');
   }
+  for (const row of day?.rows ?? []) {
+    if (row.kind === 'ENDPOINT' && (row.role === 'AIRPORT_ARRIVAL' || row.role === 'AIRPORT_DEPARTURE')) {
+      add(airportMarkerId(row.placeId), row.placeId, 'AIRPORT');
+    }
+  }
   const airports = new Set(view.input.flights.map(flight => flight.airport.id));
   for (const leg of day?.legs ?? []) {
+    if (leg.kind !== 'AIRPORT') continue;
     for (const id of [leg.from, leg.to]) if (airports.has(id)) add(airportMarkerId(id), id, 'AIRPORT');
   }
   return [...markers.values()];

@@ -9,6 +9,7 @@ import type { ConflictCause } from './conflicts';
 import { fixedLabel, minutesBetween } from './format';
 
 export type LegModel = {
+  /** date and key identify the saved leg, including airport transfers displayed on another local date. */
   key: string; order: number; date: string; kind: LegComparison['kind'];
   from: string; to: string; fromName: string; toName: string;
   departure: string; arrival: string;
@@ -42,7 +43,7 @@ export type TimelineRow =
   | { kind: 'VISIT'; at: string; card: CardModel }
   | { kind: 'MEAL'; at: string; end: string; slot: MealSlot }
   | { kind: 'LEG'; at: string; leg: LegModel }
-  | { kind: 'ENDPOINT'; at: string; role: EndpointRole; name: string };
+  | { kind: 'ENDPOINT'; at: string; role: EndpointRole; placeId: string; name: string };
 
 export type DayModel = {
   date: string; number: number; timeZone: string;
@@ -61,28 +62,33 @@ export function tripDates(startDate: string, endDate: string): string[] {
   return dates;
 }
 
-type Role = 'VISIT' | 'LODGING' | 'AIRPORT';
-function placeRoles(view: ResultView): Map<string, Role> {
-  const roles = new Map<string, Role>();
-  for (const flight of view.input.flights) roles.set(flight.airport.id, 'AIRPORT');
-  for (const lodging of view.input.lodgings) roles.set(lodging.place.id, 'LODGING');
-  for (const visit of view.input.visits) roles.set(visit.place.id, 'VISIT');
-  return roles;
-}
+const localDate = (instant: string, zone: string) =>
+  Temporal.Instant.from(instant).toZonedDateTimeISO(zone).toPlainDate().toString();
 
 const instantAfter = (start: string, minutes: number) =>
   Temporal.Instant.from(start).add({ milliseconds: Math.round(minutes * 60_000) }).toString();
 const point = (view: ResultView, id: string): LatLng | null => view.places[id]?.coordinates ?? null;
 
-function legModels(view: ResultView, comparisons: readonly LegComparison[], date: string): LegModel[] {
-  const legs = comparisons.filter(leg => leg.date === date);
+/** Group by when the traveler sees the event, independent of the saved calculation date. */
+function byLocalDate<T>(items: readonly T[], zone: string, instant: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const date = localDate(instant(item), zone);
+    const group = groups.get(date);
+    if (group) group.push(item);
+    else groups.set(date, [item]);
+  }
+  return groups;
+}
+
+function legModels(view: ResultView, legs: readonly LegComparison[]): LegModel[] {
   const centre = CITY_CENTRES[view.input.cityCode];
   return legs.map((leg, index) => {
     const fromPoint = point(view, leg.from), toPoint = point(view, leg.to);
     const mode = leg.selected.mode;
     const target = mode === 'TAXI' ? 'TRANSIT' as const : 'TAXI' as const;
     return {
-      key: legKey(leg), order: index + 1, date, kind: leg.kind, from: leg.from, to: leg.to,
+      key: legKey(leg), order: index + 1, date: leg.date, kind: leg.kind, from: leg.from, to: leg.to,
       fromName: placeName(view, leg.from), toName: placeName(view, leg.to),
       departure: leg.departure, arrival: instantAfter(leg.departure, leg.selected.minutes),
       mode, minutes: leg.selected.minutes, fare: leg.selected.fare, fixed: leg.selected.fixed,
@@ -105,7 +111,7 @@ function placements(result: ItineraryResult | null): Map<string, Placement> {
 }
 
 type Context = {
-  view: ResultView; roles: Map<string, Role>; before: Map<string, Placement> | null; issues: Map<string, string>;
+  view: ResultView; before: Map<string, Placement> | null; issues: Map<string, string>;
 };
 
 function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT' }> | null, visitId: string,
@@ -113,39 +119,57 @@ function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT
   const visit = context.view.input.visits.find(row => row.id === visitId);
   if (!visit) return null;
   const placeId = visit.place.id;
-  const arrival = stop ? legs.find(leg => leg.to === placeId) ?? null : null;
-  const departure = stop ? legs.find(leg => leg.from === placeId) ?? null : null;
+  const arrival = stop ? legs.findLast(leg => leg.to === placeId && Temporal.Instant.compare(leg.arrival, stop.start) <= 0) ?? null : null;
+  const departure = stop ? legs.find(leg => leg.from === placeId && Temporal.Instant.compare(leg.departure, stop.end) >= 0) ?? null : null;
   const before = context.before?.get(visitId);
   const moved = !!stop && !!before && (minutesBetween(before.start, stop.start) !== 0 || minutesBetween(before.end, stop.end) !== 0);
   return {
     visitId, placeId, number, name: placeName(context.view, placeId), kind: visit.kind, stay: visit.minutes,
     start: stop?.start ?? null, end: stop?.end ?? null, fixed: fixedLabel(visit), arrival, departure,
     wait: arrival && stop ? Math.max(0, Math.round(minutesBetween(arrival.arrival, stop.start))) : 0,
-    returnAt: last && departure && context.roles.get(departure.to) === 'LODGING' ? departure.arrival : null,
+    returnAt: last && departure && context.view.input.lodgings.some(lodging => lodging.place.id === departure.to) ? departure.arrival : null,
     shift: stop && before?.date === date ? Math.round(minutesBetween(before.start, stop.start)) : 0,
     changed: !!context.before && !!stop && (!before || before.date !== date || moved),
     issue: context.issues.get(visitId) ?? null,
   };
 }
 
-function flightInstant(view: ResultView, date: string, direction: 'ARRIVAL' | 'DEPARTURE'): string | null {
-  const flight = view.input.flights.find(row => row.direction === direction && row.localDateTime.startsWith(date));
-  return flight ? Temporal.PlainDateTime.from(flight.localDateTime).toZonedDateTime(view.input.timeZone).toInstant().toString() : null;
+type EndpointRow = Extract<TimelineRow, { kind: 'ENDPOINT' }>;
+
+/** A flight and its transfer can be on different local dates. Flight events follow the itinerary's flight clock. */
+function endpoints(view: ResultView, legs: readonly LegComparison[]): EndpointRow[] {
+  const { flights, lodgings, timeZone } = view.input;
+  const rows: EndpointRow[] = [];
+  const add = (role: EndpointRole, at: string, placeId: string) =>
+    rows.push({ kind: 'ENDPOINT', role, at, placeId, name: placeName(view, placeId) });
+  for (const flight of flights) {
+    const at = Temporal.PlainDateTime.from(flight.localDateTime).toZonedDateTime(timeZone).toInstant().toString();
+    add(flight.direction === 'ARRIVAL' ? 'AIRPORT_ARRIVAL' : 'AIRPORT_DEPARTURE', at, flight.airport.id);
+  }
+  // A visit at a lodging is still a visit. Only daily route anchors and the lodging side of an airport transfer
+  // represent lodging departures/arrivals, even when the same place is also a visit or an airport.
+  const daily = legs.filter(leg => leg.kind === 'DAY');
+  const first = new Map<string, LegComparison>(), last = new Map<string, LegComparison>();
+  for (const leg of daily) {
+    if (!first.has(leg.date)) first.set(leg.date, leg);
+    last.set(leg.date, leg);
+  }
+  for (const leg of legs) {
+    const transfer = (direction: 'DEPARTURE' | 'ARRIVAL', airportId: string) => leg.kind === 'AIRPORT' && flights.some(flight =>
+      flight.direction === direction && flight.airport.id === airportId && flight.localDateTime.startsWith(leg.date));
+    if ((first.get(leg.date) === leg || transfer('DEPARTURE', leg.to)) && lodgings.some(lodging => lodging.place.id === leg.from)) {
+      add('LODGING_OUT', leg.departure, leg.from);
+    }
+    if ((last.get(leg.date) === leg || transfer('ARRIVAL', leg.from)) && lodgings.some(lodging => lodging.place.id === leg.to)) {
+      add('LODGING_IN', instantAfter(leg.departure, leg.selected.minutes), leg.to);
+    }
+  }
+  return rows;
 }
 
-function timeline(context: Context, date: string, stops: readonly Stop[], cards: readonly CardModel[], legs: readonly LegModel[]): TimelineRow[] {
+function timeline(endpoints: EndpointRow[], stops: readonly Stop[], cards: readonly CardModel[], legs: readonly LegModel[]): TimelineRow[] {
   const byVisit = new Map(cards.map(item => [item.visitId, item]));
-  const rows: TimelineRow[] = [];
-  for (const leg of legs) {
-    const from = context.roles.get(leg.from), to = context.roles.get(leg.to);
-    if (from === 'LODGING') rows.push({ kind: 'ENDPOINT', at: leg.departure, role: 'LODGING_OUT', name: leg.fromName });
-    if (from === 'AIRPORT') rows.push({ kind: 'ENDPOINT', at: flightInstant(context.view, date, 'ARRIVAL') ?? leg.departure,
-      role: 'AIRPORT_ARRIVAL', name: leg.fromName });
-    rows.push({ kind: 'LEG', at: leg.departure, leg });
-    if (to === 'LODGING') rows.push({ kind: 'ENDPOINT', at: leg.arrival, role: 'LODGING_IN', name: leg.toName });
-    if (to === 'AIRPORT') rows.push({ kind: 'ENDPOINT', at: flightInstant(context.view, date, 'DEPARTURE') ?? leg.arrival,
-      role: 'AIRPORT_DEPARTURE', name: leg.toName });
-  }
+  const rows: TimelineRow[] = [...endpoints, ...legs.map(leg => ({ kind: 'LEG' as const, at: leg.departure, leg }))];
   for (const stop of stops) {
     if (stop.kind === 'MEAL') rows.push({ kind: 'MEAL', at: stop.start, end: stop.end, slot: stop.slot });
     else if (byVisit.has(stop.visitId)) rows.push({ kind: 'VISIT', at: stop.start, card: byVisit.get(stop.visitId)! });
@@ -170,19 +194,23 @@ export function buildDays(view: ResultView, shown: ItineraryResult | null, previ
   causes: readonly ConflictCause[] = []): DayModel[] {
   const schedule = displayedSchedule(shown);
   const context: Context = {
-    view, roles: placeRoles(view), before: displayedSchedule(previous) ? placements(previous) : null,
+    view, before: displayedSchedule(previous) ? placements(previous) : null,
     issues: new Map(causes.flatMap(cause => cause.visitId ? [[cause.visitId, cause.message] as const] : [])),
   };
+  const zone = view.input.timeZone;
+  const comparisons = [...shown?.comparisons ?? []].sort((a, b) => Temporal.Instant.compare(a.departure, b.departure));
+  const byDeparture = byLocalDate(comparisons, zone, leg => leg.departure);
+  const events = byLocalDate(schedule ? endpoints(view, comparisons) : [], zone, row => row.at);
   const days = tripDates(view.input.startDate, view.input.endDate).map((date, index): DayModel => {
     const scheduled = schedule?.days.find(day => day.date === date);
     const stops = scheduled?.stops ?? [];
-    const legs = legModels(view, shown?.comparisons ?? [], date);
+    const legs = legModels(view, byDeparture.get(date) ?? []);
     const visits = stops.filter((stop): stop is Extract<Stop, { kind: 'VISIT' }> => stop.kind === 'VISIT');
     const cards = visits.flatMap((stop, position) =>
       card(context, date, stop, stop.visitId, position + 1, legs, position === visits.length - 1) ?? []);
     const travelMinutes = Math.ceil(legs.reduce((sum, leg) => sum + leg.minutes, 0));
     return { date, number: index + 1, timeZone: scheduled?.timeZone ?? view.input.timeZone, cards, legs,
-      rows: timeline(context, date, stops, cards, legs), ...bounds(stops, legs), travelMinutes };
+      rows: timeline(events.get(date) ?? [], stops, cards, legs), ...bounds(stops, legs), travelMinutes };
   });
   const shownVisits = new Set(days.flatMap(day => day.cards.map(item => item.visitId)));
   for (const cause of causes) {

@@ -6,7 +6,7 @@ import { localTime, MEALS } from '@travel/core/presentation';
 import { FormSheet } from '../../components/input/form-layout';
 import { colors, radius, size, spacing, text } from '../../theme';
 import type { DayModel, LegModel, TimelineRow } from '../../result/days';
-import { dateTitle, durationLabel, legLabel, moneyLabel } from '../../result/format';
+import { dateTitle, durationLabel, legLabel, moneyLabel, timeRange } from '../../result/format';
 import { kindLabels } from '../trip-input/presentation';
 import { SwapChip } from './swap-chip';
 import { ENDPOINT_ICONS, ENDPOINT_LABELS, MODE_ICONS } from './icons';
@@ -21,6 +21,7 @@ function Row({ row, zone, currency, select, onSwap }: {
       <View style={[styles.tile, { backgroundColor: leg.color }]}><Text style={[text.tinyStrong, styles.tileText]}>{leg.order}</Text></View>
       <Text importantForAccessibility="no" style={[text.secondary, { color: leg.color }]}>{MODE_ICONS[leg.mode]}</Text>
       <View style={styles.flex}>
+        <Text style={text.secondary}>{timeRange(leg.departure, leg.arrival, zone)}</Text>
         <Text style={text.secondary}>{leg.fromName} → {leg.toName}</Text>
         <Text style={styles.move}>{legLabel(leg.mode, leg.minutes, leg.fare, currency)}{leg.outside ? ' · 도심 밖' : ''}</Text>
       </View>

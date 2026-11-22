@@ -60,7 +60,10 @@ export const periodLabel = (input: Pick<TripInputs, 'startDate' | 'endDate'>) =>
   `${monthDay(input.startDate)} – ${monthDay(input.endDate)}`;
 
 export function timeRange(start: string, end: string, zone: string): string {
-  return `${localTime(start, zone)} – ${localTime(end, zone)}`;
+  const startDate = Temporal.Instant.from(start).toZonedDateTimeISO(zone).toPlainDate();
+  const endDate = Temporal.Instant.from(end).toZonedDateTimeISO(zone).toPlainDate();
+  const endDay = startDate.equals(endDate) ? '' : `${endDate.month}월 ${endDate.day}일 `;
+  return `${localTime(start, zone)} – ${endDay}${localTime(end, zone)}`;
 }
 
 export const minutesBetween = (start: string, end: string) =>
