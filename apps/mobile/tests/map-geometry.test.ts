@@ -67,3 +67,24 @@ test('airport edge labels use map points and exclude the top bar and bottom pane
   expect(side(401, 200)).toBe('RIGHT');
   expect(offscreenSide({ x: 200, y: 200 }, 400, 80, 80)).toBeNull();
 });
+
+test('arrow follows half of the traveled distance even when the first turns have many points', () => {
+  const route = [
+    { latitude: 0, longitude: 0 }, { latitude: 0.01, longitude: 0 },
+    { latitude: 0.02, longitude: 0 }, { latitude: 0.03, longitude: 0 },
+    { latitude: 0.03, longitude: 0 }, { latitude: 0.03, longitude: 1 },
+  ];
+  const forward = midpointHeading(route), reverse = midpointHeading([...route].reverse());
+  expect(forward?.point.latitude).toBeCloseTo(0.03, 4);
+  expect(forward?.point.longitude).toBeCloseTo(0.485, 4);
+  expect(forward?.heading).toBeCloseTo(90, 2);
+  expect(reverse?.point.longitude).toBeCloseTo(0.485, 4);
+  expect(reverse?.heading).toBeCloseTo(270, 2);
+});
+
+test('a turn across the date line stays on that side of the globe; stationary paths have no arrow', () => {
+  const crossing = midpointHeading([{ latitude: 0, longitude: 179 }, { latitude: 0, longitude: -179 }]);
+  expect(Math.abs(crossing!.point.longitude)).toBeCloseTo(180);
+  expect(crossing?.heading).toBeCloseTo(90);
+  expect(midpointHeading([hotel, hotel, hotel])).toBeNull();
+});

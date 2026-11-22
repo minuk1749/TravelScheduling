@@ -100,16 +100,27 @@ export function arcPoints(from: LatLng, to: LatLng, segments = 24, lift = 0.2): 
   });
 }
 
-/** Middle point of a path and its heading in degrees clockwise from north (direction arrow). */
+/** Position halfway along the traveled distance and the bearing of the segment that contains it. */
 export function midpointHeading(points: readonly LatLng[]): { point: LatLng; heading: number } | null {
-  if (points.length < 2) return null;
-  const middle = Math.min(Math.floor((points.length - 1) / 2), points.length - 2);
-  const [a, b] = [points[middle], points[middle + 1]];
-  const y = Math.sin(radians(b.longitude - a.longitude)) * Math.cos(radians(b.latitude));
-  const x = Math.cos(radians(a.latitude)) * Math.sin(radians(b.latitude))
-    - Math.sin(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.cos(radians(b.longitude - a.longitude));
-  const heading = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-  return { point: { latitude: (a.latitude + b.latitude) / 2, longitude: (a.longitude + b.longitude) / 2 }, heading };
+  const lengths = points.slice(1).map((end, index) => distanceKm(points[index], end));
+  let remaining = lengths.reduce((total, length) => total + length, 0) / 2;
+  if (!remaining) return null;
+  for (const [index, length] of lengths.entries()) {
+    if (length === 0 || remaining > length) { remaining -= length; continue; }
+    const a = points[index], b = points[index + 1];
+    const fraction = remaining / length;
+    const deltaLng = (b.longitude - a.longitude + 540) % 360 - 180;
+    const point = {
+      latitude: a.latitude + (b.latitude - a.latitude) * fraction,
+      longitude: (a.longitude + deltaLng * fraction + 540) % 360 - 180,
+    };
+    const y = Math.sin(radians(deltaLng)) * Math.cos(radians(b.latitude));
+    const x = Math.cos(radians(a.latitude)) * Math.sin(radians(b.latitude))
+      - Math.sin(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.cos(radians(deltaLng));
+    const heading = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+    return { point, heading };
+  }
+  return null;
 }
 
 export type EdgeSide = 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT';
