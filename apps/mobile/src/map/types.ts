@@ -14,7 +14,7 @@ export type MapMarkerSpec = {
   label: string;
 };
 
-/** SOLID: transit/taxi, DOTTED: walking, FLOATING: outside the city centre (curve + ground shadow). */
+/** SOLID: transit/taxi, DOTTED: walking or a straight fallback, FLOATING: outside the city centre (curve + ground shadow). */
 export type MapRouteLine = 'SOLID' | 'DOTTED' | 'FLOATING';
 /** STRONG: sequence colour, DIM: faded (§6 25%), CONFLICT: red curve for the leg that failed. */
 export type MapRouteEmphasis = 'STRONG' | 'DIM' | 'CONFLICT';

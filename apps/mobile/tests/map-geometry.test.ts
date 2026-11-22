@@ -13,6 +13,8 @@ test('decodes Google encoded polylines and rejects truncated input', () => {
     { latitude: 38.5, longitude: -120.2 }, { latitude: 40.7, longitude: -120.95 }, { latitude: 43.252, longitude: -126.453 },
   ]);
   expect(decodePolyline('')).toEqual([]);
+  expect(() => decodePolyline('!!!!')).toThrow('Invalid polyline');
+  expect(() => decodePolyline('~~~~~~~??')).toThrow('Invalid polyline');
   expect(() => decodePolyline('_p~iF~ps|U_')).toThrow('Truncated polyline');
 });
 

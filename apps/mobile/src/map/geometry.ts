@@ -1,7 +1,10 @@
 import { legColors, result } from '@travel/design-tokens';
 import type { LatLng, TravelModeName } from './types';
 
-/** Google encoded polyline (precision 5) → coordinates. Throws on a truncated string. */
+/** Road geometry is specific to the travel mode, even when two legs share endpoints. */
+export const roadShapeKey = (legKey: string, mode: TravelModeName) => [legKey, mode].join('|');
+
+/** Google encoded polyline (precision 5) → coordinates. Reject malformed or out-of-bounds points. */
 export function decodePolyline(encoded: string): LatLng[] {
   const points: LatLng[] = [];
   let index = 0, latitude = 0, longitude = 0;
@@ -10,6 +13,7 @@ export function decodePolyline(encoded: string): LatLng[] {
     do {
       if (index >= encoded.length) throw new Error('Truncated polyline');
       byte = encoded.charCodeAt(index++) - 63;
+      if (byte < 0 || byte > 63 || shift > 25) throw new Error('Invalid polyline');
       value |= (byte & 0x1f) << shift;
       shift += 5;
     } while (byte >= 0x20);
@@ -18,6 +22,7 @@ export function decodePolyline(encoded: string): LatLng[] {
   while (index < encoded.length) {
     latitude += next();
     longitude += next();
+    if (Math.abs(latitude) > 90e5 || Math.abs(longitude) > 180e5) throw new Error('Invalid polyline coordinates');
     points.push({ latitude: latitude / 1e5, longitude: longitude / 1e5 });
   }
   return points;

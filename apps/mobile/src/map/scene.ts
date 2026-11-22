@@ -2,6 +2,7 @@ import { colors } from '@travel/design-tokens';
 import type { ResultView } from '@travel/core/contracts/results/model';
 import type { ConflictCause } from '../result/conflicts';
 import type { CardModel, DayModel } from '../result/days';
+import { roadShapeKey } from './geometry';
 import { legEmphasis, type MapFocus } from './selection';
 import type { LatLng, MapMarkerSpec, MapRouteSpec } from './types';
 
@@ -58,11 +59,13 @@ function legRoutes(input: SceneInput): MapRouteSpec[] {
   return (input.day?.legs ?? []).flatMap((leg): MapRouteSpec[] => {
     const value = emphasis.get(leg.key) ?? 'DIM';
     if (value === 'HIDDEN' || !leg.fromPoint || !leg.toPoint) return [];
-    const road = input.shapes.get(leg.key);
+    const points = input.shapes.get(roadShapeKey(leg.key, leg.mode));
+    const road = points && points.length >= 2;
+    const line = !road ? 'DOTTED' : leg.outside ? 'FLOATING' : leg.mode === 'WALK' ? 'DOTTED' : 'SOLID';
     return [{
       id: leg.key, order: leg.order, mode: leg.mode, color: leg.color, emphasis: value,
-      line: leg.outside ? 'FLOATING' : leg.mode === 'WALK' ? 'DOTTED' : 'SOLID',
-      path: road && road.length > 1 ? { kind: 'ROAD', points: road } : { kind: 'STRAIGHT', from: leg.fromPoint, to: leg.toPoint },
+      line,
+      path: road ? { kind: 'ROAD', points } : { kind: 'STRAIGHT', from: leg.fromPoint, to: leg.toPoint },
     }];
   });
 }

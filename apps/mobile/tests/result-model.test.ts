@@ -1,5 +1,6 @@
 import { legColors } from '@travel/design-tokens';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
+import { roadShapeKey } from '../src/map/geometry';
 import { mapScene } from '../src/map/scene';
 import {
   findVisit, initialSelection, legEmphasis, pagerState, pendingLegKeys, reconcileSelection, selectDate, selectedCard,
@@ -116,10 +117,15 @@ test('map scene: placed, wish, lodging and airport markers, line style by mode/o
     ['museum', 'PLACED', 1], ['market', 'PLACED', 2], ['cafe', 'WISH', null]]);
   expect(scene.focusIds).toEqual(['lodging:place-hotel', 'museum', 'market']);
   expect(scene.routes.map(route => [route.order, route.line, route.emphasis, route.path.kind])).toEqual([
-    [1, 'FLOATING', 'DIM', 'STRAIGHT'], [2, 'SOLID', 'STRONG', 'STRAIGHT'], [3, 'SOLID', 'DIM', 'STRAIGHT'], [4, 'DOTTED', 'DIM', 'STRAIGHT']]);
+    [1, 'DOTTED', 'DIM', 'STRAIGHT'], [2, 'DOTTED', 'STRONG', 'STRAIGHT'], [3, 'DOTTED', 'DIM', 'STRAIGHT'], [4, 'DOTTED', 'DIM', 'STRAIGHT']]);
   const road = [{ latitude: 1, longitude: 2 }, { latitude: 3, longitude: 4 }];
-  expect(mapScene({ ...base, day: first, focus: 'BROWSE', shapes: new Map([[legId(D1, 'hotel', 'museum'), road]]) })
-    .routes[1].path).toEqual({ kind: 'ROAD', points: road });
+  const shapes = new Map(first.legs.map(leg => [roadShapeKey(leg.key, leg.mode), road]));
+  const withRoads = mapScene({ ...base, day: first, focus: 'BROWSE', shapes }).routes;
+  expect(withRoads.map(route => route.line)).toEqual(['FLOATING', 'SOLID', 'SOLID', 'DOTTED']);
+  for (const route of withRoads) expect(route.path).toEqual({ kind: 'ROAD', points: road });
+  const wrongMode = new Map([[roadShapeKey(first.legs[1].key, 'TAXI'), road]]);
+  const fallback = mapScene({ ...base, day: first, focus: 'BROWSE', shapes: wrongMode }).routes[1];
+  expect(fallback).toMatchObject({ line: 'DOTTED', path: { kind: 'STRAIGHT', from: first.legs[1].fromPoint, to: first.legs[1].toPoint } });
   expect(mapScene({ ...base, day: third, card: null, focus: 'BROWSE' }).markers.map(marker => marker.kind)).toEqual(['LODGING', 'WISH']);
   const causes = conflictCauses(view, conflictTrip(REVISION));
   const conflict = mapScene({ ...base, day: first, focus: 'CONFLICT', causes });

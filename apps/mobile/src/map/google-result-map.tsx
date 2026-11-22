@@ -33,7 +33,7 @@ function Route({ route, dimmed }: { route: MapRouteSpec; dimmed: boolean }) {
   return <>
     {route.line === 'FLOATING' && <Polyline coordinates={ground} strokeWidth={ROUTE_WIDTH}
       strokeColor={withAlpha(colors.gray.text, 0.12)} zIndex={z} />}
-    {route.line !== 'FLOATING' && <Polyline coordinates={points} strokeWidth={OUTLINE} strokeColor={colors.card} zIndex={z} />}
+    {route.path.kind === 'ROAD' && route.line !== 'FLOATING' && <Polyline coordinates={points} strokeWidth={OUTLINE} strokeColor={colors.card} zIndex={z} />}
     <Polyline coordinates={points} strokeWidth={ROUTE_WIDTH} strokeColor={color} zIndex={z} lineCap="round"
       lineDashPattern={route.line === 'SOLID' ? undefined : [...DASHES[route.line]]} />
     {arrow && <Marker coordinate={arrow.point} rotation={arrow.heading} flat anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}>

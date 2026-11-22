@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTripApi, type GeneratedTrip } from '../../api/trips';
-import { decodePolyline } from '../../map/geometry';
+import { decodePolyline, roadShapeKey } from '../../map/geometry';
 import type { LatLng } from '../../map/types';
 import { legKey } from '../../result/days';
 
@@ -28,7 +28,7 @@ export function useRouteShapes(tripId: string, result: GeneratedTrip | null) {
       const shapes = new Map<string, readonly LatLng[]>();
       for (const leg of response.legs) {
         const points = leg.shape.status === 'OK' ? decoded(leg.shape.encodedPolyline) : null;
-        if (points) shapes.set(legKey(leg), points);
+        if (points) shapes.set(roadShapeKey(legKey(leg), leg.mode), points);
       }
       setLoaded({ hash, shapes, failed: false });
     }, () => { if (!request.signal.aborted) setLoaded({ hash, shapes: NONE, failed: true }); });

@@ -37,9 +37,9 @@ test('3-1: map-first layout selects the first card and highlights only the leg a
   expect(screen.getByTestId('map-state')).toHaveTextContent('clear focus:lodging:place-hotel,museum,market');
   await waitFor(() => expect(routes()[legId(D1, 'hotel', 'museum')]).toBe(`2 TRANSIT SOLID STRONG ${legColors[1]} ROAD`));
   expect(routes()).toEqual({
-    [legId(D1, 'airport', 'hotel', 'AIRPORT')]: `1 TRANSIT FLOATING DIM ${legColors[0]} STRAIGHT`,
+    [legId(D1, 'airport', 'hotel', 'AIRPORT')]: `1 TRANSIT DOTTED DIM ${legColors[0]} STRAIGHT`,
     [legId(D1, 'hotel', 'museum')]: `2 TRANSIT SOLID STRONG ${legColors[1]} ROAD`,
-    [legId(D1, 'museum', 'market')]: `3 TAXI SOLID DIM ${legColors[2]} STRAIGHT`,
+    [legId(D1, 'museum', 'market')]: `3 TAXI DOTTED DIM ${legColors[2]} STRAIGHT`,
     [legId(D1, 'market', 'hotel')]: `4 WALK DOTTED DIM ${legColors[3]} STRAIGHT`,
   });
   expect(f.shapes).toHaveBeenCalledTimes(1);
@@ -59,7 +59,7 @@ test('card paging, card press and marker press keep the card, marker and arrivin
   expect(card('2번 아메요코 시장, 13:20부터 14:05까지')).toHaveProp('accessibilityState', expect.objectContaining({ selected: true }));
   expect(screen.getByRole('button', { name: '다음 장소' })).toBeDisabled();
   expect(screen.getByRole('button', { name: '지도 아메요코 시장', selected: true })).toBeVisible();
-  expect(routes()[legId(D1, 'museum', 'market')]).toMatch(/^3 TAXI SOLID STRONG/);
+  expect(routes()[legId(D1, 'museum', 'market')]).toMatch(/^3 TAXI DOTTED STRONG/);
   expect(routes()[legId(D1, 'hotel', 'museum')]).toMatch(/ DIM /);
   expect(screen.getByText('오는 길 · 도쿄 국립박물관 · 숙소 복귀 14:35')).toBeVisible();
   expect(screen.getByText('택시 20분 · 약 ¥3,100')).toBeVisible();
@@ -108,7 +108,7 @@ test('date chips select the first card of the day; 3-7 shows unknown fare and a 
   expect(screen.getByText('대중교통 30분 · 요금 —')).toBeVisible();
   expect(screen.getByRole('button', { name: '택시 정보 없음' })).toBeDisabled();
   expect(screen.getByText('택시 정보 없음')).toHaveStyle({ color: colors.gray.disabled });
-  expect(routes()[legId(D2, 'hotel', 'shrine')]).toBe(`1 TRANSIT FLOATING STRONG ${legColors[0]} STRAIGHT`);
+  expect(routes()[legId(D2, 'hotel', 'shrine')]).toBe(`1 TRANSIT DOTTED STRONG ${legColors[0]} STRAIGHT`);
   expect(screen.queryByRole('button', { name: '지도 하네다 공항' })).toBeNull();
   await press('전체 일정');
   expect(within(screen.getByTestId('form-sheet')).getByText('⌂ 숙소 출발 · 도쿄 호텔')).toBeVisible();
@@ -134,7 +134,8 @@ test('unselected cards carry the translucent veil; failed shape loading draws st
   f.shapes.mockResolvedValueOnce(json({ code: 'PROVIDER_UNAVAILABLE', error: '지도 서비스에 연결하지 못했습니다.' }, 503));
   await openResult(f);
   expect(await screen.findByRole('button', { name: '경로 모양 다시 불러오기' })).toBeVisible();
-  expect(routes()[legId(D1, 'hotel', 'museum')]).toMatch(/STRAIGHT$/);
+  expect(routes()[legId(D1, 'hotel', 'museum')]).toMatch(/TRANSIT DOTTED STRONG .* STRAIGHT$/);
+  expect(routes()[legId(D1, 'airport', 'hotel', 'AIRPORT')]).toMatch(/TRANSIT DOTTED DIM .* STRAIGHT$/);
   const veils = screen.getAllByTestId('place-card-veil', { includeHiddenElements: true });
   expect(veils).toHaveLength(1);
   expect(veils[0]).toHaveStyle({ opacity: result.overlay.unselected });
