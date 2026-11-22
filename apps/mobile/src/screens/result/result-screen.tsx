@@ -11,7 +11,7 @@ import {
 } from '../../map/selection';
 import { conflictCauses, conflictingModeFixes } from '../../result/conflicts';
 import { buildDays, placedVisitIds, type DayModel, type LegModel } from '../../result/days';
-import { onDate, withLegMode, withVisit } from '../../result/edits';
+import { withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
 import { colors, result } from '../../theme';
 import { cityName } from '../trip-input/presentation';
@@ -162,12 +162,12 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         const placementOrder = { before: before.fixedOrder, after: edit.fixedOrder };
         itinerary.apply({ kind: 'VISIT', visitId: edit.id, date: edit.fixedDate, previousDate, placementOrder }, withVisit(constraints, edit));
       }} />}
-    {sheet?.kind === 'WISH' && <WishSheet wishes={wishes} visitId={sheet.visitId} date={sheet.date} days={days}
+    {sheet?.kind === 'WISH' && <WishSheet wishes={wishes} current={editOf(sheet.visitId)} input={view.input} date={sheet.date} days={days}
       onChoose={sheet.chooseVisit ? visitId => setSheet({ ...sheet, visitId }) : undefined}
-      close={() => setSheet(null)} apply={(visitId, date) => {
+      close={() => setSheet(null)} apply={edit => {
         setSheet(null);
-        const visit = editOf(visitId);
-        itinerary.apply({ kind: 'WISH', visitId, date, previousDate: visit.fixedDate }, withVisit(constraints, onDate(visit, date)));
+        const previousDate = editOf(edit.id).fixedDate;
+        itinerary.apply({ kind: 'WISH', visitId: edit.id, date: edit.fixedDate, previousDate }, withVisit(constraints, edit));
       }} />}
   </View>;
 }

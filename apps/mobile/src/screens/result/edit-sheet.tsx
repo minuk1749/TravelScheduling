@@ -1,21 +1,14 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { parseFixedVisit } from '@travel/core/contracts/results/fixed-visit';
 import type { ResultView, VisitEdit } from '@travel/core/contracts/results/model';
-import { TripInputError } from '@travel/core/contracts/trips/input';
 import { localTime } from '@travel/core/presentation';
 import { ActionButton } from '../../components/action-button';
 import { Choice, Field, Toggle } from '../../components/input/fields';
 import { FormError, FormSheet, form } from '../../components/input/form-layout';
 import { colors, size, spacing, text } from '../../theme';
 import type { CardModel, DayModel } from '../../result/days';
-import { asWish } from '../../result/edits';
+import { asWish, fixedVisitError } from '../../result/edits';
 import { dayOptionLabel } from '../../result/format';
-
-function validation(edit: VisitEdit, view: ResultView): string | undefined {
-  try { parseFixedVisit(edit, view.input, view.input.visits.length); return undefined; }
-  catch (error) { if (error instanceof TripInputError) return Object.values(error.fields)[0]; throw error; }
-}
 
 /** Day chips shared by the edit and wish sheets: "1일차 12.3". */
 export const dayOptions = (days: readonly DayModel[]) =>
@@ -32,7 +25,7 @@ export function EditSheet({ view, card, day, days, current, close, apply }: {
   const [draft, setDraft] = useState(current);
   const [wish, setWish] = useState(false);
   const edit = wish ? asWish(draft) : draft;
-  const error = validation(edit, view);
+  const error = fixedVisitError(edit, view.input);
   const update = (value: Partial<VisitEdit>) => setDraft(previous => ({ ...previous, ...value }));
   const start = card.start ? localTime(card.start, day.timeZone) : view.input.activity.start;
   const hasPlacements = days.some(row => row.cards.some(item => item.start !== null));

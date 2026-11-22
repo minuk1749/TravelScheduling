@@ -1,3 +1,5 @@
+import { parseFixedVisit } from '@travel/core/contracts/results/fixed-visit';
+import { TripInputError } from '@travel/core/contracts/trips/input';
 import type { TripInputs } from '@travel/core/contracts/itinerary';
 import type { Constraints, LegEdit, VisitEdit } from '@travel/core/contracts/results/model';
 import type { TravelModeName } from '../map/types';
@@ -36,7 +38,13 @@ export function withVisit(constraints: Constraints, edit: VisitEdit): Constraint
 export const asWish = (edit: VisitEdit): VisitEdit => ({ ...edit, priority: 'WISH', fixedDate: null, fixedTime: null, fixedOrder: null });
 
 /** 3-4: a wish is added to a date by fixing only that date; it stays a wish. */
-export const onDate = (edit: VisitEdit, date: string): VisitEdit => ({ ...edit, fixedDate: date });
+export const onDate = (edit: VisitEdit, date: string) => ({ ...edit, fixedDate: date });
+
+/** Show the same local validation in either sheet before dismissing it and submitting constraints. */
+export function fixedVisitError(edit: VisitEdit, input: TripInputs): string | undefined {
+  try { parseFixedVisit(edit, input, input.visits.length); return undefined; }
+  catch (error) { if (error instanceof TripInputError) return Object.values(error.fields)[0]; throw error; }
+}
 
 /** Compare the booked visits shown before this calculation with the newly accepted result. */
 export function reservationSummary(before: TripInputs['visits'], after: TripInputs['visits']): string | null {
