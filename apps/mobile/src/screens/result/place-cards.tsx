@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { localTime } from '@travel/core/presentation';
 import { kindLabels } from '../trip-input/presentation';
@@ -67,8 +67,7 @@ export function PlaceCard({ card, selected, zone, currency, interactive, onSelec
 
 /**
  * §7 card row: cards 300 wide with a 12 gap, snapped to the left inset. Swipes use the release
- * velocity; previous/next and marker presses animate with the §8 card curve (fade-free jump when
- * reduced motion is on).
+ * velocity; reduced motion changes the selection in place and fades the new card in.
  */
 export function CardRow({ cards, index, onIndex, children }: {
   cards: readonly CardModel[]; index: number; onIndex(index: number): void;
@@ -76,26 +75,37 @@ export function CardRow({ cards, index, onIndex, children }: {
 }) {
   const reduced = useReducedMotion();
   const [offset] = useState(() => new Animated.Value(-index * STRIDE));
+  const [opacity] = useState(() => new Animated.Value(1));
+  const lastIndex = useRef(index);
   const count = cards.length;
   useEffect(() => {
     const toValue = -index * STRIDE;
-    if (reduced) { offset.setValue(toValue); return; }
-    Animated.timing(offset, { toValue, duration: motion.panel.duration,
-      easing: Easing.bezier(...motion.panel.bezier), useNativeDriver: true }).start();
-  }, [index, offset, reduced]);
+    const changed = index !== lastIndex.current;
+    lastIndex.current = index;
+    if (!changed || reduced) offset.setValue(toValue);
+    if (!changed) { opacity.setValue(1); return; }
+    if (reduced) opacity.setValue(0);
+    else opacity.setValue(1);
+    const animation = Animated.timing(reduced ? opacity : offset, {
+      toValue: reduced ? 1 : toValue, duration: motion.panel.duration,
+      easing: Easing.bezier(...motion.panel.bezier), useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [index, offset, opacity, reduced]);
   const responder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > spacing.steps[1] && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-    onPanResponderMove: (_, gesture) => offset.setValue(-index * STRIDE + gesture.dx),
+    onPanResponderMove: (_, gesture) => { if (!reduced) offset.setValue(-index * STRIDE + gesture.dx); },
     onPanResponderRelease: (_, gesture) => {
       const target = swipeTarget(index, gesture.dx, gesture.vx, count, STRIDE);
       if (target !== index) onIndex(target);
-      else Animated.timing(offset, { toValue: -index * STRIDE, duration: motion.panel.duration,
+      else if (!reduced) Animated.timing(offset, { toValue: -index * STRIDE, duration: motion.panel.duration,
         easing: Easing.bezier(...motion.panel.bezier), useNativeDriver: true }).start();
     },
     onPanResponderTerminate: () => offset.setValue(-index * STRIDE),
-  }), [index, count, onIndex, offset]);
+  }), [index, count, onIndex, offset, reduced]);
   return <View style={styles.viewport} {...responder.panHandlers}>
-    <Animated.View testID="place-cards" style={[styles.track, { transform: [{ translateX: offset }] }]}>
+    <Animated.View testID="place-cards" style={[styles.track, { opacity, transform: [{ translateX: offset }] }]}>
       {cards.map((card, position) => <View key={card.visitId}>{children(card, position)}</View>)}
     </Animated.View>
   </View>;
