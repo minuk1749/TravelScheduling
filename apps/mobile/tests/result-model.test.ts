@@ -35,7 +35,7 @@ test('builds one day per trip date with numbered cards, arriving legs, waits and
 
 test('timeline rows order endpoints, legs, visits and meals by time', () => {
   expect(first.rows.map(row => row.kind === 'ENDPOINT' ? row.role : row.kind)).toEqual(
-    ['AIRPORT_ARRIVAL', 'LEG', 'LEG', 'VISIT', 'MEAL', 'LEG', 'VISIT', 'LEG', 'LODGING_IN']);
+    ['AIRPORT_ARRIVAL', 'LEG', 'LODGING_IN', 'LODGING_OUT', 'LEG', 'VISIT', 'MEAL', 'LEG', 'VISIT', 'LEG', 'LODGING_IN']);
   expect(first.rows[0]).toMatchObject({ at: '2026-12-02T23:00:00Z', name: '하네다 공항' });
   expect(second.rows.map(row => row.kind === 'ENDPOINT' ? row.role : row.kind)).toEqual(['LODGING_OUT', 'LEG', 'VISIT', 'LEG', 'LODGING_IN']);
 });

@@ -86,7 +86,8 @@ test('3-2: the whole-day sheet lists endpoints, moves with outside-centre marks,
   expect(sheet.getByText('대중교통 40분 · ¥500 · 도심 밖')).toBeVisible();
   expect(sheet.getByText('점심 식사')).toBeVisible();
   expect(sheet.getByText('도보 30분')).toBeVisible();
-  expect(sheet.getByText('⌂ 숙소 도착 · 도쿄 호텔')).toBeVisible();
+  expect(sheet.getAllByText('⌂ 숙소 도착 · 도쿄 호텔')).toHaveLength(2);
+  expect(sheet.getByText('⌂ 숙소 출발 · 도쿄 호텔')).toBeVisible();
   expect(sheet.getByText('대중교통·도보만 · 3시간 25분 · ¥1,340')).toBeVisible();
   expect(sheet.getByText('선택한 이동 · 2시간 55분 · 약 ¥4,040')).toBeVisible();
   expect(sheet.getByText('30분 단축')).toBeVisible();

@@ -135,24 +135,22 @@ function flightInstant(view: ResultView, date: string, direction: 'ARRIVAL' | 'D
 
 function timeline(context: Context, date: string, stops: readonly Stop[], cards: readonly CardModel[], legs: readonly LegModel[]): TimelineRow[] {
   const byVisit = new Map(cards.map(item => [item.visitId, item]));
-  const rows: TimelineRow[] = [...legs.map(leg => ({ kind: 'LEG' as const, at: leg.departure, leg }))];
+  const rows: TimelineRow[] = [];
+  for (const leg of legs) {
+    const from = context.roles.get(leg.from), to = context.roles.get(leg.to);
+    if (from === 'LODGING') rows.push({ kind: 'ENDPOINT', at: leg.departure, role: 'LODGING_OUT', name: leg.fromName });
+    if (from === 'AIRPORT') rows.push({ kind: 'ENDPOINT', at: flightInstant(context.view, date, 'ARRIVAL') ?? leg.departure,
+      role: 'AIRPORT_ARRIVAL', name: leg.fromName });
+    rows.push({ kind: 'LEG', at: leg.departure, leg });
+    if (to === 'LODGING') rows.push({ kind: 'ENDPOINT', at: leg.arrival, role: 'LODGING_IN', name: leg.toName });
+    if (to === 'AIRPORT') rows.push({ kind: 'ENDPOINT', at: flightInstant(context.view, date, 'DEPARTURE') ?? leg.arrival,
+      role: 'AIRPORT_DEPARTURE', name: leg.toName });
+  }
   for (const stop of stops) {
     if (stop.kind === 'MEAL') rows.push({ kind: 'MEAL', at: stop.start, end: stop.end, slot: stop.slot });
     else if (byVisit.has(stop.visitId)) rows.push({ kind: 'VISIT', at: stop.start, card: byVisit.get(stop.visitId)! });
   }
-  rows.sort((a, b) => Temporal.Instant.compare(a.at, b.at));
-  const [first, last] = [legs[0], legs.at(-1)];
-  if (first) {
-    const role = context.roles.get(first.from);
-    if (role === 'LODGING') rows.unshift({ kind: 'ENDPOINT', at: first.departure, role: 'LODGING_OUT', name: first.fromName });
-    if (role === 'AIRPORT') rows.unshift({ kind: 'ENDPOINT', at: flightInstant(context.view, date, 'ARRIVAL') ?? first.departure, role: 'AIRPORT_ARRIVAL', name: first.fromName });
-  }
-  if (last) {
-    const role = context.roles.get(last.to);
-    if (role === 'LODGING') rows.push({ kind: 'ENDPOINT', at: last.arrival, role: 'LODGING_IN', name: last.toName });
-    if (role === 'AIRPORT') rows.push({ kind: 'ENDPOINT', at: flightInstant(context.view, date, 'DEPARTURE') ?? last.arrival, role: 'AIRPORT_DEPARTURE', name: last.toName });
-  }
-  return rows;
+  return rows.sort((a, b) => Temporal.Instant.compare(a.at, b.at));
 }
 
 function bounds(stops: readonly Stop[], legs: readonly LegModel[]) {
