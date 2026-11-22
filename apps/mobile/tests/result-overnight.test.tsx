@@ -69,7 +69,9 @@ test('a wish alias for a lodging preserves both marker roles, actual lodging row
   const map = mapScene({ view: alias, day, card: null, focus: 'BROWSE', pending: new Set(), placed: placedVisitIds(days),
     shapes: new Map(), causes: [] });
   expect(map.markers.map(m => m.id)).toEqual(expect.arrayContaining(['lodging:' + lodging.id, 'cafe']));
-  expect([...pendingLegKeys(days, { kind: 'WISH', visitId: 'cafe', date: D1 })]).toEqual([]);
+  const pending = pendingLegKeys(days, { kind: 'WISH', visitId: 'cafe', date: D1 });
+  expect(pending).toEqual(new Set(day.legs.filter(leg => leg.kind === 'DAY').map(leg => leg.key)));
+  expect(pending.has(legId(D1, 'airport', 'hotel', 'AIRPORT'))).toBe(false);
 });
 
 test('a scheduled visit at the lodging uses the leg before that visit and preserves later lodging anchors', () => {

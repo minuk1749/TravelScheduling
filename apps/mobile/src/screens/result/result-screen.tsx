@@ -148,12 +148,17 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       select={visitId => { setSheet(null); const found = findVisit(days, visitId); if (found) select(found); }} />}
     {sheet?.kind === 'EDIT' && editing && <EditSheet view={view} card={editing} days={days} current={editOf(editing.visitId)}
       day={days.find(row => row.cards.includes(editing)) ?? day} close={() => setSheet(null)}
-      apply={edit => { setSheet(null); itinerary.apply({ kind: 'VISIT', visitId: edit.id }, withVisit(constraints, edit)); }} />}
+      apply={edit => {
+        setSheet(null);
+        const previousDate = editing.start ? day.date : editOf(edit.id).fixedDate;
+        itinerary.apply({ kind: 'VISIT', visitId: edit.id, date: edit.fixedDate, previousDate }, withVisit(constraints, edit));
+      }} />}
     {sheet?.kind === 'WISH' && <WishSheet wishes={wishes} visitId={sheet.visitId} date={sheet.date} days={days}
       onChoose={sheet.chooseVisit ? visitId => setSheet({ ...sheet, visitId }) : undefined}
       close={() => setSheet(null)} apply={(visitId, date) => {
         setSheet(null);
-        itinerary.apply({ kind: 'WISH', visitId, date }, withVisit(constraints, onDate(editOf(visitId), date)));
+        const visit = editOf(visitId);
+        itinerary.apply({ kind: 'WISH', visitId, date, previousDate: visit.fixedDate }, withVisit(constraints, onDate(visit, date)));
       }} />}
   </View>;
 }

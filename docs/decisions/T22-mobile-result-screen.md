@@ -33,6 +33,7 @@
 
 - `apps/mobile/tests/result-browse.test.tsx`: 3-1(첫 카드 선택·도착 구간만 진하게), 카드·마커·이전/다음 연동, 3-2(전체 일정·도심 밖·효율), 날짜 칩, 3-6, 3-7, 경로 모양 실패 후 재요청.
 - `apps/mobile/tests/result-shapes.test.tsx`: 같은 입력으로 다시 계산한 B의 카드와 경로 좌표를 확인한다. A가 이미 캐시된 경우와 B 뒤에 응답한 경우, 응답 ID 누락·불일치와 해시 불일치를 검증한다.
+- `apps/mobile/tests/result-pending-insertion.test.tsx`: 방문을 추가하거나 다른 날짜로 옮길 때 삽입 위치는 서버 응답으로 확정된다. 대기 중에는 목적 날짜의 일반 이동 구간과 원래 방문의 도착·출발 구간을 숨긴다. 공항 이동 및 관련 없는 날짜의 구간은 유지한다.
 - `apps/mobile/tests/result-editing.test.tsx`: 3-3(수정 대상 구간 강조, 순서 고정 저장, 희망으로 바꾸기), 3-4(희망 마커·빈 날짜에서 날짜 추가), 3-5(재계산 중 해당 구간만 숨김, 카드 50%)와 토스트 `되돌리기`.
 - `apps/mobile/tests/result-states.test.tsx`: 3-8(원인 카드 선택, 레드 구간, 고정 수정, 변경 취소), 3-9(이전 일정 흐리게, POST만 재시도), revision 불일치.
 - `apps/mobile/tests/result-model.test.ts`, `map-geometry.test.ts`: 날짜 모델, 선택·이전/다음·스와이프, 강조·재계산 중 구간, 장면, 도심 밖, 색 보간, polyline, 문구.

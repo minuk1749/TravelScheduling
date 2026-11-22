@@ -84,13 +84,22 @@ function visitLegKeys(card: CardModel | null | undefined): Set<string> {
   return keys;
 }
 
-export function pendingLegKeys(days: readonly DayModel[], change: Change | null): Set<string> {
+export function pendingLegKeys(days: readonly DayModel[], change: Change | null, reversing = false): Set<string> {
   if (!change) return new Set();
-  if (change.kind === 'UNDO') return pendingLegKeys(days, change.of);
+  if (change.kind === 'UNDO') return pendingLegKeys(days, change.of, !reversing);
   if (change.kind === 'RETRY') return new Set(days.flatMap(day => day.legs.map(leg => leg.key)));
   if (change.kind === 'MODE') return new Set([change.leg.key]);
-  const card = days.flatMap(day => day.cards).find(item => item.visitId === change.visitId);
-  return visitLegKeys(card);
+  const placed = findVisit(days, change.visitId);
+  const card = placed && selectedCard(days, placed);
+  const keys = visitLegKeys(card);
+  const destination = reversing ? change.previousDate : change.date;
+  if (destination && !(card?.start && placed?.date === destination)) {
+    // The scheduler chooses the insertion point. The day's visit legs may change, while
+    // airport transfers are calculated separately from the day's place order.
+    const target = days.find(day => day.date === destination);
+    for (const leg of target?.legs ?? []) if (leg.kind === 'DAY') keys.add(leg.key);
+  }
+  return keys;
 }
 
 /** §6 state table: how each leg of the selected day is drawn. */
