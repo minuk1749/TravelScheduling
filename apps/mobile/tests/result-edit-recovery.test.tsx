@@ -90,3 +90,55 @@ test('a stale result cannot edit through a wish marker or undo an older revision
   expect(f.current().input.legModes).toEqual([changed]);
   expect(f.current().input.visits.find(item => item.id === 'cafe')?.fixedDate).toBe(D1);
 });
+
+test('a failed generation shows the previous visit time and its original reservation together', async () => {
+  const f = resultFixture();
+  await openResult(f);
+  await press('이 장소 수정');
+  const sheet = within(screen.getByTestId('form-sheet'));
+  await fireEvent.changeText(sheet.getByLabelText('고정 시각'), '15:00');
+  f.generate.mockRejectedValueOnce(new Error('offline'));
+  await fireEvent.press(sheet.getByRole('button', { name: '적용하고 다시 계산' }));
+  await screen.findByText('⚠ 동선을 계산하지 못했어요');
+  expect(f.current().input.visits.find(visit => visit.id === 'museum')?.fixedTime).toBe('15:00');
+  await press('이전 일정 보기');
+  expect(screen.getByRole('button', { name: '1번 도쿄 국립박물관, 11:00부터 12:00까지', selected: true })).toBeVisible();
+  expect(screen.getByText(/11:00 예약 고정/)).toBeVisible();
+  expect(screen.queryByText(/15:00 예약 고정/)).toBeNull();
+  await press('다시 계산');
+  expect(await screen.findByText(/15:00 예약 고정/)).toBeVisible();
+  expect(f.save).toHaveBeenCalledTimes(1);
+});
+
+test('a successful POST-only retry offers to undo exactly the saved edit', async () => {
+  const f = resultFixture();
+  await openResult(f);
+  const original = constraintsFrom(f.current().input);
+  f.generate.mockRejectedValueOnce(new Error('offline'));
+  await swap();
+  await screen.findByText('⚠ 동선을 계산하지 못했어요');
+  await press('다시 계산');
+  await screen.findByText('다시 계산했어요');
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.current().input.legModes).toEqual([taxi]);
+  await press('되돌리기');
+  await screen.findByText('되돌리고 다시 계산했어요');
+  expect(constraintsFrom(f.current().input)).toEqual(original);
+  expect(f.save).toHaveBeenCalledTimes(2);
+});
+
+test('recalculating an already fixed wish date cannot undo the preceding mode change', async () => {
+  const f = resultFixture();
+  const original = constraintsFrom(f.current().input);
+  const visits = original.visits.map(row => row.id === 'cafe' ? { ...row, fixedDate: D1 } : row);
+  await f.save.getMockImplementation()!({ body: JSON.stringify({ revision: f.current().revision, constraints: { ...original, visits } }) });
+  await openResult(f);
+  await swap();
+  expect(await screen.findByRole('button', { name: '되돌리기' })).toBeVisible();
+  await press('지도 아사쿠사 카페');
+  await fireEvent.press(within(screen.getByTestId('form-sheet')).getByRole('button', { name: '1일차에 추가하고 다시 계산' }));
+  await screen.findByText('1일차에 추가하고 다시 계산했어요');
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
+  expect(f.current().input.legModes).toEqual([taxi]);
+});

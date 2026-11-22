@@ -14,18 +14,22 @@ export type Phase =
   | { kind: 'failed'; change: Change; message: string; reload: boolean; draft: Constraints | null };
 export type Notice = { id: number; title: string; detail: string | null; undo: boolean };
 
+type Calculation = { view: ResultView; result: GeneratedTrip };
+type Undo = { revision: string; constraints: Constraints; change: Change };
+
 type State = {
   view: ResultView;
   /** Latest calculation for the saved input (OK or CONFLICT). */
-  shown: GeneratedTrip;
+  shown: Calculation;
   /** Last OK calculation, kept under a conflict or failure (3-8/3-9 "이전 일정"). */
-  base: GeneratedTrip | null;
+  base: Calculation | null;
   /** OK calculation before `base`; drives "N분 당겨짐/늦춰짐". */
   previous: GeneratedTrip | null;
   /** Visit to select after the calculation (the edited or added place). */
   focusVisit: string | null;
   phase: Phase;
   notice: Notice | null;
+  undo: Undo | null;
 };
 
 const SWITCHED = { TAXI: '택시로', TRANSIT: '대중교통으로', WALK: '도보로' } as const;
@@ -41,12 +45,12 @@ function noticeTitle(change: Change, view: ResultView): string {
   return '수정하고 다시 계산했어요';
 }
 
-function notice(id: number, change: Change, view: ResultView, result: GeneratedTrip, base: GeneratedTrip | null): Notice | null {
+function notice(id: number, change: Change, view: ResultView, result: GeneratedTrip, base: GeneratedTrip | null, canUndo: boolean): Notice | null {
   if (result.status !== 'OK') return null;
   const moved = movedSummary(buildDays(view, result, base));
   const reserved = view.input.visits.some(visit => visit.fixedTime) ? '고정 예약은 그대로예요' : null;
   const detail = [moved, reserved].filter(Boolean).join(' · ') || null;
-  return { id, title: noticeTitle(change, view), detail, undo: change.kind !== 'UNDO' && change.kind !== 'RETRY' };
+  return { id, title: noticeTitle(change, view), detail, undo: canUndo };
 }
 
 /**
@@ -58,11 +62,12 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
   tripId: string; view: ResultView; result: GeneratedTrip; overCapacity(result: GeneratedTrip): void;
 }) {
   const api = useTripApi();
-  const [state, setState] = useState<State>(() => ({
-    view, shown: result, base: result.status === 'OK' ? result : null, previous: null,
-    focusVisit: null, phase: { kind: 'idle' }, notice: null,
-  }));
-  const [undo, setUndo] = useState<{ revision: string; constraints: Constraints; change: Change } | null>(null);
+  const [state, setState] = useState<State>(() => {
+    const shown = { view, result };
+    return { view, shown, base: result.status === 'OK' ? shown : null, previous: null,
+      focusVisit: null, phase: { kind: 'idle' }, notice: null, undo: null };
+  });
+  const { undo } = state;
   const canUndo = undo !== null && undo.revision === state.view.revision;
   const pending = useRef<AbortController | null>(null);
   const notices = useRef(0);
@@ -76,13 +81,15 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
     pending.current = request;
     let reload = state.phase.kind === 'failed' && state.phase.reload;
     let draft = next;
+    // Only a retry of this operation may inherit its saved edit. A new no-op has nothing to undo.
+    let restore = state.phase.kind === 'failed' ? undo : null;
     setState(current => ({ ...current, phase: { kind: 'calculating', change }, notice: null }));
     try {
       const original = state.view;
       let current = reload ? await api.savedInput(tripId, request.signal) : original;
       if (request.signal.aborted) return;
       reload = false;
-      if (current.revision !== original.revision) setUndo(null);
+      if (current.revision !== original.revision) restore = null;
       if (draft) {
         const before = constraintsFrom(original.input);
         if (!sameConstraints(draft, constraintsFrom(current.input))) {
@@ -95,28 +102,29 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
           current = { ...current, ...saved };
         }
         if (!sameConstraints(draft, before)) {
-          setUndo(change.kind === 'UNDO' ? null : { revision: current.revision, constraints: before, change });
+          restore = change.kind === 'UNDO' ? null : { revision: current.revision, constraints: before, change };
         }
         // Acknowledged PUT or observed the desired saved state after an ambiguous failure.
         draft = null;
       }
-      setState(value => ({ ...value, view: current }));
+      setState(value => ({ ...value, view: current, undo: restore }));
       const generated = await api.generate(tripId, request.signal);
       if (request.signal.aborted) return;
       verifyRevision(generated, current.revision);
       if (generated.status === 'OVER_CAPACITY') { overCapacity(generated); return; }
       const visit = change.kind === 'VISIT' || change.kind === 'WISH' ? change.visitId : null;
       setState(value => {
-        const base = generated.status === 'OK' ? generated : value.base;
-        const previous = generated.status === 'OK' ? value.base : value.previous;
-        return { ...value, view: current, shown: generated, base, previous, focusVisit: visit, phase: { kind: 'idle' },
-          notice: notice(++notices.current, change, current, generated, value.base) };
+        const shown = { result: generated, view: current };
+        const base = generated.status === 'OK' ? shown : value.base;
+        const previous = generated.status === 'OK' ? value.base?.result ?? null : value.previous;
+        return { ...value, view: current, shown, base, previous, focusVisit: visit, phase: { kind: 'idle' },
+          notice: notice(++notices.current, change, current, generated, value.base?.result ?? null, restore !== null) };
       });
     } catch (failure) {
       if (request.signal.aborted) return;
       const fields = Object.values(fieldErrors(failure));
       const stale = failure instanceof ApiFailure && failure.code === 'STALE_INPUT';
-      setState(value => ({ ...value, phase: { kind: 'failed', change, reload: reload || stale || !!draft, draft: stale ? null : draft,
+      setState(value => ({ ...value, undo: stale ? null : restore, phase: { kind: 'failed', change, reload: reload || stale || !!draft, draft: stale ? null : draft,
         message: fields.length ? fields.join(' ') : errorMessage(failure) } }));
     } finally {
       if (pending.current === request) pending.current = null;

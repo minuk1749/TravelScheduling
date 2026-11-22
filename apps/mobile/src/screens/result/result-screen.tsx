@@ -39,11 +39,15 @@ const pick = (days: readonly DayModel[], result: unknown, selection: Selection):
 export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editConditions }: {
   tripId: string; itinerary: ReturnType<typeof useItinerary>; map: ResultMapAdapter; back(): void; editConditions(): void;
 }) {
-  const { view, shown, base, previous, phase, notice, canUndo, focusVisit } = itinerary;
-  const conflict = shown.status === 'CONFLICT';
+  const { shown: calculation, base, previous, phase, notice, canUndo, focusVisit } = itinerary;
+  const shown = calculation.result;
   const failed = phase.kind === 'failed', calculating = phase.kind === 'calculating';
-  const causes = useMemo(() => conflictCauses(view, shown), [view, shown]);
-  const displayed = conflict ? base : shown;
+  const conflict = shown.status === 'CONFLICT';
+  // 3-9 keeps the last successful schedule together with the input that produced its cards and sheet.
+  const previousSchedule = failed && base ? base : null;
+  const view = (previousSchedule ?? calculation).view;
+  const displayed = previousSchedule?.result ?? (conflict ? base?.result ?? null : shown);
+  const causes = useMemo(() => conflictCauses(view, previousSchedule?.result ?? shown), [view, previousSchedule, shown]);
   const days = useMemo(() => buildDays(view, displayed, conflict ? null : previous, causes), [view, displayed, conflict, previous, causes]);
 
   const [picked, setPicked] = useState<Picked>(() => pick(days, shown, initialSelection(days, causes)));
