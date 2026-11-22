@@ -101,8 +101,8 @@ export function pendingLegKeys(days: readonly DayModel[], change: Change | null,
   const targetDate = requestedDate ?? (change.kind === 'VISIT' ? placed?.date : null);
   const target = days.find(day => day.date === targetDate);
   if (!target) return keys;
-  const order = change.kind === 'VISIT' && change.placementOrder
-    ? change.placementOrder[reversing ? 'before' : 'after'] : undefined;
+  const placement = change.kind === 'VISIT' ? change.placementOrder : undefined;
+  const order = placement && placement.before !== placement.after ? placement[reversing ? 'before' : 'after'] : undefined;
   if (!card?.start || placed?.date !== targetDate || order === null) {
     // A visit without a confirmed insertion point may replace any visit leg on that date.
     for (const leg of target.legs) if (leg.kind === 'DAY') keys.add(leg.key);

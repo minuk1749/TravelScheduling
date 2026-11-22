@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from 'expo-router/testing-lib
 import { pendingLegKeys } from '../src/map/selection';
 import { buildDays } from '../src/result/days';
 import { deferred, json } from './helpers';
-import { at, D1, D2, legId, openResult, place, plan, resultFixture, routes, trip, view } from './result-fixture';
+import { at, conflictTrip, D1, D2, legId, openResult, place, plan, resultFixture, routes, trip, view } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
 
@@ -53,7 +53,7 @@ test('a wish insertion hides unconfirmed destination legs until the two replacem
 
 test('moving a scheduled visit hides its source edges and potential insertion edges on the other date, including on undo', () => {
   const days = buildDays(view, trip(view.revision), null);
-  const move = { kind: 'VISIT' as const, visitId: 'market', previousDate: D1, date: D2 };
+  const move = { kind: 'VISIT' as const, visitId: 'market', previousDate: D1, date: D2, placementOrder: { before: null, after: null } };
   const pending = pendingLegKeys(days, move);
   expect(pending).toEqual(new Set([legId(D1, 'museum', 'market'), legId(D1, 'market', 'hotel'),
     legId(D2, 'hotel', 'shrine'), legId(D2, 'shrine', 'hotel')]));
@@ -122,4 +122,31 @@ test('undoing a same-day reorder uses the previous fixed slot; releasing the slo
   expect(restoreFirst).toEqual(new Set([legId(D1, 'cafe', 'market'), legId(D1, 'market', 'hotel'), legId(D1, 'hotel', 'museum')]));
   const release = pendingLegKeys(days, { ...marketThird, date: null, placementOrder: { before: 2, after: null } });
   expect(release).toEqual(new Set(days[0].legs.filter(leg => leg.kind === 'DAY').map(leg => leg.key)));
+});
+
+test('changing only a reservation time and undoing it keep unrelated routes visible while the POST is pending', async () => {
+  const f = resultFixture();
+  await openResult(f);
+  await press('이 장소 수정');
+  const sheet = within(screen.getByTestId('form-sheet'));
+  await fireEvent.changeText(sheet.getByLabelText('고정 시각'), '11:15');
+  const change = deferred<Response>();
+  f.generate.mockReturnValueOnce(change.promise);
+  await fireEvent.press(sheet.getByRole('button', { name: '적용하고 다시 계산' }));
+  await waitFor(() => expect(f.generate).toHaveBeenCalledTimes(2));
+  const expectUnaffectedReturn = () => {
+    expect(routes()[legId(D1, 'hotel', 'museum')]).toBeUndefined();
+    expect(routes()[legId(D1, 'museum', 'market')]).toBeUndefined();
+    expect(routes()[legId(D1, 'market', 'hotel')]).toMatch(/ STRONG /);
+    expect(routes()[legId(D1, 'airport', 'hotel', 'AIRPORT')]).toMatch(/ STRONG /);
+  };
+  expectUnaffectedReturn();
+  await act(async () => change.resolve(json(conflictTrip(f.current().revision))));
+  const undo = deferred<Response>();
+  f.generate.mockReturnValueOnce(undo.promise);
+  await press('변경 취소');
+  await waitFor(() => expect(f.generate).toHaveBeenCalledTimes(3));
+  expectUnaffectedReturn();
+  await act(async () => undo.resolve(json(trip(f.current().revision))));
+  expect(f.current().input.visits.find(v => v.id === 'museum')?.fixedTime).toBe('11:00');
 });
