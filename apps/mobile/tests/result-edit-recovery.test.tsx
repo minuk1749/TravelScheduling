@@ -1,7 +1,7 @@
 import { fireEvent, screen, within } from 'expo-router/testing-library';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
 import { json } from './helpers';
-import { conflictTrip, D1, openResult, place, resultFixture, trip } from './result-fixture';
+import { conflictTrip, D1, D3, openResult, place, plan, resultFixture, trip } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
 const swap = () => press('택시 14분 약 ¥2,300로 바꾸기');
@@ -141,4 +141,25 @@ test('recalculating an already fixed wish date cannot undo the preceding mode ch
   expect(f.save).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
   expect(f.current().input.legModes).toEqual([taxi]);
+});
+
+test('retrying the saved wish selects its card and marker on the destination day without another PUT', async () => {
+  const f = resultFixture();
+  await openResult(f);
+  await press('지도 아사쿠사 카페');
+  const sheet = within(screen.getByTestId('form-sheet'));
+  await fireEvent.press(sheet.getByRole('button', { name: '3일차 12.5' }));
+  f.generate.mockRejectedValueOnce(new Error('offline'));
+  await fireEvent.press(sheet.getByRole('button', { name: '3일차에 추가하고 다시 계산' }));
+  await screen.findByText('⚠ 동선을 계산하지 못했어요');
+  expect(f.current().input.visits.find(visit => visit.id === 'cafe')?.fixedDate).toBe(D3);
+  expect(screen.getByRole('button', { name: '1일 12.3', selected: true })).toBeVisible();
+
+  f.generate.mockImplementationOnce(async () => json(trip(f.current().revision, plan({ cafeOnDay3: true }))));
+  await press('다시 계산');
+  await screen.findByText('다시 계산했어요');
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: '3일 12.5', selected: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: '1번 아사쿠사 카페, 10:20부터 11:00까지', selected: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: '지도 아사쿠사 카페', selected: true })).toBeVisible();
 });

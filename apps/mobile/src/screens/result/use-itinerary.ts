@@ -112,7 +112,8 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
       if (request.signal.aborted) return;
       verifyRevision(generated, current.revision);
       if (generated.status === 'OVER_CAPACITY') { overCapacity(generated); return; }
-      const visit = change.kind === 'VISIT' || change.kind === 'WISH' ? change.visitId : null;
+      const edit = change.kind === 'RETRY' ? restore?.change : change;
+      const visit = edit?.kind === 'VISIT' || edit?.kind === 'WISH' ? edit.visitId : null;
       setState(value => {
         const shown = { result: generated, view: current };
         const base = generated.status === 'OK' ? shown : value.base;
