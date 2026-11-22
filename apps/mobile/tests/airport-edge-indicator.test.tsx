@@ -23,7 +23,7 @@ jest.mock('react-native-maps', () => {
 test('projects the airport into visible map space, updates when the panel moves, and ignores stale camera projections', async () => {
   const coordinate = { latitude: 35.55, longitude: 139.78 };
   const props: ResultMapProps = {
-    markers: [{ id: 'airport', kind: 'AIRPORT', order: null, label: '하네다', coordinate }], routes: [], focusIds: [],
+    markers: [{ id: 'airport', kind: 'AIRPORT', order: null, label: '하네다', coordinate }], routes: [], focusDate: '2026-12-03', focusIds: [],
     selectedId: null, topInset: 80, bottomInset: 120, dimmed: false, locateRequest: 0, onSelectMarker() {},
   };
   mockProject.mockResolvedValueOnce({ x: 200, y: 500 });

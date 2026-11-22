@@ -38,6 +38,8 @@ export type ResultMapProps = {
   routes: readonly MapRouteSpec[];
   /** Selected PLACED or WISH marker. */
   selectedId: string | null;
+  /** Selected local date. The initial calculation has no displayed day. */
+  focusDate: string | null;
   /** IDs the camera should fit (the day's places); markers outside the view get an edge label. */
   focusIds: readonly string[];
   /** Height (pt) covered by the floating top bar and the bottom panel; used for camera fitting and airport edge indicators. */

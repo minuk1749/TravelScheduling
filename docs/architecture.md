@@ -724,6 +724,8 @@ type DocumentedRoute = {
 };
 type DocumentedResultMapProps = {
   markers: readonly DocumentedMarker[]; routes: readonly DocumentedRoute[]; selectedId: string | null;
+  /** 선택 날짜. 최초 계산 중에는 null. 날짜가 바뀌면 같은 숙소라도 다시 맞춘다. */
+  focusDate: string | null;
   /** 카메라가 맞출 그날의 장소·숙소. 공항은 화면 밖이면 가장자리 표시 */
   focusIds: readonly string[];
   /** 떠 있는 상단 바·날짜 칩과 장소 패널이 가린 높이(pt). 카메라 맞춤에 사용 */

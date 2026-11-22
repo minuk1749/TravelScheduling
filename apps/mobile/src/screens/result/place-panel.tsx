@@ -37,7 +37,7 @@ function CalculationSummary({ label }: { label: string }) {
 export function InitialResult({ map: Map, back }: { map: ResultMap; back(): void }) {
   const height = useWindowDimensions().height * result.panel.ratio;
   return <View style={layout.screen}>
-    <Map markers={[]} routes={[]} selectedId={null} focusIds={[]} topInset={0} bottomInset={height}
+    <Map markers={[]} routes={[]} selectedId={null} focusDate={null} focusIds={[]} topInset={0} bottomInset={height}
       dimmed={false} locateRequest={0} onSelectMarker={() => {}} />
     <View testID="initial-place-panel" style={[styles.panel, { minHeight: height }]}>
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.handle} />

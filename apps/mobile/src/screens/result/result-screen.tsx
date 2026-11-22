@@ -115,7 +115,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const lodgings = [...new Set(view.input.lodgings.map(lodging => placeName(view, lodging.place.id)))].join(', ') || '당일 여행';
 
   return <View style={styles.screen}>
-    <ResultMap markers={scene.markers} routes={scene.routes} focusIds={scene.focusIds}
+    <ResultMap markers={scene.markers} routes={scene.routes} focusDate={day.date} focusIds={scene.focusIds}
       selectedId={sheet?.kind === 'WISH' ? sheet.visitId : (editing ?? card)?.visitId ?? null} topInset={insets.top} bottomInset={insets.bottom}
       dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}

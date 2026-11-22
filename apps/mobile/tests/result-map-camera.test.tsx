@@ -4,9 +4,11 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { GoogleResultMap } from '../src/map/google-result-map';
 import type { ResultMapProps } from '../src/map/types';
 import { spacing } from '../src/theme';
-import { deferred } from './helpers';
+import { deferred, json } from './helpers';
+import { D2, openResult, plan, resultFixture, trip, REVISION } from './result-fixture';
 
 const mockFit = jest.fn(), mockAnimate = jest.fn();
+jest.mock('./fake-result-map', () => ({ FakeResultMap: jest.requireActual('../src/map/google-result-map').GoogleResultMap }));
 jest.mock('../src/map/config', () => ({ isMapConfigured: () => true }));
 jest.mock('react-native-maps', () => {
   const React = jest.requireActual<typeof import('react')>('react');
@@ -21,7 +23,7 @@ jest.mock('react-native-maps', () => {
 });
 const coordinate = { latitude: 35.68, longitude: 139.76 };
 const props: ResultMapProps = {
-  markers: [{ id: 'visit', kind: 'PLACED', order: 1, label: '방문지', coordinate }], routes: [], focusIds: ['visit'],
+  markers: [{ id: 'visit', kind: 'PLACED', order: 1, label: '방문지', coordinate }], routes: [], focusDate: '2026-12-03', focusIds: ['visit'],
   selectedId: null, topInset: 70, bottomInset: 250, locateRequest: 0, dimmed: false, onSelectMarker() {},
 };
 const map = () => screen.getByTestId('map');
@@ -61,6 +63,26 @@ test.each(['layout first', 'ready first'])('fits after layout and map readiness 
   await rendered.rerender(<GoogleResultMap {...props} bottomInset={200} markers={[{ ...props.markers[0]!, coordinate: other }]} />);
   expect(mockFit).toHaveBeenCalledTimes(4);
   expect(mockFit).toHaveBeenLastCalledWith([other], expect.anything());
+});
+
+test('choosing another empty day restores its lodging after panning away even when its coordinates match', async () => {
+  const fixture = resultFixture();
+  const data = plan();
+  data.stops[D2] = [];
+  data.comparisons = data.comparisons.filter(leg => leg.date !== D2);
+  fixture.generate.mockResolvedValueOnce(json(trip(REVISION, data)));
+  await openResult(fixture);
+  await fireEvent.press(screen.getByRole('button', { name: '2일 12.4' }));
+  await layout(400, 800);
+  await ready();
+  expect(mockFit).toHaveBeenCalledTimes(1);
+  const [lodging, padding] = mockFit.mock.calls[0];
+  expect(lodging).toHaveLength(1);
+  await fireEvent(map(), 'regionChangeComplete');
+  expect(mockFit).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByRole('button', { name: '3일 12.5' }));
+  expect(mockFit).toHaveBeenCalledTimes(2);
+  expect(mockFit).toHaveBeenLastCalledWith(lodging, padding);
 });
 
 const { ACCESS_COARSE_LOCATION: coarse, ACCESS_FINE_LOCATION: fine } = PermissionsAndroid.PERMISSIONS;

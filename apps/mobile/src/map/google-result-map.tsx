@@ -104,7 +104,7 @@ async function requestLocation(): Promise<boolean> {
   return grants[coarse] === PermissionsAndroid.RESULTS.GRANTED || grants[fine] === PermissionsAndroid.RESULTS.GRANTED;
 }
 
-function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottomInset, dimmed, locateRequest, onSelectMarker }: ResultMapProps) {
+function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topInset, bottomInset, dimmed, locateRequest, onSelectMarker }: ResultMapProps) {
   const map = useRef<ComponentRef<typeof MapView>>(null);
   const [mapReady, setMapReady] = useState(false);
   const [cameraVersion, setCameraVersion] = useState(0);
@@ -112,7 +112,7 @@ function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottom
   const [showUser, setShowUser] = useState(false);
   const user = useRef<LatLng | null>(null);
   const permission = useRef<Promise<boolean> | null>(null);
-  // A primitive key refits the camera only when the day's places change, not on every selection.
+  // Card selections keep the user's camera position within the same day.
   const focusKey = useMemo(() => JSON.stringify(markers.filter(marker => focusIds.includes(marker.id))
     .map(marker => marker.coordinate)), [markers, focusIds]);
 
@@ -122,7 +122,7 @@ function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottom
     const edgePadding = { top: topInset + spacing.section, bottom: bottomInset + spacing.section, left: spacing.section * 2, right: spacing.section * 2 };
     if (viewport.width <= edgePadding.left + edgePadding.right || viewport.height <= edgePadding.top + edgePadding.bottom) return;
     map.current?.fitToCoordinates(focus, { edgePadding, animated: true });
-  }, [focusKey, topInset, bottomInset, mapReady, viewport.width, viewport.height]);
+  }, [focusDate, focusKey, topInset, bottomInset, mapReady, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!locateRequest) return;
