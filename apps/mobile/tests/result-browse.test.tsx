@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library'
 import { legColors } from '@travel/design-tokens';
 import { colors, result } from '../src/theme';
 import { json, session } from './helpers';
-import { D1, D2, legId, openResult, resultFixture, REVISION, routes } from './result-fixture';
+import { D1, D2, ITINERARY_A, legId, openResult, resultFixture, REVISION, routes } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
 const card = (name: string) => screen.getByRole('button', { name });
@@ -45,6 +45,7 @@ test('3-1: map-first layout selects the first card and highlights only the leg a
   expect(f.shapes).toHaveBeenCalledTimes(1);
   const [shapesUrl] = f.shapes.mock.calls[0];
   expect(shapesUrl.searchParams.get('inputHash')).toBe(REVISION);
+  expect(shapesUrl.searchParams.get('itineraryId')).toBe(ITINERARY_A);
   const request = f.transport.mock.calls.find(([url]) => url === shapesUrl.href);
   expect(new Headers(request?.[1]?.headers).get('Authorization')).toBe(`Bearer ${session.token}`);
   expect(f.auth.getSnapshot().status).toBe('signedIn');

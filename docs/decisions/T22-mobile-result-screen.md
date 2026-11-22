@@ -11,7 +11,7 @@
 - **지도 어댑터.** 화면은 `ResultMapProps`만 알고 지도 SDK를 import하지 않는다. `MapAdapterProvider`가 앱에서는 `GoogleResultMap`(`react-native-maps`), 컴포넌트 테스트에서는 `FakeResultMap`을 주입한다. 결과 흐름이 컨텍스트에서 어댑터를 한 번 읽어 화면에 prop으로 넘긴다(렌더 중 컴포넌트 생성 금지 규칙).
 - **계산 흐름.** 최초 계산은 기존 생성 화면(`/trips/[id]/generate`)이 POST로 실행한다. 결과가 OK·CONFLICT면 같은 응답을 메모리에서 결과 화면에 넘긴다. 결과 화면은 GET `/constraints`로 입력을 읽고, revision이 응답의 `inputHash`와 다를 때만 한 번 다시 계산한다. OVER_CAPACITY면 T23 선택 화면으로 가며, T23의 `동선 보기`는 검증된 응답을 결과 화면으로 넘긴다(`OutcomeFlow`).
 - **수정.** 장소 수정(날짜·시각·순서 고정, 방문 순서, 희망으로 바꾸기), 희망 장소 날짜 추가, 구간 이동수단 바꾸기는 모두 기존 `PUT /api/trips/[id]/constraints` → `POST /api/trips/[id]/itinerary`로 저장·재계산한다. 응답의 `inputHash`가 저장한 revision과 다르면 표시하지 않는다(T23과 같은 `verifyRevision`). 저장 직전 제약을 보관해 `변경 취소`(3-8)와 토스트 `되돌리기`를 같은 경로로 처리한다. PUT은 성공했는데 POST가 실패하면 저장된 입력을 유지하고 POST만 다시 실행한다(3-9). 입력이 다른 곳에서 바뀌었으면 다시 계산 전에 입력을 다시 읽는다.
-- **경로 모양.** T19 `GET …/itinerary/shapes`는 OK 결과에만 요청하고 메모리에만 둔다. 모양이 없거나 요청이 실패하면 직선 점선으로 그리고 `경로 모양 다시 불러오기`를 띄운다.
+- **경로 모양.** T19 `GET …/itinerary/shapes`에 OK 결과의 `inputHash`와 `itineraryId`를 함께 보낸다. 앱은 두 값이 모두 일치하는 응답만 받아 여행 ID·입력 해시·일정 ID별로 화면 메모리에 둔다. 결과가 바뀐 첫 렌더에서 이전 선을 숨기고, 취소한 요청의 늦은 성공·실패를 무시한다. 서버가 오래된 ID를 거절하거나 응답에서 ID가 빠져도 경로 재시도가 가능하다. [T19 계약](T19-route-shapes.md)
 - **디자인 값.** §4 그림자와 §6–7 배치·카드·마커·경로 값을 `@travel/design-tokens`의 `shadow`, `result`에 추가하고 문서 값과 같은지 토큰 테스트로 검사한다.
 
 ## 이유
@@ -29,6 +29,7 @@
 ## 검증
 
 - `apps/mobile/tests/result-browse.test.tsx`: 3-1(첫 카드 선택·도착 구간만 진하게), 카드·마커·이전/다음 연동, 3-2(전체 일정·도심 밖·효율), 날짜 칩, 3-6, 3-7, 경로 모양 실패 후 재요청.
+- `apps/mobile/tests/result-shapes.test.tsx`: 같은 입력으로 다시 계산한 B의 카드와 경로 좌표를 확인한다. A가 이미 캐시된 경우와 B 뒤에 응답한 경우, 응답 ID 누락·불일치와 해시 불일치를 검증한다.
 - `apps/mobile/tests/result-editing.test.tsx`: 3-3(수정 대상 구간 강조, 순서 고정 저장, 희망으로 바꾸기), 3-4(희망 마커·빈 날짜에서 날짜 추가), 3-5(재계산 중 해당 구간만 숨김, 카드 50%)와 토스트 `되돌리기`.
 - `apps/mobile/tests/result-states.test.tsx`: 3-8(원인 카드 선택, 레드 구간, 고정 수정, 변경 취소), 3-9(이전 일정 흐리게, POST만 재시도), revision 불일치.
 - `apps/mobile/tests/result-model.test.ts`, `map-geometry.test.ts`: 날짜 모델, 선택·이전/다음·스와이프, 강조·재계산 중 구간, 장면, 도심 밖, 색 보간, polyline, 문구.

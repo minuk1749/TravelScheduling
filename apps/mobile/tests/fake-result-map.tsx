@@ -13,8 +13,9 @@ export function FakeResultMap({ markers, routes, selectedId, dimmed, focusIds, o
       onPress={() => onSelectMarker(marker.id)}>
       <Text>{`${marker.kind} ${marker.order ?? '-'}`}</Text>
     </Pressable>)}
-    {routes.map(route => <Text key={route.id} testID={`route-${route.id}`}>
-      {`${route.order} ${route.mode} ${route.line} ${route.emphasis} ${route.color} ${route.path.kind}`}
-    </Text>)}
+    {routes.map(route => <View key={route.id}>
+      <Text testID={`route-${route.id}`}>{`${route.order} ${route.mode} ${route.line} ${route.emphasis} ${route.color} ${route.path.kind}`}</Text>
+      {route.path.kind === 'ROAD' && <Text testID={`points-${route.id}`}>{JSON.stringify(route.path.points)}</Text>}
+    </View>)}
   </View>;
 }

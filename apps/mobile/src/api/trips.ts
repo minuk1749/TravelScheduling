@@ -57,8 +57,13 @@ class TripApi {
     return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST', signal });
   }
   /** T19 road shapes for the saved result; kept in memory only (never persisted). */
-  shapes(id: string, inputHash: string, signal: AbortSignal) {
-    return this.api.request<RouteShapesResponse>(`${trip(id)}/itinerary/shapes?${new URLSearchParams({ inputHash })}`, { signal });
+  async shapes(id: string, inputHash: string, itineraryId: string, signal: AbortSignal) {
+    const query = new URLSearchParams({ inputHash, itineraryId });
+    const response = await this.api.request<RouteShapesResponse>(`${trip(id)}/itinerary/shapes?${query}`, { signal });
+    if (response?.inputHash !== inputHash || response.itineraryId !== itineraryId) {
+      throw new ApiFailure(409, 'RESULT_UNAVAILABLE', '표시 중인 일정의 경로를 확인할 수 없어요.');
+    }
+    return response.legs;
   }
 }
 

@@ -539,7 +539,7 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `GET /api/trips/[id]/settings` | — | `SettingsView` (`{ snapshot, calculation }`) | 401, 403, 404, 409 `INCOMPLETE_TRIP`(초 단위 시각 등 저장 형식 불일치), 500 |
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
 | `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (`status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
-| `GET /api/trips/[id]/itinerary/shapes` (T19 신규) | `?inputHash=` | `{ inputHash, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
+| `GET /api/trips/[id]/itinerary/shapes` | `inputHash` 필수, `itineraryId` 선택 (쿼리) | `{ inputHash, itineraryId, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `GET /api/trips/[id]/constraints` | — | `ResultView` (`{ input, revision, places }`) | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
 | `POST /api/trips/[id]/share` | — | `{ path: "/share/{token}" }`. 앱은 설정한 서버 주소와 합쳐 OS 공유 시트로 보냄 | 401, 403, 404, 405, 500 |
@@ -649,7 +649,9 @@ T18 검증: 가짜 RS256 키와 JWKS 픽스처(`apps/server/tests/helpers/google
 - `route-shapes/server.ts`는 일정 생성 라우트와 같은 `requestAuthenticator`를 사용한다(§13.3). 소유자의 유효한 Bearer 세션으로 경로 모양을 조회할 수 있다.
 - `GET /api/trips/[id]/itinerary/shapes?inputHash=` (T19). 인증·소유권 → 최신 저장 일정과 현재 입력 해시를 한 읽기 트랜잭션으로 조회
   (공유 결과 읽기 `shared-itinerary.ts`와 같은 방식) → 요청 해시·저장 해시·현재 해시가 다르면 409 `STALE_INPUT`, 결과가 없으면 409 `RESULT_UNAVAILABLE`.
-  inputHash는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.
+  `inputHash`는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.
+- 생성 응답의 `itineraryId`를 선택 쿼리로 보낼 수 있다(소문자 하이픈 UUID 하나). 해시가 일치해도 해당 여행의 최신 저장 ID와 다르면 409 `RESULT_UNAVAILABLE`이다.
+  ID를 생략하면 최신 결과를 읽는다. 성공 본문에는 두 경우 모두 실제 저장 행의 `itineraryId`가 들어간다. 지도 소비자는 응답을 적용하기 전에 ID와 해시가 표시 중인 일정과 모두 일치하는지 확인해야 한다.
 - 대상 구간은 저장된 `comparisons`(DAY·AIRPORT) 전부이고, 키는 `date`·`kind`·`from`·`to`(장소 ID)다. 좌표는 기존 좌표 캐시(`PlaceProvider.location`)로 얻는다.
 - 각 구간을 `computeRoutes`로 요청한다. 수단은 `selected.mode`(TAXI는 DRIVE), 출발은 저장된 `departure` instant(TRANSIT만 시간표에 전달, DRIVE는 `TRAFFIC_UNAWARE`, §4).
   field mask는 `routes.polyline.encodedPolyline` 하나다. 요청당 최대 4개 구간 작업을 실행하고 응답은 저장 구간 순서대로 돌려준다.
@@ -667,7 +669,9 @@ export type LegShape = {
   date: string; kind: 'DAY' | 'AIRPORT'; from: string; to: string; mode: 'TRANSIT' | 'WALK' | 'TAXI';
   shape: { status: 'OK'; encodedPolyline: string } | { status: 'NONE' };
 };
-export type RouteShapesResponse = { inputHash: string; legs: LegShape[] };
+export type RouteShapesQuery = { inputHash: string; itineraryId?: string };
+export type RouteShapesResponse = RouteShapesQuery & { legs: LegShape[] }; // 구형 서버 응답도 읽는 클라이언트용
+export type SavedRouteShapesResponse = RouteShapesResponse & { itineraryId: string }; // 현재 서버의 성공 응답
 export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터페이스 분리)
   shape(request: { from: { latitude: number; longitude: number }; to: { latitude: number; longitude: number };
     mode: 'TRANSIT' | 'WALK' | 'DRIVE'; departure: string; timeZone: string }): Promise<{ encodedPolyline: string } | null>;
@@ -696,7 +700,7 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
 - `ResultFlow`는 `GET …/constraints`로 입력을 읽는다. revision이 응답의 `inputHash`와 같으면 응답을 그대로 쓰고, 다르면 한 번 다시 계산한다. 서버 API·DB는 바꾸지 않는다.
 - 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `constraintsFrom`으로 만든 제약을 `withVisit`·`withLegMode`로 바꿔 `PUT …/constraints`(core `parseConstraints`로 검증) → `POST …/itinerary` → `verifyRevision` 순서로 처리한다. 저장 직전 제약은 `변경 취소`·`되돌리기`에 쓰고, POST 실패 뒤에는 저장된 입력으로 POST만 다시 실행한다.
 - 순수 모델: `apps/mobile/src/result/days.ts`가 저장 입력과 결과에서 날짜별 카드(도착 구간·대기·숙소 복귀·당겨짐/늦춰짐·고정 조건)·구간(순서 색·도심 밖·바꿀 수단)·전체 일정 줄을 만든다. `conflicts.ts`는 3-8 원인, `edits.ts`는 제약 수정, `format.ts`는 문구다.
-- 경로 모양은 OK 결과의 `inputHash`로 `GET …/itinerary/shapes`를 요청해 메모리에만 둔다. 실패하거나 `NONE`이면 직선으로 그린다. 상세: [T22 결정](decisions/T22-mobile-result-screen.md)
+- 경로 모양은 OK 결과의 `inputHash`와 `itineraryId`로 `GET …/itinerary/shapes`를 요청한다. 앱은 응답의 두 값이 일치할 때만 구간을 받고, 여행·해시·일정 ID가 표시 중인 결과와 일치하는 메모리 데이터만 사용한다. 결과를 바꾸면 이전 요청을 취소한다. [T22 결정](decisions/T22-mobile-result-screen.md)
 
 ### 13.5 지도 어댑터 인터페이스 (앱)
 
