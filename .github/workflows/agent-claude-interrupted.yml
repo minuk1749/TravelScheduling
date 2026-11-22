@@ -1,0 +1,65 @@
+# Claude 실행이 중단되면 전달받은 Git 객체를 WIP에 보관하고 중단 이슈를 기록한다.
+name: agent-claude-interrupted
+on:
+  workflow_call:
+    inputs:
+      issue: { type: string, required: true }
+      pr: { type: string }
+      wip: { type: string }
+      attempt: { type: string }
+
+jobs:
+  archive-and-pause:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        if: inputs.wip != ''
+        with:
+          name: claude-wip-${{ inputs.attempt }}
+          path: ${{ runner.temp }}/archive
+      - name: Store interrupted candidate on a WIP branch
+        id: archive
+        if: inputs.wip != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE: ${{ inputs.issue }}
+          PR: ${{ inputs.pr }}
+          WIP: ${{ inputs.wip }}
+          ATTEMPT: ${{ inputs.attempt }}
+        run: |
+          set -euo pipefail
+          [[ "$ISSUE" =~ ^[0-9]+$ && ( -z "$PR" || "$PR" =~ ^[0-9]+$ ) ]] || exit 1
+          target=new
+          if [[ -n "$PR" ]]; then target="pr$PR"; fi
+          [[ $GITHUB_RUN_NUMBER =~ ^[0-9]+$ && $ATTEMPT =~ ^[0-9]+$ ]] || exit 1
+          [[ "$WIP" =~ ^wip/claude/(t[0-9]+[a-z]?|r[0-9]+)-$ISSUE/$target/$GITHUB_RUN_NUMBER\.$ATTEMPT-[0-9a-f]{40}$ ]] || exit 1
+          task=${BASH_REMATCH[1]}
+          title=$(gh issue view "$ISSUE" --json title --jq .title)
+          [[ $title =~ ^(T[0-9]+[A-Z]?|R[0-9]+): ]] || exit 1
+          [[ $(tr 'A-Z' 'a-z' <<< "${BASH_REMATCH[1]}") == "$task" ]] || exit 1
+          store="$RUNNER_TEMP/wip.git"
+          git init -q --bare "$store"
+          git -C "$store" fetch -q --no-tags "$RUNNER_TEMP/archive/claude-wip.bundle" "refs/heads/$WIP"
+          git -C "$store" merge-base --is-ancestor "${WIP##*-}" FETCH_HEAD
+          if [[ $(git -C "$store" rev-parse FETCH_HEAD) == "${WIP##*-}" ]]; then exit 0; fi
+          git -C "$store" push -q "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "FETCH_HEAD:refs/heads/$WIP"
+          echo "wip=$WIP" >> "$GITHUB_OUTPUT"
+      - name: Pause on failure
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ISSUE: ${{ inputs.issue }}
+          PR: ${{ inputs.pr }}
+          WIP: ${{ steps.archive.outputs.wip }}
+        run: |
+          set -euo pipefail
+          gh label create agent-paused --color b60205 --description "자동 루프 일시중단" --force >/dev/null
+          printf 'Claude 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. **원인을 해결한 뒤 이 이슈를 닫으면 같은 Claude 작업이 자동으로 다시 실행됩니다.**\n\n<!-- resume:claude issue=%s pr=%s -->\n' "$ISSUE" "$RUN_URL" "$ISSUE" "$PR" > "$RUNNER_TEMP/p.md"
+          if [ -n "$WIP" ]; then printf '\n중단된 후보를 `%s` 에 보관했습니다. 재개한 후보는 게시 전에 필수 검사를 다시 통과해야 합니다.\n' "$WIP" >> "$RUNNER_TEMP/p.md"; fi
+          gh issue create --title "자동 루프 일시중단: Claude 작업 #$ISSUE" --label agent-paused --body-file "$RUNNER_TEMP/p.md"
