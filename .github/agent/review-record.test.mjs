@@ -37,14 +37,20 @@ test('the test record must match the target PR, commit and workflow attempt', ()
   assert.throws(() => validateRequest(request, { run: 44, attempt: 1 }), /일치하지/);
 });
 
-test('Codex-authored code needs both approvals while Claude-authored code needs the cross review', () => {
-  assert.equal(combineReviews(request, approval).verdict, 'approve');
-  assert.equal(combineReviews(request, changes).verdict, 'request_changes');
-  assert.equal(combineReviews(request, incomplete).verdict, 'needs_human');
-  assert.equal(combineReviews({ ...request, claude: changes }, incomplete).verdict, 'request_changes');
-  assert.throws(() => validateRequest({ ...request, owner: 'gpt', claude: null }, {}));
-  const claudeRequest = validateRequest({ ...request, owner: 'claude', claude: null }, {});
-  assert.equal(combineReviews(claudeRequest, approval), approval);
+test('both implementation owners need two independent approvals', () => {
+  for (const owner of ['gpt', 'claude']) {
+    const record = { ...request, owner };
+    assert.throws(() => validateRequest({ ...record, claude: null }, {}));
+    assert.throws(() => combineReviews({ ...record, claude: null }, approval));
+    assert.equal(combineReviews(validateRequest(record, {}), approval).verdict, 'approve');
+    assert.equal(combineReviews(record, changes).verdict, 'request_changes');
+    assert.equal(combineReviews(record, incomplete).verdict, 'needs_human');
+    assert.equal(combineReviews({ ...record, claude: changes }, approval).verdict, 'request_changes');
+    assert.equal(combineReviews({ ...record, claude: incomplete }, approval).verdict, 'needs_human');
+    assert.equal(combineReviews({ ...record, claude: changes }, incomplete).verdict, 'request_changes');
+  }
+  assert.match(combineReviews({ ...request, owner: 'claude' }, approval).summary, /Claude 자체 리뷰.*Codex 교차 리뷰/s);
+  assert.match(combineReviews(request, approval).summary, /Claude 교차 리뷰.*Codex 자체 리뷰/s);
 });
 
 function sandbox(t) {
@@ -73,6 +79,33 @@ test('missing mandatory npm scripts stop the test job, and failing scripts stop 
   assert.equal(readFileSync(join(cwd, 'invoked'), 'utf8'), 'ci\nrun lint\nrun typecheck\n');
 });
 
+const passedJob = (workflowName, name, conclusion = 'SUCCESS') => ({ workflowName, name, conclusion, status: 'COMPLETED' });
+const jobs = [passedJob('ci', 'check'), ...['gate', 'test', 'review', 'decide'].map(name => passedJob('agent-review', name))];
+const openPr = { state: 'OPEN', isDraft: false, isCrossRepository: false, headRefOid: head, baseRefName: 'develop', labels: [], statusCheckRollup: jobs };
+
+test('publication checks the current head and the actual jobs for each implementation owner', t => {
+  const cwd = sandbox(t);
+  stub(cwd, 'gh', 'cat pr.json');
+  const env = { ...process.env, PATH: `${cwd}:${process.env.PATH}` };
+  const check = (snapshot, owner = 'gpt') => {
+    writeFileSync(join(cwd, 'pr.json'), JSON.stringify(snapshot));
+    return spawnSync(process.execPath, [join(here, 'check-pr.mjs'), 'fixture/travel', '12', head, owner], { cwd, env }).status;
+  };
+  assert.equal(check(openPr), 0);
+  assert.notEqual(check({ ...openPr, headRefOid: '0'.repeat(40) }), 0);
+  assert.notEqual(check({ ...openPr, statusCheckRollup: jobs.slice(1) }), 0);
+  for (const state of ['FAILURE', 'CANCELLED', 'SKIPPED', 'TIMED_OUT']) {
+    const withGate = jobs.map(job => job.name === 'gate' ? { ...job, conclusion: state } : job);
+    assert.notEqual(check({ ...openPr, statusCheckRollup: withGate }), 0);
+  }
+  assert.notEqual(check({ ...openPr, statusCheckRollup: jobs.map(job => ({ ...job, status: 'IN_PROGRESS' })) }), 0);
+  for (const owner of ['gpt', 'claude']) {
+    assert.equal(check(openPr, owner), 0);
+    const skipped = { ...openPr, statusCheckRollup: jobs.map(job => job.name === 'review' ? { ...job, conclusion: 'SKIPPED' } : job) };
+    assert.notEqual(check(skipped, owner), 0);
+  }
+});
+
 test('merge always pins the reviewed commit and a new head does not enter the feedback loop', (t) => {
   const cwd = sandbox(t);
   const pr = { state: 'open', draft: false, base: { ref: 'develop' }, head: { sha: head, repo: { full_name: 'fixture/travel' } }, title: 'T4: test', labels: [] };
@@ -82,6 +115,7 @@ test('merge always pins the reviewed commit and a new head does not enter the fe
 case "$1 $2" in
   'api repos/fixture/travel/pulls/12')
     if [ -f attempted ]; then printf '%s\\n' '${JSON.stringify(next)}'; else printf '%s\\n' '${JSON.stringify(pr)}'; fi ;;
+  'pr view') printf '%s\\n' '${JSON.stringify(openPr)}' ;;
   'pr edit') : ;;
   'pr merge') printf '%s\\n' "$*" > attempted; exit 1 ;;
   *) printf '%s\\n' "$*" >> unexpected; exit 2 ;;
@@ -94,5 +128,28 @@ esac`);
   const result = spawnSync('bash', [join(here, 'decide.sh')], { cwd, env, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(join(cwd, 'attempted'), 'utf8'), new RegExp(`--match-head-commit ${head}`));
+  assert.throws(() => readFileSync(join(cwd, 'unexpected')), { code: 'ENOENT' });
+});
+
+test('a failed agent test pauses both owners without dispatching a fix or publishing', t => {
+  const cwd = sandbox(t);
+  const pr = { state: 'open', draft: false, base: { ref: 'develop' }, head: { sha: head, repo: { full_name: 'fixture/travel' } }, title: 'T4: test', labels: [] };
+  stub(cwd, 'git', '[[ "$1" == config ]]');
+  stub(cwd, 'gh', `
+case "$1 $2" in
+  'api repos/fixture/travel/pulls/12') printf '%s\\n' '${JSON.stringify(pr)}' ;;
+  'issue create') printf '%s\\n' "$*" >> pauses ;;
+  *) printf '%s\\n' "$*" >> unexpected; exit 2 ;;
+esac`);
+  for (const owner of ['gpt', 'claude']) {
+    const env = {
+      ...process.env, PATH: `${cwd}:${process.env.PATH}`, RUNNER_TEMP: cwd,
+      GITHUB_REPOSITORY: 'fixture/travel', PR: '12', TASK: 'T4', HEAD_SHA: head,
+      ROUND: '1', OWNER: owner, PASSED: 'false', R_TEST: 'failure', R_REVIEW: 'skipped',
+    };
+    const result = spawnSync('bash', [join(here, 'decide.sh')], { cwd, env, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  assert.equal(readFileSync(join(cwd, 'pauses'), 'utf8').match(/--label agent-paused/g).length, 2);
   assert.throws(() => readFileSync(join(cwd, 'unexpected')), { code: 'ENOENT' });
 });

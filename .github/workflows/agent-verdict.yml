@@ -34,6 +34,8 @@ jobs:
     if: github.ref == 'refs/heads/develop' && github.actor == (vars.AGENT_CODEX_REVIEW_ACTOR || github.repository_owner)
     runs-on: ubuntu-latest
     permissions:
+      checks: read
+      statuses: read
       contents: write
       pull-requests: write
       issues: write
@@ -74,8 +76,14 @@ jobs:
               and any(.pull_requests[]?; .number == $pr and .base.ref == "develop" and .head.sha == $head))
             | .run_attempt
           ' <<<"$run")
-          gh api --paginate "$R/actions/runs/$REVIEW_RUN/attempts/$attempt/jobs" --jq '.jobs[] | select(.name == "test") | .conclusion' > "$RUNNER_TEMP/test-conclusion"
-          [ "$(cat "$RUNNER_TEMP/test-conclusion")" = success ] || { echo "::error::해당 실행에서 필수 검사의 성공을 확인하지 못함"; exit 1; }
+          jobs=$(gh api --paginate "$R/actions/runs/$REVIEW_RUN/attempts/$attempt/jobs" --jq '
+            .jobs[] | select(.conclusion == "success" and (.name == "test" or .name == "review")) | .name')
+          for required in test review; do
+            if ! grep -qxF "$required" <<<"$jobs"; then
+              echo "::error::해당 실행 시도에서 $required 잡의 성공을 확인하지 못함"
+              exit 1
+            fi
+          done
           echo "attempt=$attempt" >> "$GITHUB_OUTPUT"
           echo "go=true" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
@@ -103,8 +111,6 @@ jobs:
           issue=$(gh issue view "$issue_number" --json state,title)
           jq -e --arg task "$task" '.state == "OPEN" and (.title | startswith($task + ":"))' <<<"$issue" >/dev/null
           n=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$issue_number/comments" --jq '.[] | select(.user.login == "github-actions[bot]") | .body' | grep -c '<!-- agent-review -->' || true)
-          reviewer=Codex
-          if [ "$owner" = gpt ]; then reviewer="Claude·Codex"; fi
           jq -n --argjson request "$request" --slurpfile codex "$RUNNER_TEMP/codex-review.json" --slurpfile verdict "$RUNNER_TEMP/verdict.json" \
             '{ $request, codex: $codex[0], verdict: $verdict[0] }' > "$RUNNER_TEMP/decision-record.json"
           {
@@ -112,9 +118,7 @@ jobs:
             echo "issue=$issue_number"
             echo "owner=$owner"
             echo "round=$((n + 1))"
-            echo "reviewer=$reviewer"
             echo "passed=$(jq -r '.tests == "passed"' <<<"$request")"
-            echo "test=$(cat "$RUNNER_TEMP/test-conclusion")"
           } >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         if: steps.source.outputs.go == 'true'
@@ -134,9 +138,9 @@ jobs:
           ISSUE: ${{ steps.prepare.outputs.issue }}
           OWNER: ${{ steps.prepare.outputs.owner }}
           ROUND: ${{ steps.prepare.outputs.round }}
-          REVIEWER: ${{ steps.prepare.outputs.reviewer }}
+          REVIEWER: Claude·Codex
           PASSED: ${{ steps.prepare.outputs.passed }}
-          R_TEST: ${{ steps.prepare.outputs.test }}
+          R_TEST: success
           R_REVIEW: success
         run: |
           set -euo pipefail

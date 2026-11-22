@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
-      - name: Review gate regression tests
-        run: node --test .github/agent/review-record.test.mjs
+      - name: Agent automation regression tests
+        run: node --test .github/agent/*.test.mjs
       - name: Check
         run: bash .github/agent/check-required.sh

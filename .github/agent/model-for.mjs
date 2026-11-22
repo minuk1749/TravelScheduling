@@ -3,7 +3,7 @@
 //   claude → "모델" 출력
 //   claude-refactor → 리팩터링 수행 모델
 //   claude-implement → Claude가 담당 작업을 구현할 모델
-//   codex-review → Claude PR을 리뷰할 Codex "모델<TAB>추론강도"
+//   codex-review → 모든 작업 PR을 리뷰할 Codex "모델<TAB>추론강도"
 //   claude-effort → Claude 실행(구현·리팩터링·리뷰) 추론 강도. 작업별 값이 없으면 기본값, 둘 다 없으면 빈 값(CLI 기본)
 import fs from "node:fs";
 import path from "node:path";

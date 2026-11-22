@@ -4,8 +4,7 @@
 #   0) 필수 검사를 마친 PR은 Codex CLI로 리뷰하고 agent-verdict에 판정을 제출한다.
 #   1) Codex가 만든 열린 작업 PR에 아직 반영하지 않은 자동 피드백이 있으면 → Codex CLI로 수정 후 푸시
 #   2) 작업 PR이 없고 Codex 담당 작업 이슈(agent-task, owner-claude 아님)가 있으면 → Codex CLI로 구현, 브랜치 푸시, PR 생성
-#      구현 중 Codex가 실패하면(사용 한도 등) 그때까지의 변경을 wip/<작업>-<시각> 브랜치에 저장하고,
-#      다음 구현 실행은 가장 최근 wip 브랜치에서 이어서 한다. PR을 올리면 그 작업의 wip 브랜치는 지운다.
+#      실패하면 게시를 중단한다. 이전 버전의 wip 브랜치는 이어서 작업할 수 있다.
 #   3) 그 밖에는 아무것도 하지 않음 (리뷰 대기 중이거나 할 작업 없음)
 #
 # 테스트와 판정·머지는 GitHub Actions(agent-review, agent-verdict)가 한다.
@@ -82,27 +81,31 @@ main() {
     log "AGENT_EXECUTOR=cloud: 구현·수정은 cloud에서 진행"; return 0
   fi
 
-  # 1) 수정 모드: 열린 작업 PR 확인 (Codex가 만든 PR만)
-  local pr
-  pr=$(gh pr list -R "$REPO" --state open --base develop --json number,title,labels \
-    --jq '[.[] | select(.title | test("^T[0-9]+[A-Z]?:")) | select([.labels[].name] | (index("needs-human") or index("owner-claude")) | not)] | sort_by(.number) | first | .number // empty')
+  # develop의 담당과 단일 작업 이슈가 일치하는 경우에만 구현·수정한다.
+  git show origin/develop:.github/agent/tasks.mjs > "$TMPD/tasks.mjs"
+  local target itask issue pr reviewed_head=""
+  target=$(writer_target)
+  if [ -z "$target" ]; then log "Codex가 쓸 수 있는 단일 작업이 없음"; return 0; fi
+  read -r itask issue pr <<<"$target"
+  git show origin/develop:.github/agent/check-pr.mjs > "$TMPD/check-pr.mjs"
+  git show origin/develop:.github/agent/check-required.sh > "$TMPD/check-required.sh"
 
-  if [ -n "$pr" ]; then
-    local fb_at head_at branch title task
+  if [ "$pr" != "-" ]; then
+    local fb_at head_at branch task="$itask"
     fb_at=$(gh pr view "$pr" -R "$REPO" --json comments --jq '[.comments[] | select(.body | contains("<!-- agent-feedback"))] | last | .createdAt // empty')
     head_at=$(gh pr view "$pr" -R "$REPO" --json commits --jq '.commits | last | .committedDate')
     if [ -z "$fb_at" ] || [[ "$fb_at" < "$head_at" ]]; then
       log "PR #$pr 는 리뷰 대기 중 (새 피드백 없음)"; return 0
     fi
     branch=$(gh pr view "$pr" -R "$REPO" --json headRefName --jq .headRefName)
-    title=$(gh pr view "$pr" -R "$REPO" --json title --jq .title)
-    task=$(echo "$title" | grep -oE '^T[0-9]+[A-Z]?')
+    reviewed_head=$(git rev-parse "origin/$branch")
+    node "$TMPD/check-pr.mjs" "$REPO" "$pr" "$reviewed_head" gpt
     log "수정 모드: PR #$pr ($task), 브랜치 $branch"
 
     git checkout -q -B "$branch" "origin/$branch"
     # 동시에 진행된 다른 작업을 반영한다. 충돌이 나면 충돌 표시를 남겨 Codex가 해결한다
     local merge_note=""
-    if ! git merge -q --no-edit origin/develop >/dev/null 2>&1; then
+    if ! git merge -q --no-ff --no-commit origin/develop >/dev/null 2>&1; then
       merge_note="develop을 이 브랜치에 병합했고 충돌이 있다. 충돌 표시(<<<<<<<, =======, >>>>>>>)가 있는 파일을 먼저 해결하라(양쪽 변경의 의도를 모두 유지)."
       log "develop 병합 충돌, Codex가 해결"
     fi
@@ -112,7 +115,7 @@ main() {
       echo "# 수정 지시: PR #$pr ($task)"
       echo
       echo "너는 이 저장소의 구현 담당(gpt)이다. 현재 체크아웃된 브랜치가 PR #$pr 의 브랜치다."
-      echo "AGENTS.md와 docs/requirements.md를 참고해서, 아래 '자동 피드백'(테스트 실패 로그 또는 Claude 리뷰)을 해결하라."
+      echo "AGENTS.md와 docs/requirements.md를 참고해서, 아래 자동 리뷰 피드백을 확인하고 해결하라."
       echo "- 지적이 타당하면 고치고, 타당하지 않다고 판단하면 고치지 말고 최종 메시지에 근거를 적어라."
       echo "- 피드백과 무관한 변경은 하지 마라."
       if [ -n "$merge_note" ]; then echo "- $merge_note"; fi
@@ -129,11 +132,14 @@ main() {
     local msg="$TMPD/msg.md"
     run_codex "$prompt" "$msg" "$task" || { rm -f "$prompt"; return 1; }
     rm -f "$prompt"
-    if ! commit_changes "$task: 리뷰 피드백 반영" && [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$branch")" ]; then
+    stage_changes
+    if git diff --cached --quiet && [ ! -f .git/MERGE_HEAD ] && [ "$(git rev-parse HEAD)" = "$reviewed_head" ]; then
       log "변경 없음. Codex 메시지를 PR에 남김"
       { echo "**Mac 러너: 변경 없이 종료**"; echo; cat "$msg" 2>/dev/null; } | gh pr comment "$pr" -R "$REPO" --body-file -
       rm -f "$msg"; return 0
     fi
+    check_and_commit "$task: 리뷰 피드백 반영"
+    verify_target
     git push -q origin "HEAD:$branch"
     { echo "**Mac 러너: 피드백 반영 후 푸시**"; echo; cat "$msg" 2>/dev/null; } | gh pr comment "$pr" -R "$REPO" --body-file -
     # PR 설명도 최신 보고로 바꾼다(리뷰어가 PR 설명을 작성자의 주장으로 읽기 때문)
@@ -143,15 +149,9 @@ main() {
     return 0
   fi
 
-  # 2) 구현 모드: 열린 작업 이슈 확인
-  local issue
-  issue=$(gh issue list -R "$REPO" --state open --label agent-task --json number,labels --jq '[.[] | select([.labels[].name] | index("owner-claude") | not)] | sort_by(.number) | first | .number // empty')
-  if [ -z "$issue" ]; then
-    log "진행할 작업 없음"; return 0
-  fi
-  local ititle itask ibranch
+  # 2) 구현 모드: 작업표에서 배정한 작업에 아직 PR이 없을 때
+  local ititle ibranch
   ititle=$(gh issue view "$issue" -R "$REPO" --json title --jq .title)
-  itask=$(echo "$ititle" | grep -oE '^T[0-9]+[A-Z]?')
   ibranch="$(echo "$itask" | tr 'A-Z' 'a-z')-local"
   log "구현 모드: 이슈 #$issue ($ititle), 브랜치 $ibranch"
 
@@ -162,7 +162,7 @@ main() {
     log "이전 중단 작업($wip)에서 이어서 함"
     git checkout -q -B "$ibranch" "$wip"
     wip_note="- 이전 실행이 끝나기 전에 중단되어(사용 한도 등) 그때까지의 변경을 커밋해 두었고, 지금 그 커밋 위에서 시작한다(git log origin/develop..HEAD, git diff origin/develop 로 확인). 처음부터 다시 만들지 말고 이미 한 작업을 확인해 남은 부분을 마무리하라. 미완성이거나 충돌 표시(<<<<<<<)가 남아 있을 수 있으니 확인하라."
-    if ! git merge -q --no-edit origin/develop >/dev/null 2>&1; then
+    if ! git merge -q --no-ff --no-commit origin/develop >/dev/null 2>&1; then
       wip_note="$wip_note develop을 병합했고 충돌이 있다. 충돌 표시가 있는 파일을 먼저 해결하라(양쪽 변경의 의도를 모두 유지)."
       log "develop 병합 충돌, Codex가 해결"
     fi
@@ -178,22 +178,17 @@ main() {
     echo "- git commit/push와 PR 생성은 하지 마라. 스크립트가 한다. PR 제목은 스크립트가 '$ititle'로 붙인다."
     echo "- 인터넷 접근이 가능하다. 새 패키지는 npm install로 설치해 package-lock.json을 갱신하라."
     echo "- 완료 전에 npm run lint, npm run typecheck, npm run build, npm test 를 실행해 통과를 확인하라."
-    echo "- 이 Mac에는 PostgreSQL이 없을 수 있다. DB 테스트가 로컬에서 실패하더라도 테스트를 건너뛰게 바꾸지 말고, 최종 메시지에 그 사실을 적어라(CI에는 PostgreSQL 16이 있다)."
+    echo "- DB 테스트를 포함한 필수 검사를 실행할 수 없으면 게시를 중단한다."
     echo "- scripts/agent/** 도 보호 파일이다."
     echo
     gh issue view "$issue" -R "$REPO" --json body --jq .body
   } > "$iprompt"
 
-  local imsg="$TMPD/msg.md" rc=0
-  run_codex "$iprompt" "$imsg" "$itask" || rc=$?
+  local imsg="$TMPD/msg.md"
+  run_codex "$iprompt" "$imsg" "$itask" || return 1
   rm -f "$iprompt"
-  if [ "$rc" != 0 ]; then
-    # 실행 실패(1)면 변경을 저장한다. 다른 모델로 실행된 결과(2)는 쓰지 않는다
-    if [ "$rc" = 1 ]; then save_wip "$itask"; fi
-    return 1
-  fi
-  # 이어서 한 작업(wip)은 이전 커밋이 있으므로 이번 실행에 새 변경이 없어도 PR을 올린다
-  if ! commit_changes "$ititle" && [ -z "$wip" ]; then
+  stage_changes
+  if git diff --cached --quiet && [ ! -f .git/MERGE_HEAD ] && [ -z "$wip" ]; then
     log "Codex가 변경을 만들지 못함"
     { echo "**Mac 러너: 변경 없이 종료.** 다음 실행에서 다시 시도합니다. 계속 반복되면 사람이 확인해 주세요."; echo; cat "$imsg" 2>/dev/null; } | gh issue comment "$issue" -R "$REPO" --body-file -
     rm -f "$imsg"; return 0
@@ -203,6 +198,8 @@ main() {
     ibranch="$ibranch-$(date +%Y%m%d%H%M%S)"
     git branch -q -m "$ibranch"
   fi
+  check_and_commit "$ititle"
+  verify_target
   git push -q origin "HEAD:$ibranch"
   {
     cat "$imsg" 2>/dev/null || true
@@ -220,13 +217,38 @@ main() {
   log "PR 생성 완료"
 }
 
+writer_target() {
+  git show origin/develop:docs/tasks.md > "$TMPD/tasks.md" || return 1
+  gh issue list -R "$REPO" --state open --label agent-task --limit 1000 \
+    --json number,title,labels > "$TMPD/issues.json" || return 1
+  gh pr list -R "$REPO" --state open --limit 1000 \
+    --json number,title,labels,baseRefName,headRefName,isCrossRepository,isDraft > "$TMPD/prs.json" || return 1
+  node "$TMPD/tasks.mjs" writer "$TMPD/issues.json" "$TMPD/prs.json" --file "$TMPD/tasks.md"
+}
+
+# 모델 실행 중 담당이 바뀌거나 다른 PR이 열렸으면 게시를 멈춘다.
+still_assigned() {
+  local current pauses
+  git fetch -q origin refs/heads/develop:refs/remotes/origin/develop || return 1
+  pauses=$(gh issue list -R "$REPO" --label agent-paused --state open --json number --jq length) || return 1
+  current=$(writer_target) || return 1
+  if [ "$pauses" != 0 ] || [ "$current" != "$1" ]; then
+    log "게시 중단: 일시중단 상태 또는 작업 배정이 바뀜"; return 1
+  fi
+}
+
 review_run_for() { # pr, head
-  local name="agent-review-pr-$1-$2" id workflow ready ids
+  local name="agent-review-pr-$1-$2" id workflow attempt ids
   workflow=$(gh api "repos/$REPO/actions/workflows/agent-review.yml" --jq .id) || return 1
   ids=$(gh api "repos/$REPO/actions/artifacts?name=$name" --jq '.artifacts | sort_by(.created_at) | reverse | .[] | select(.expired == false) | .workflow_run.id') || return 1
   for id in $ids; do
-    ready=$(gh api "repos/$REPO/actions/runs/$id" --jq "select(.workflow_id == $workflow and .event == \"pull_request_target\" and .conclusion == \"success\") | .id") || return 1
-    if [ -n "$ready" ]; then printf '%s\n' "$ready"; return 0; fi
+    attempt=$(gh api "repos/$REPO/actions/runs/$id" --jq "select(.workflow_id == $workflow and .event == \"pull_request_target\" and .conclusion == \"success\") | .run_attempt") || return 1
+    [ -n "$attempt" ] || continue
+    # 이전 규칙에서 Claude 리뷰를 건너뛴 기록은 처리 대상에서 제외한다.
+    if gh api --paginate "repos/$REPO/actions/runs/$id/attempts/$attempt/jobs" --jq '.jobs[] | select(.name == "review") | .conclusion' | grep -x success >/dev/null; then
+      printf '%s\n' "$id"
+      return 0
+    fi
   done
 }
 
@@ -348,7 +370,7 @@ pause_issue() { # message output_file
   {
     echo "$1"
     echo
-    echo "**재개 방법:** 원인을 해결한 뒤 이 이슈를 닫으면, Mac 러너의 다음 실행(1분 이내)부터 이어서 진행합니다."
+    echo "**재개 방법:** 원인을 해결한 뒤 이 이슈를 닫으면, Mac 러너의 다음 실행부터 이어서 진행합니다."
     echo
     echo "<details><summary>Codex 출력 마지막 부분</summary>"
     echo
@@ -360,17 +382,43 @@ pause_issue() { # message output_file
   gh issue create -R "$REPO" --title "자동 루프 일시중단: Codex" --label agent-paused --body-file "$TMPD/pause.md" >/dev/null && log "agent-paused 이슈를 열고 멈춤"
 }
 
-save_wip() { # task
-  # 실패한 구현 실행의 변경을 wip/<작업>-<시각> 브랜치에 남긴다(강제 푸시 없음, 매번 새 이름)
-  local w
-  if ! commit_changes "$1: 중단된 작업 저장" && [ "$(git rev-list --count origin/develop..HEAD)" = 0 ]; then
-    log "저장할 변경 없음"; return 0
+# main의 배정과 커밋을 구현 전후에 같은 기준으로 확인한다.
+verify_target() {
+  still_assigned "$target" || return 1
+  if [ "$pr" != "-" ]; then
+    node "$TMPD/check-pr.mjs" "$REPO" "$pr" "$reviewed_head" gpt || return 1
   fi
-  w="wip/$(echo "$1" | tr 'A-Z' 'a-z')-$(date +%Y%m%d%H%M%S)"
-  if git push -q origin "HEAD:refs/heads/$w"; then log "중단 작업을 $w 에 저장함"; else log "중단 작업 저장 실패"; fi
 }
 
-commit_changes() { # message
+# launchd에 테스트 DB가 지정되지 않은 Mac에서도 CI와 같은 버전을 쓴다.
+check_candidate() (
+  if [ -z "${DATABASE_URL:-}" ]; then
+    local db port
+    db=$(docker run -d -p 127.0.0.1::5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=app postgres:16) || return 1
+    trap 'docker rm -fv "$db" >/dev/null' EXIT
+    port=$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$db") || return 1
+    export DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:$port/app"
+  fi
+  bash "$TMPD/check-required.sh" --e2e
+)
+
+check_and_commit() {
+  local tree
+  tree=$(git write-tree)
+  if ! check_candidate; then
+    pause_issue "작업 $itask 게시 전 필수 검사가 실패했습니다. Mac 러너 로그에서 실패한 명령을 확인해 주세요." /dev/null
+    return 1
+  fi
+  if [ "$(git write-tree)" != "$tree" ] || ! git diff --quiet; then
+    log "검사 중 추적 파일이 바뀌어 게시 중단"; return 1
+  fi
+  verify_target
+  if ! git diff --cached --quiet || [ -f .git/MERGE_HEAD ]; then
+    git commit -q -m "$1" -m "Codex CLI 구현, Mac 러너 자동 커밋"
+  fi
+}
+
+stage_changes() {
   local f
   # 보호 경로 되돌리기
   git add -A
@@ -385,8 +433,6 @@ commit_changes() { # message
     npm install --package-lock-only --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
     git add package-lock.json 2>/dev/null || true
   fi
-  if git diff --cached --quiet && [ ! -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then return 1; fi
-  git commit -q -m "$1" -m "Codex CLI 구현, Mac 러너 자동 커밋"
 }
 
 PROTECTED='^(\.github/|AGENTS\.md$|CLAUDE\.md$|docs/requirements\.md$|docs/tasks\.md$|scripts/agent/)'

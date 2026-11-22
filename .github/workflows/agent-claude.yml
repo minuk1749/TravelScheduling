@@ -4,8 +4,7 @@
 #            Claude PR에 수정 요청이 나왔을 때(모두 자동), 또는 사람이 이슈 번호로 수동 실행.
 # PR은 사용자 토큰(USER_PAT)으로 올리고 owner-claude 라벨을 붙인다 → agent-review가 테스트 후 Codex 리뷰를 요청한다.
 # Claude 단계에는 USER_PAT을 넘기지 않는다.
-# 새 작업이 실패하면(사용 한도, 최대 턴 초과 등) 그때까지의 변경을 wip/<작업>-<실행번호> 브랜치에 저장하고,
-# 같은 작업을 다시 실행하면 가장 최근 wip 브랜치에서 이어서 한다. PR을 올리면 그 작업의 wip 브랜치는 지운다.
+# 실패하면 작업을 일시중단한다. 이전 버전의 wip 브랜치는 이어서 작업할 수 있다.
 name: agent-claude
 
 on:
@@ -33,6 +32,10 @@ jobs:
     # 최대 400턴(xhigh)을 마칠 수 있도록 여유를 둔다
     timeout-minutes: 150
     permissions:
+      # check-pr.mjs가 읽는 statusCheckRollup의 workflowName(checkSuite.workflowRun)은 actions 읽기 권한이 필요하다
+      actions: read
+      checks: read
+      statuses: read
       contents: read
       issues: write
       pull-requests: read
@@ -65,7 +68,9 @@ jobs:
           case "$id" in R*) out kind refactor; suffix=refactor;; *) out kind implement; suffix=claude;; esac
           out title "${title#*: }"
           if [ -n "$PR" ]; then
-            out branch "$(gh pr view "$PR" --json headRefName --jq .headRefName)"
+            pr_info=$(gh pr view "$PR" --json headRefName,headRefOid)
+            out branch "$(jq -r .headRefName <<<"$pr_info")"
+            out head "$(jq -r .headRefOid <<<"$pr_info")"
             n=$(gh pr view "$PR" --json comments --jq '[.comments[] | select(.body | contains("<!-- agent-feedback"))] | length')
             out round "$((n + 1))"
           else
@@ -83,7 +88,7 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.pr != '' && steps.info.outputs.branch || steps.info.outputs.wip || 'develop' }}
+          ref: ${{ inputs.pr != '' && steps.info.outputs.head || steps.info.outputs.wip || 'develop' }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/checkout@v5
@@ -94,6 +99,22 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+      - name: Verify task before implementation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ID: ${{ steps.info.outputs.id }}
+          KIND: ${{ steps.info.outputs.kind }}
+          HEAD_SHA: ${{ steps.info.outputs.head }}
+        run: |
+          set -euo pipefail
+          if [ "$KIND" = implement ]; then
+            table=.ctl/docs/tasks.md
+            [ "$(node .ctl/.github/agent/tasks.mjs get "$ID" 담당 --file "$table")" = claude ]
+            state=$(node .ctl/.github/agent/tasks.mjs get "$ID" 상태 --file "$table")
+            [[ "$state" = 진행중 || "$state" = 리뷰 ]]
+          fi
+          if [ -n "$PR" ]; then node .ctl/.github/agent/check-pr.mjs "$GH_REPO" "$PR" "$HEAD_SHA" claude; fi
       - name: Merge develop (fix round or resumed work)
         id: merge
         if: inputs.pr != '' || steps.info.outputs.wip != ''
@@ -101,7 +122,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # 동시에 진행된 다른 작업을 반영한다. 충돌이 나면 충돌 표시를 남겨 Claude가 해결한다
-          if git merge -q --no-edit origin/develop; then echo "conflict=false" >> "$GITHUB_OUTPUT"; else echo "conflict=true" >> "$GITHUB_OUTPUT"; fi
+          if git merge -q --no-ff --no-commit origin/develop; then echo "conflict=false" >> "$GITHUB_OUTPUT"; else echo "conflict=true" >> "$GITHUB_OUTPUT"; fi
       - name: Install dependencies
         run: |
           npm ci --no-audit --no-fund
@@ -148,6 +169,27 @@ jobs:
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git add:*),Bash(git rm:*)"
             --disallowedTools "NotebookEdit"
 
+      - name: Stage and verify candidate
+        env:
+          PG_SERVICE: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          git add -A
+          bash .ctl/.github/agent/stage-work.sh
+          # 커밋할 파일만 전달한다. 검사 컨테이너에는 저장소 토큰·러너 디렉터리를 마운트하지 않는다.
+          candidate="$RUNNER_TEMP/candidate"
+          mkdir "$candidate"
+          git checkout-index --all --prefix="$candidate/"
+          network=$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' "$PG_SERVICE")
+          git -C .ctl show HEAD:.github/agent/check-required.sh > "$RUNNER_TEMP/check-required.sh"
+          stop_token=$(cat /proc/sys/kernel/random/uuid)
+          echo "::stop-commands::$stop_token"
+          trap 'echo "::$stop_token::"' EXIT
+          docker run --rm --network "$network" \
+            -e DATABASE_URL=postgresql://postgres:postgres@postgres:5432/app \
+            -v "$candidate:/source:ro" -v "$RUNNER_TEMP/check-required.sh:/check-required.sh:ro" \
+            -w /candidate node:24-bookworm bash -ec 'cp -R /source/. . && git init -q && git add -A && bash /check-required.sh --e2e'
+
       - name: Commit, push and open PR
         id: publish
         env:
@@ -158,16 +200,17 @@ jobs:
           BRANCH: ${{ steps.info.outputs.branch }}
           ROUND: ${{ steps.info.outputs.round }}
           EXEC_FILE: ${{ steps.claude.outputs.execution_file }}
+          HEAD_SHA: ${{ steps.info.outputs.head }}
           WIP: ${{ steps.info.outputs.wip }}
         run: |
           set -euo pipefail
           if [ -z "$GH_TOKEN" ]; then echo "::error::USER_PAT 시크릿이 없음"; exit 1; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -z "$PR" ]; then git switch -q -C "$BRANCH"; fi
-          git add -A
-          # 보호 파일은 develop의 내용과 같아야 한다(develop 병합으로 들어온 변경은 유지)
-          bash .ctl/.github/agent/stage-work.sh
+          check_target() {
+            if [ -n "$PR" ]; then node .ctl/.github/agent/check-pr.mjs "$GH_REPO" "$PR" "$HEAD_SHA" claude; fi
+          }
+          check_target
           # 이어서 한 작업(wip)은 이전 커밋이 있으므로 이번 실행에 새 변경이 없어도 PR을 올린다
           if git diff --cached --quiet && [ ! -f .git/MERGE_HEAD ] && { { [ -z "$PR" ] && [ -z "$WIP" ]; } || { [ -n "$PR" ] && [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ]; }; }; then
             gh issue comment "$ISSUE" --body "Claude가 변경 없이 종료했습니다(라운드 $ROUND). 사람이 확인해 주세요."
@@ -189,8 +232,8 @@ jobs:
           # 강제 푸시는 쓰지 않는다. 새 작업인데 같은 이름의 브랜치가 이미 있으면(이전 실패 흔적) 새 이름을 쓴다
           if [ -z "$PR" ] && git ls-remote --exit-code --heads "$remote" "$BRANCH" >/dev/null 2>&1; then
             BRANCH="$BRANCH-$GITHUB_RUN_NUMBER"
-            git branch -q -m "$BRANCH"
           fi
+          check_target
           git push -q "$remote" "HEAD:refs/heads/$BRANCH"
           if [ -z "$PR" ]; then
             gh label create owner-claude --color fbca04 --description "Claude가 구현한 PR (Codex가 리뷰)" --force >/dev/null
@@ -215,40 +258,13 @@ jobs:
           jq -r 'if type=="array" then . else [.] end
                  | (map(select(.type=="result")) | last | {subtype, is_error, num_turns, result: ((.result // "") | tostring | .[0:1500])}),
                    (map(select(.type=="assistant")) | last | .message.content // [] | map(select(.type=="text") | .text) | join("\n") | .[0:1500])' "$EXEC_FILE" || true
-      - name: Save work in progress
-        id: wip
-        # 새 작업에서 Claude가 실패하면 그때까지의 변경을 버리지 않고 wip 브랜치에 저장한다(다음 실행이 이어서 한다)
-        # 시간 초과로 취소된 경우도 포함한다
-        if: (failure() || cancelled()) && (steps.claude.outcome == 'failure' || steps.claude.outcome == 'cancelled') && inputs.pr == ''
-        env:
-          GH_TOKEN: ${{ secrets.USER_PAT }}
-          GH_REPO: ${{ github.repository }}
-          ID: ${{ steps.info.outputs.id }}
-        run: |
-          set -euo pipefail
-          if [ -z "$GH_TOKEN" ]; then echo "::warning::USER_PAT 시크릿이 없어 중단 작업을 저장하지 못함"; exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          bash .ctl/.github/agent/stage-work.sh
-          if [ -f .git/MERGE_HEAD ]; then git commit -q --no-edit; fi
-          if git diff --cached --quiet && [ "$(git rev-list --count origin/develop..HEAD)" = 0 ]; then echo "저장할 변경 없음"; exit 0; fi
-          if ! git diff --cached --quiet; then
-            git commit -q -m "$ID: 중단된 작업 저장 (실행 $GITHUB_RUN_NUMBER)" -m "agent-claude가 실패 전에 남긴 변경. 같은 작업의 다음 실행이 이어서 한다."
-          fi
-          wip="wip/$(tr 'A-Z' 'a-z' <<<"$ID")-$GITHUB_RUN_NUMBER"
-          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "HEAD:refs/heads/$wip"
-          echo "wip=$wip" >> "$GITHUB_OUTPUT"
-          echo "::notice::중단 작업을 $wip 에 저장함"
       - name: Pause on failure
         if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          WIP: ${{ steps.wip.outputs.wip }}
         run: |
           gh label create agent-paused --color b60205 --description "자동 루프 일시중단" --force >/dev/null
           printf 'Claude 작업(이슈 #%s)이 실패해 자동 루프를 멈췄습니다.\n\n- 실행 기록: %s\n\nClaude 구독 한도 소진, 토큰 만료, 일시적 장애일 수 있습니다. **원인을 해결한 뒤 이 이슈를 닫으면 같은 Claude 작업이 자동으로 다시 실행됩니다.**\n\n<!-- resume:claude issue=%s pr=%s -->\n' "$ISSUE" "$RUN_URL" "$ISSUE" "$PR" > "$RUNNER_TEMP/p.md"
-          if [ -n "$WIP" ]; then printf '\n중단 전까지의 변경은 `%s` 브랜치에 저장했습니다. 다시 실행하면 처음부터가 아니라 이 브랜치에서 이어서 합니다.\n' "$WIP" >> "$RUNNER_TEMP/p.md"; fi
           gh issue create --title "자동 루프 일시중단: Claude 작업 #$ISSUE" --label agent-paused --body-file "$RUNNER_TEMP/p.md"
