@@ -67,6 +67,11 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const [sheet, setSheet] = useState<Sheet | null>(null);
   // "이전 일정 보기" applies to the failure it was pressed for, not to a later one.
   const [previousFor, setPreviousFor] = useState<typeof phase | null>(null);
+  // A timeline opened before or after this failure also counts as viewing the last successful result.
+  if (failed && sheet?.kind === 'SCHEDULE') {
+    if (!previousSchedule) setSheet(null);
+    else if (previousFor !== phase) setPreviousFor(phase);
+  }
   const showPrevious = failed && previousFor === phase;
   const [locate, setLocate] = useState(0);
   const [insets, setInsets] = useState({ top: 0, bottom: 0 });
@@ -91,7 +96,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const currency = displayed?.efficiency?.currency ?? null;
 
   const status: PanelStatus = calculating ? { kind: 'CALCULATING' }
-    : failed ? (showPrevious ? { kind: 'PREVIOUS' } : { kind: 'FAILED', message: phase.message, hasPrevious: !!displayed })
+    : failed ? (showPrevious ? { kind: 'PREVIOUS' } : { kind: 'FAILED', message: phase.message, hasPrevious: !!previousSchedule })
       : conflict ? { kind: 'CONFLICT', count: causes.length, canUndo,
         target: card?.issue ? card : day.cards.find(item => item.issue) ?? null,
         messages: causes.filter(cause => !cause.visitId && (!cause.date || cause.date === day.date)).map(cause => cause.message) }
@@ -143,7 +148,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />
     {sheet?.kind === 'SCHEDULE' && <ScheduleSheet day={day} places={view.places} currency={currency} efficiency={displayed?.efficiency ?? null}
-      onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
+      previous={showPrevious} onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
       select={visitId => { setSheet(null); const found = findVisit([day], visitId); if (found) select(found); }} />}
     {sheet?.kind === 'EDIT' && editing && <EditSheet view={view} card={editing} days={days} current={editOf(editing.visitId)}

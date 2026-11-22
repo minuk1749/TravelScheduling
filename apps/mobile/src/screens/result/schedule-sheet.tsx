@@ -8,6 +8,7 @@ import { colors, radius, size, spacing, text } from '../../theme';
 import type { DayModel, LegModel, TimelineRow } from '../../result/days';
 import { dateTitle, durationLabel, legLabel, moneyLabel, timeRange } from '../../result/format';
 import { kindLabels } from '../trip-input/presentation';
+import { PreviousBadge } from './panel-states';
 import { SwapChip } from './swap-chip';
 import { ENDPOINT_ICONS, ENDPOINT_LABELS, MODE_ICONS } from './icons';
 
@@ -64,13 +65,14 @@ export function EfficiencyRows({ summary, estimated }: { summary: EfficiencySumm
 }
 
 /** 3-2: the whole day as one list; pressing a place closes the sheet and selects its card. */
-export function ScheduleSheet({ day, places, currency, efficiency, estimated, close, select, onSwap }: {
-  day: DayModel; places: ResultView['places']; currency: string | null; efficiency: EfficiencySummary | null; estimated: boolean;
+export function ScheduleSheet({ day, places, currency, efficiency, estimated, previous, close, select, onSwap }: {
+  day: DayModel; places: ResultView['places']; currency: string | null; efficiency: EfficiencySummary | null; estimated: boolean; previous: boolean;
   close(): void; select(visitId: string): void; onSwap?(leg: LegModel, mode: LegModel['mode']): void;
 }) {
   const placeIds = new Set([...day.cards.map(card => card.placeId), ...day.legs.flatMap(leg => [leg.from, leg.to])]);
   for (const row of day.rows) if (row.kind === 'ENDPOINT') placeIds.add(row.placeId);
   return <FormSheet title={`${dateTitle(day.date)} 전체 일정`} close={close}>
+    {previous && <PreviousBadge />}
     {day.rows.length === 0 && <Text style={text.body}>배치된 장소 없음</Text>}
     {day.rows.map((row, index) => <Row key={index} row={row} zone={day.timeZone} currency={currency} select={select} onSwap={onSwap} />)}
     {efficiency && <EfficiencyRows summary={efficiency} estimated={estimated} />}

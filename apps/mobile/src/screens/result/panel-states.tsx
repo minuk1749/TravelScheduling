@@ -33,10 +33,10 @@ export function FailureBlock({ message, hasPrevious, onShowPrevious, onRetry }: 
 }
 
 /** 3-9 with the last result shown: faded map and this mark. */
-export function PreviousBadge({ onRetry }: { onRetry(): void }) {
+export function PreviousBadge({ onRetry }: { onRetry?(): void }) {
   return <View style={[styles.row, styles.badgeRow]}>
-    <Text style={[text.tiny, styles.badge]}>이전 계산 결과 · 갱신 실패</Text>
-    <Button label="다시 계산" onPress={onRetry} />
+    <Text accessibilityLiveRegion="polite" style={[text.tiny, styles.badge]}>이전 계산 결과 · 갱신 실패</Text>
+    {onRetry && <Button label="다시 계산" onPress={onRetry} />}
   </View>;
 }
 

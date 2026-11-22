@@ -60,9 +60,10 @@ function DateRow({ day, status, onSchedule }: { day: DayModel; status: PanelStat
         ⚠ 고정 조건 충돌 {status.count}건
       </Text> : <Text style={styles.summary}>{summary(day)}</Text>}
     </View>
-    <Pressable accessibilityRole="button" accessibilityLabel="전체 일정" onPress={onSchedule} style={styles.textButton}>
-      <Text style={[text.secondary, styles.link]}>☰ 전체 일정</Text>
-    </Pressable>
+    {(status.kind !== 'FAILED' || status.hasPrevious) &&
+      <Pressable accessibilityRole="button" accessibilityLabel="전체 일정" onPress={onSchedule} style={styles.textButton}>
+        <Text style={[text.secondary, styles.link]}>☰ 전체 일정</Text>
+      </Pressable>}
   </View>;
 }
 
