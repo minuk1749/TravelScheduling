@@ -59,6 +59,7 @@ export class ItineraryService {
     return {
       status,
       capacity: verified.capacity,
+      availableByDate: Object.fromEntries(prepared.map(({ day }) => [day.date, day.window.available])),
       verification: { verified: verified.verified, attempts: verified.attempts },
       transferIssues,
       flightConflicts,

@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { TripInputs } from '@travel/core/contracts/itinerary';
 import { localTime, MODES } from '@travel/core/presentation';
+import type { TimeWindow } from '@travel/core/scheduler';
 import type { TravelModeName } from '../map/types';
 
 const SYMBOLS: Readonly<Record<string, string>> = {
@@ -81,10 +82,9 @@ export function fixedLabel(visit: Pick<TripInputs['visits'][number], 'fixedDate'
   return parts.length ? parts.join(' · ') : null;
 }
 
-/** Activity window of a date from the saved living settings (empty-day "여유 시간"). */
-export function freeTime(input: Pick<TripInputs, 'activity' | 'daySettings'>, date: string): string {
-  const setting = input.daySettings.find(day => day.date === date);
-  const start = setting?.departureTime ?? input.activity.start, end = setting?.returnTime ?? input.activity.end;
-  const minutes = (Temporal.PlainTime.from(end).since(Temporal.PlainTime.from(start)).total('minutes') + 1440) % 1440;
-  return `여유 시간 ${start} – ${end} · ${durationLabel(minutes)}`;
+/** Display the same instant bounds the scheduler used after applying flights and airport transfers. */
+export function freeTime(window: TimeWindow | null | undefined, zone: string): string {
+  if (window === undefined) return '여유 시간 정보 없음';
+  if (window === null) return '여유 시간 없음';
+  return `여유 시간 ${timeRange(window.start, window.end, zone)} · ${durationLabel(minutesBetween(window.start, window.end))}`;
 }

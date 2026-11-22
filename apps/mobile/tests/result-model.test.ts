@@ -144,7 +144,7 @@ test('labels for times, fares, swaps, dates, fixed conditions and free time', ()
   expect(dateTitle('2026-12-04')).toBe('12월 4일 금요일');
   expect([fixedLabel({ fixedDate: D1, fixedTime: '15:00' }), fixedLabel({ fixedDate: D1, fixedOrder: 1 }), fixedLabel({ fixedDate: D1 }), fixedLabel({})])
     .toEqual(['15:00 예약 고정', '2번째 순서 고정', '날짜 고정', null]);
-  expect(freeTime({ ...view.input, daySettings: [{ date: D2, departureTime: '10:30', returnTime: null, mealSlots: null }] }, D2))
+  expect(freeTime({ start: '2026-12-04T01:30:00Z', end: '2026-12-04T12:00:00Z' }, 'Asia/Tokyo'))
     .toBe('여유 시간 10:30 – 21:00 · 10시간 30분');
 });
 

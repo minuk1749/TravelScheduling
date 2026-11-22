@@ -119,7 +119,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     <LocateButton bottom={insets.bottom} onPress={() => setLocate(value => value + 1)} />
     {notice && <Toast notice={notice} bottom={insets.bottom} onClose={dismissNotice}
       onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
-    <PlacePanel day={day} index={selection.index} status={status} currency={currency} freeTime={freeTime(view.input, day.date)}
+    <PlacePanel day={day} index={selection.index} status={status} currency={currency} freeTime={freeTime(displayed?.availableByDate?.[day.date], day.timeZone)}
       canAddWish={wishes.length > 0} minHeight={height * result.panel.ratio}
       onLayout={event => { const bottom = event.nativeEvent.layout.height; setInsets(value => ({ ...value, bottom })); }}
       actions={{

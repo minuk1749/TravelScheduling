@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library'
 import { legColors } from '@travel/design-tokens';
 import { colors, result } from '../src/theme';
 import { json, session } from './helpers';
-import { D1, D2, ITINERARY_A, legId, openResult, resultFixture, REVISION, routes } from './result-fixture';
+import { D1, D2, D3, trip, ITINERARY_A, legId, openResult, resultFixture, REVISION, routes } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
 const card = (name: string) => screen.getByRole('button', { name });
@@ -118,10 +118,13 @@ test('date chips select the first card of the day; 3-7 shows unknown fare and a 
 
 test('3-6: an empty date shows free time and wish addition without a pager, and only lodging and wish markers', async () => {
   const f = resultFixture();
+  f.generate.mockResolvedValueOnce(json({ ...trip(REVISION), availableByDate: {
+    [D3]: { start: '2026-12-05T06:00:00Z', end: '2026-12-05T10:30:00Z' },
+  } }));
   await openResult(f);
   await press('3일 12.5');
   expect(screen.getByText('배치된 장소 없음')).toBeVisible();
-  expect(screen.getByText('여유 시간 09:00 – 21:00 · 12시간')).toBeVisible();
+  expect(screen.getByText('여유 시간 15:00 – 19:30 · 4시간 30분')).toBeVisible();
   expect(screen.getByRole('button', { name: '희망 장소에서 추가' })).toBeVisible();
   expect(screen.queryByRole('button', { name: '다음 장소' })).toBeNull();
   expect(screen.queryByRole('button', { name: '이 장소 수정' })).toBeNull();

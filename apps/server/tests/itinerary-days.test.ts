@@ -85,6 +85,8 @@ test('T12 an early-morning departure transfer that starts the previous evening b
   const [, secondDay, lastDay] = schedule(early).days;
   assert.ok(itemsOf(secondDay).every(item => Date.parse(item.end) <= Date.parse(departure.departure)));
   assert.deepEqual(itemsOf(lastDay), []);
+  assert.equal(early.availableByDate?.[lastDay.date], null);
+  assert.equal(Date.parse(early.availableByDate![secondDay.date]!.end), Date.parse(departure.departure));
 });
 
 test('T12 a late arrival whose transfer ends after midnight bounds the next morning', async () => {
@@ -107,6 +109,8 @@ test('T12 a late arrival whose transfer ends after midnight bounds the next morn
   assert.deepEqual([arrival.kind, localDateTime(arrival.departure)], ['AIRPORT', '2026-12-02T00:30']);
   const readyAt = Date.parse(arrival.departure) + Math.ceil(arrival.selected.minutes) * 60_000;
   const secondDay = schedule(result).days[1];
+  assert.equal(result.availableByDate?.['2026-12-01'], null);
+  assert.equal(Date.parse(result.availableByDate![secondDay.date]!.start), readyAt);
   assert.ok(itemsOf(secondDay).length > 0 && itemsOf(secondDay).every(item => Date.parse(item.start) >= readyAt));
 
   // A visit pinned inside the transfer cannot be kept.

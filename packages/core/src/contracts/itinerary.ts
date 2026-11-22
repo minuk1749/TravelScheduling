@@ -72,6 +72,8 @@ export type TransferIssue = {
 export type FlightConflict = { date: string; arrivalReadyAt: string; departureStartBy: string };
 
 export interface ItineraryResult {
+  /** Flight-adjusted activity windows in the generation response. Older results can omit them. */
+  availableByDate?: Readonly<Record<string, TimeWindow | null>>;
   /** CONFLICT also covers airport transfer/flight issues and an unverified re-query loop. */
   status: CapacityResult['status'];
   capacity: CapacityResult;
