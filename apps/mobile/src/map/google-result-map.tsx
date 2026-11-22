@@ -97,33 +97,42 @@ export function GoogleResultMap(props: ResultMapProps) {
   return <ConfiguredMap {...props} />;
 }
 
+async function requestLocation(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  const { ACCESS_COARSE_LOCATION: coarse, ACCESS_FINE_LOCATION: fine } = PermissionsAndroid.PERMISSIONS;
+  const grants = await PermissionsAndroid.requestMultiple([coarse, fine]);
+  return grants[coarse] === PermissionsAndroid.RESULTS.GRANTED || grants[fine] === PermissionsAndroid.RESULTS.GRANTED;
+}
+
 function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottomInset, dimmed, locateRequest, onSelectMarker }: ResultMapProps) {
   const map = useRef<ComponentRef<typeof MapView>>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [cameraVersion, setCameraVersion] = useState(0);
   const [viewport, setViewport] = useState<MapSize>({ width: 0, height: 0 });
   const [showUser, setShowUser] = useState(false);
   const user = useRef<LatLng | null>(null);
+  const permission = useRef<Promise<boolean> | null>(null);
   // A primitive key refits the camera only when the day's places change, not on every selection.
   const focusKey = useMemo(() => JSON.stringify(markers.filter(marker => focusIds.includes(marker.id))
     .map(marker => marker.coordinate)), [markers, focusIds]);
 
   useEffect(() => {
     const focus: LatLng[] = JSON.parse(focusKey);
-    if (!focus.length) return;
+    if (!mapReady || !focus.length) return;
     const edgePadding = { top: topInset + spacing.section, bottom: bottomInset + spacing.section, left: spacing.section * 2, right: spacing.section * 2 };
+    if (viewport.width <= edgePadding.left + edgePadding.right || viewport.height <= edgePadding.top + edgePadding.bottom) return;
     map.current?.fitToCoordinates(focus, { edgePadding, animated: true });
-  }, [focusKey, topInset, bottomInset]);
+  }, [focusKey, topInset, bottomInset, mapReady, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!locateRequest) return;
     let active = true;
-    const permitted = Platform.OS === 'android'
-      ? PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION).then(value => value === PermissionsAndroid.RESULTS.GRANTED)
-      : Promise.resolve(true);
-    void permitted.then(granted => {
-      if (!active || !granted) return;
-      setShowUser(true);
-      if (user.current) map.current?.animateCamera({ center: user.current });
+    permission.current ??= requestLocation().catch(() => false).finally(() => { permission.current = null; });
+    void permission.current.then(granted => {
+      if (!active) return;
+      setShowUser(granted);
+      if (!granted) user.current = null;
+      else if (user.current) map.current?.animateCamera({ center: user.current });
     });
     return () => { active = false; };
   }, [locateRequest]);
@@ -135,13 +144,14 @@ function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottom
         const { width, height } = event.nativeEvent.layout;
         setViewport({ width, height });
       }}
-      onMapReady={() => setCameraVersion(version => version + 1)}
+      onMapReady={() => { setMapReady(true); setCameraVersion(version => version + 1); }}
       onRegionChangeComplete={() => setCameraVersion(version => version + 1)}
       onUserLocationChange={event => {
         const coordinate = event.nativeEvent.coordinate;
+        if (!showUser || !coordinate) return;
         const first = !user.current;
-        if (coordinate) user.current = { latitude: coordinate.latitude, longitude: coordinate.longitude };
-        if (first && user.current && showUser) map.current?.animateCamera({ center: user.current });
+        user.current = { latitude: coordinate.latitude, longitude: coordinate.longitude };
+        if (first) map.current?.animateCamera({ center: user.current });
       }}>
       {routes.map(route => <Route key={route.id} route={route} dimmed={dimmed} />)}
       {markers.map(marker => {
@@ -154,7 +164,7 @@ function ConfiguredMap({ markers, routes, selectedId, focusIds, topInset, bottom
         </Marker>;
       })}
     </MapView>
-    {cameraVersion > 0 && viewport.width > 0 && viewport.height > 0 && markers.filter(marker => marker.kind === 'AIRPORT').map(marker =>
+    {mapReady && viewport.width > 0 && viewport.height > 0 && markers.filter(marker => marker.kind === 'AIRPORT').map(marker =>
       <AirportIndicator key={`${marker.id}:${marker.coordinate.latitude}:${marker.coordinate.longitude}:${cameraVersion}:${viewport.width}:${viewport.height}`}
         marker={marker} map={map} viewport={viewport} topInset={topInset} bottomInset={bottomInset} />)}
   </View>;
