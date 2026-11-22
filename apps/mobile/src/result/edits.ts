@@ -1,12 +1,14 @@
 import type { TripInputs } from '@travel/core/contracts/itinerary';
-import type { Constraints, VisitEdit } from '@travel/core/contracts/results/model';
+import type { Constraints, LegEdit, VisitEdit } from '@travel/core/contracts/results/model';
 import type { TravelModeName } from '../map/types';
 import type { DayModel } from './days';
 import { shiftLabel } from './format';
 
+type ModeConstraintLeg = Pick<LegEdit, 'date' | 'from' | 'to'>;
+
 /** What the user changed; also tells the map which legs are being recalculated (3-5). */
 export type Change =
-  | { kind: 'MODE'; leg: { key: string; date: string; from: string; to: string }; mode: TravelModeName }
+  | { kind: 'MODE'; leg: ModeConstraintLeg; mode: TravelModeName }
   | { kind: 'VISIT'; visitId: string; date?: string | null; previousDate?: string | null;
       placementOrder?: { before: number | null; after: number | null } }
   | { kind: 'WISH'; visitId: string; date: string; previousDate?: string | null }
@@ -15,9 +17,14 @@ export type Change =
 
 export const sameConstraints = (a: Constraints, b: Constraints) => JSON.stringify(a) === JSON.stringify(b);
 
+/** The saved mode applies to every leg on this date in this direction, including airport transfers. */
+export function sameModeConstraint(a: ModeConstraintLeg, b: ModeConstraintLeg): boolean {
+  return a.date === b.date && a.from === b.from && a.to === b.to;
+}
+
 /** Fixes one leg's mode, replacing an earlier fix of the same date and direction. */
-export function withLegMode(constraints: Constraints, leg: { date: string; from: string; to: string }, mode: TravelModeName): Constraints {
-  const rest = constraints.legModes.filter(row => !(row.date === leg.date && row.from === leg.from && row.to === leg.to));
+export function withLegMode(constraints: Constraints, leg: ModeConstraintLeg, mode: TravelModeName): Constraints {
+  const rest = constraints.legModes.filter(row => !sameModeConstraint(row, leg));
   return { ...constraints, legModes: [...rest, { date: leg.date, from: leg.from, to: leg.to, mode }] };
 }
 

@@ -114,7 +114,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   };
   const swap = (leg: LegModel | null, mode: LegModel['mode'] | undefined) => {
     if (!leg || !mode || !leg.alternatives[mode]) return;
-    itinerary.apply({ kind: 'MODE', leg: { key: leg.key, date: leg.date, from: leg.from, to: leg.to }, mode },
+    itinerary.apply({ kind: 'MODE', leg: { date: leg.date, from: leg.from, to: leg.to }, mode },
       withLegMode(constraints, leg, mode));
   };
   const lodgings = [...new Set(view.input.lodgings.map(lodging => placeName(view, lodging.place.id)))].join(', ') || '당일 여행';

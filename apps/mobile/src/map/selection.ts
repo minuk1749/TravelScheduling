@@ -1,6 +1,6 @@
 import type { ConflictCause } from '../result/conflicts';
 import type { CardModel, DayModel } from '../result/days';
-import type { Change } from '../result/edits';
+import { sameModeConstraint, type Change } from '../result/edits';
 import type { MapRouteEmphasis } from './types';
 
 /** The selected date and card index. Card, marker and highlighted legs always derive from it. */
@@ -93,7 +93,9 @@ export function pendingLegKeys(days: readonly DayModel[], change: Change | null,
   if (!change) return new Set();
   if (change.kind === 'UNDO') return pendingLegKeys(days, change.of, !reversing);
   if (change.kind === 'RETRY') return new Set(days.flatMap(day => day.legs.map(leg => leg.key)));
-  if (change.kind === 'MODE') return new Set([change.leg.key]);
+  if (change.kind === 'MODE') {
+    return new Set(days.flatMap(day => day.legs.filter(leg => sameModeConstraint(leg, change.leg)).map(leg => leg.key)));
+  }
   const placed = findVisit(days, change.visitId);
   const card = placed && selectedCard(days, placed);
   const keys = visitLegKeys(card);
