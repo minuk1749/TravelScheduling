@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ItineraryResult, TripInputs } from '@travel/core/contracts/itinerary';
+import type { LegShape, RouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import type { ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
 import { tripDates } from '@travel/core/contracts/settings/input';
 
@@ -31,6 +32,7 @@ const localDateTime = temporal(value => Temporal.PlainDateTime.from(value));
 const clock = temporal(value => Temporal.PlainTime.from(value));
 const slot = oneOf('BREAKFAST', 'LUNCH', 'DINNER');
 const mode = oneOf('TRANSIT', 'TAXI', 'WALK');
+const legKind = oneOf('DAY', 'AIRPORT');
 const direction = oneOf('ARRIVAL', 'DEPARTURE');
 const status = oneOf('OK', 'CONFLICT', 'OVER_CAPACITY');
 const window = fields({ start: instant, end: instant });
@@ -87,7 +89,7 @@ const capacity = fields({
     travelMinutesLowerBound: nullable(number), requiredMinutesLowerBound: nullable(number) }),
 });
 const estimate = { minutes: number, fare: nullable(number) };
-const comparison = fields({ date, kind: oneOf('DAY', 'AIRPORT'), from: text, to: text, departure: instant,
+const comparison = fields({ date, kind: legKind, from: text, to: text, departure: instant,
   selected: fields({ ...estimate, mode, fixed: bool }), baseline: nullable(fields({ ...estimate, mode })),
   alternatives: fields({ TRANSIT: optional(fields(estimate)), TAXI: optional(fields(estimate)), WALK: optional(fields(estimate)) }),
 });
@@ -110,3 +112,14 @@ export function validGeneratedTrip(value: unknown): boolean {
     !Array.isArray(value.flightConflicts) || value.flightConflicts.length)) return false;
   return detail.status === 'CONFLICT' ? detail.recommendation === null : recommendation(detail.recommendation);
 }
+
+const legShape = fields({
+  date, kind: legKind, from: text, to: text, mode,
+  shape: value => record(value) && (value.status === 'NONE' ||
+    (value.status === 'OK' && typeof value.encodedPolyline === 'string')),
+} satisfies Record<keyof LegShape, Check>);
+
+/** Hash-only responses can omit the ID; the caller also matches the ID it requested. */
+export const validRouteShapes = fields({
+  inputHash: text, itineraryId: optional(text), legs: list(legShape),
+} satisfies Record<keyof RouteShapesResponse, Check>);

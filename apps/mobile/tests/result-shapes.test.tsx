@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor } from 'expo-router/testing-library';
 import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import type { GeneratedTrip } from '../src/api/trips';
+import * as geometry from '../src/map/geometry';
 import { deferred, json } from './helpers';
 import { D1, ITINERARY_A, legId, openResult, plan, resultFixture, REVISION, ROAD, routes, trip, view } from './result-fixture';
 
@@ -16,7 +17,7 @@ function shapes(result: GeneratedTrip, encodedPolyline: string): SavedRouteShape
   })) };
 }
 
-test.each(['cached', 'in flight'])('same-input retry displays B when A’s road shapes are %s', async stateOfA => {
+test.each(['cached', 'in flight', 'malformed and in flight'])('same-input retry displays B when A’s road shapes are %s', async stateOfA => {
   // Re-selecting the wish's existing date recalculates without changing any saved constraints.
   const f = resultFixture({ ...view, input: { ...view.input, visits: view.input.visits.map(visit =>
     visit.id === 'cafe' ? { ...visit, fixedDate: D1 } : visit) } });
@@ -52,9 +53,10 @@ test.each(['cached', 'in flight'])('same-input retry displays B when A’s road 
   await act(async () => second.resolve(json(shapes(b, '??_ibE_ibE'))));
   const bPoints = JSON.stringify([{ latitude: 0, longitude: 0 }, { latitude: 1, longitude: 1 }]);
   expect(await screen.findByTestId(`points-${commonLeg}`)).toHaveTextContent(bPoints);
-  if (stateOfA === 'in flight') {
-    // The transport resolves even though the superseded request was cancelled.
-    await act(async () => first.resolve(json(shapes(a, ROAD))));
+  if (stateOfA !== 'cached') {
+    // A superseded request can deliver a success or an unreadable response after the newer geometry.
+    const response = stateOfA === 'in flight' ? shapes(a, ROAD) : { ...shapes(a, ROAD), legs: null };
+    await act(async () => first.resolve(json(response)));
   }
   expect(screen.getByTestId(`points-${commonLeg}`)).toHaveTextContent(bPoints);
   expect(screen.getByTestId(`points-${museumLeg}`)).toHaveTextContent(bPoints);
@@ -73,4 +75,36 @@ test.each([
   expect(routes()[museumLeg]).toMatch(/ STRAIGHT$/);
   await fireEvent.press(retry);
   await waitFor(() => expect(routes()[museumLeg]).toMatch(/ ROAD$/));
+});
+
+const leg = shapes(trip(REVISION), ROAD).legs[0];
+test.each([
+  ['missing legs', undefined], ['null shape', [{ ...leg, shape: null }]],
+])('matching identifiers with %s shows fallback and retries only the shapes GET', async (_label, legs) => {
+  const f = resultFixture();
+  f.shapes.mockResolvedValueOnce(json({ itineraryId: ITINERARY_A, inputHash: REVISION, legs }));
+  await openResult(f);
+  expect(await screen.findByRole('button', { name: '경로 모양 다시 불러오기' })).toBeVisible();
+  expect(routes()[museumLeg]).toMatch(/TRANSIT DOTTED STRONG .* STRAIGHT$/);
+  expect(screen.queryByTestId(`points-${museumLeg}`)).toBeNull();
+  await press('경로 모양 다시 불러오기');
+  expect(await screen.findByTestId(`points-${museumLeg}`)).toBeVisible();
+  expect(screen.queryByRole('button', { name: '경로 모양 다시 불러오기' })).toBeNull();
+  expect(f.shapes).toHaveBeenCalledTimes(2);
+  expect(f.generate).toHaveBeenCalledTimes(1);
+});
+
+test('an unexpected error preparing a valid road shape reaches the same recoverable fallback', async () => {
+  const f = resultFixture(), first = deferred<Response>();
+  f.shapes.mockReturnValueOnce(first.promise);
+  await openResult(f);
+  await waitFor(() => expect(f.shapes).toHaveBeenCalledTimes(1));
+  const key = jest.spyOn(geometry, 'roadShapeKey').mockImplementationOnce(() => { throw new Error('cannot prepare shape'); });
+  try {
+    await act(async () => first.resolve(json(shapes(trip(REVISION), ROAD))));
+    expect(await screen.findByRole('button', { name: '경로 모양 다시 불러오기' })).toBeVisible();
+    expect(routes()[museumLeg]).toMatch(/ STRAIGHT$/);
+    await press('경로 모양 다시 불러오기');
+    expect(await screen.findByTestId(`points-${museumLeg}`)).toBeVisible();
+  } finally { key.mockRestore(); }
 });

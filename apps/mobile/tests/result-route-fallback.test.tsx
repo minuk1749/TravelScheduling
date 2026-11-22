@@ -1,4 +1,4 @@
-import { waitFor } from 'expo-router/testing-library';
+import { screen, waitFor } from 'expo-router/testing-library';
 import { json } from './helpers';
 import { D1, legId, openResult, place, resultFixture, REVISION, ROAD, routes, trip } from './result-fixture';
 
@@ -17,4 +17,5 @@ test('each leg keeps its own mode and falls back independently when a shape is u
   expect(routes()[legId(D1, 'airport', 'hotel', 'AIRPORT')]).toMatch(/TRANSIT DOTTED .* STRAIGHT$/);
   expect(routes()[legId(D1, 'hotel', 'museum')]).toMatch(/TRANSIT DOTTED .* STRAIGHT$/);
   expect(routes()[legId(D1, 'market', 'hotel')]).toMatch(/WALK DOTTED .* STRAIGHT$/);
+  expect(screen.queryByRole('button', { name: '경로 모양 다시 불러오기' })).toBeNull();
 });

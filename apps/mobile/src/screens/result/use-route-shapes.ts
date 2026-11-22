@@ -25,7 +25,7 @@ export function useRouteShapes(tripId: string, result: GeneratedTrip | null) {
     if (!inputHash || !itineraryId) return;
     const key = { tripId, inputHash, itineraryId };
     const request = new AbortController();
-    api.shapes(tripId, inputHash, itineraryId, request.signal).then(legs => {
+    void api.shapes(tripId, inputHash, itineraryId, request.signal).then(legs => {
       if (request.signal.aborted) return;
       const shapes = new Map<string, readonly LatLng[]>();
       for (const leg of legs) {
@@ -33,7 +33,9 @@ export function useRouteShapes(tripId: string, result: GeneratedTrip | null) {
         if (points) shapes.set(roadShapeKey(legKey(leg), leg.mode), points);
       }
       setLoaded({ ...key, shapes, failed: false });
-    }, () => { if (!request.signal.aborted) setLoaded({ ...key, shapes: NONE, failed: true }); });
+    }).catch(() => {
+      if (!request.signal.aborted) setLoaded({ ...key, shapes: NONE, failed: true });
+    });
     return () => request.abort();
   }, [api, tripId, inputHash, itineraryId, attempt]);
   const current = loaded?.tripId === tripId && loaded.inputHash === inputHash && loaded.itineraryId === itineraryId ? loaded : null;

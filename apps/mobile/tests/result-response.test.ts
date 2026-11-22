@@ -1,4 +1,4 @@
-import { validGeneratedTrip, validResultView, validSnapshot } from '../src/api/result-response';
+import { validGeneratedTrip, validResultView, validRouteShapes, validSnapshot } from '../src/api/result-response';
 import { conflictTrip, D1, REVISION, trip, view } from './result-fixture';
 
 const ok = trip(REVISION);
@@ -36,4 +36,16 @@ test('acknowledging a save needs a full input and revision while a read addition
   for (const value of [{}, { revision: view.revision }, { input: view.input, revision: 42 },
     { ...snapshot, input: { ...view.input, visits: [null] } }, { ...snapshot, input: { ...view.input, timeZone: 'Bad/Zone' } },
     { ...snapshot, input: { ...view.input, endDate: '2025-12-01' } }, { ...snapshot, input: { ...view.input, flights: {} } }]) expect(validSnapshot(value)).toBe(false);
+});
+
+test('the shapes contract permits an empty list, explicit NONE and legacy hash-only responses', () => {
+  const leg = { date: D1, kind: 'DAY', from: 'hotel', to: 'museum', mode: 'TRANSIT', shape: { status: 'NONE' } };
+  expect(validRouteShapes({ inputHash: REVISION, legs: [] })).toBe(true);
+  expect(validRouteShapes({ inputHash: REVISION, legs: [leg] })).toBe(true);
+  const valid = { inputHash: REVISION, itineraryId: ok.itineraryId };
+  for (const legs of [undefined, null, {}, [null], [{ ...leg, from: undefined }], [{ ...leg, mode: 'CAR' }],
+    [{ ...leg, shape: { status: 'FAILED' } }], [{ ...leg, shape: { status: 'OK' } }],
+    [{ ...leg, shape: { status: 'OK', encodedPolyline: 123 } }]]) {
+    expect(validRouteShapes({ ...valid, legs })).toBe(false);
+  }
 });

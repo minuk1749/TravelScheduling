@@ -8,7 +8,7 @@ import type { LivingSettings, SettingsView } from '@travel/core/contracts/settin
 import type { TripCreation, TripSummary } from '@travel/core/contracts/trips/create';
 import { useRuntime } from '../auth/provider';
 import { ApiFailure, type ApiClient } from './client';
-import { validGeneratedTrip, validResultView, validSnapshot } from './result-response';
+import { validGeneratedTrip, validResultView, validRouteShapes, validSnapshot } from './result-response';
 
 const trips = '/api/trips';
 const trip = (id: string) => `${trips}/${encodeURIComponent(id)}`;
@@ -60,8 +60,8 @@ class TripApi {
   /** T19 road shapes for the saved result; kept in memory only (never persisted). */
   async shapes(id: string, inputHash: string, itineraryId: string, signal: AbortSignal) {
     const query = new URLSearchParams({ inputHash, itineraryId });
-    const response = await this.api.request<RouteShapesResponse>(`${trip(id)}/itinerary/shapes?${query}`, { signal });
-    if (response?.inputHash !== inputHash || response.itineraryId !== itineraryId) {
+    const response = await this.api.request<RouteShapesResponse>(`${trip(id)}/itinerary/shapes?${query}`, { signal, validate: validRouteShapes });
+    if (response.inputHash !== inputHash || response.itineraryId !== itineraryId) {
       throw new ApiFailure(409, 'RESULT_UNAVAILABLE', '표시 중인 일정의 경로를 확인할 수 없어요.');
     }
     return response.legs;
