@@ -7,7 +7,7 @@ import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shap
 import Generate from '../app/(app)/trips/[id]/generate';
 import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
-import { MapAdapterProvider } from '../src/map/provider';
+import { MapAdapterProvider, type ResultMap } from '../src/map/provider';
 import { RootNavigator } from '../src/navigation/root-navigator';
 import { FakeResultMap } from './fake-result-map';
 import { fixture, json, session } from './helpers';
@@ -57,7 +57,7 @@ function leg(date: string, kind: 'DAY' | 'AIRPORT', from: Name, to: Name, depart
   return { date, kind, from: place(from), to: place(to), departure: at(date, departure),
     selected: { mode, minutes, fare, fixed }, baseline: { mode: 'TRANSIT', minutes, fare }, alternatives };
 }
-const stop = (date: string, id: Name, start: string, end: string) =>
+const stop = (date: string, id: string, start: string, end: string) =>
   ({ kind: 'VISIT' as const, visitId: id, start: at(date, start), end: at(date, end) });
 const scheduleLeg = (comparison: LegComparison) => ({
   from: comparison.from, to: comparison.to, mode: comparison.selected.mode, fixed: comparison.selected.fixed,
@@ -149,16 +149,16 @@ export function resultFixture(initial: ResultView = view) {
   return { ...f, generate, save, read, shapes, current: () => current };
 }
 
-export async function renderResult(f: ReturnType<typeof resultFixture>) {
+export async function renderResult(f: ReturnType<typeof resultFixture>, map: ResultMap = FakeResultMap) {
   await renderRouter({
-    _layout: () => <AuthProvider runtime={f.runtime}><MapAdapterProvider map={FakeResultMap}><RootNavigator /></MapAdapterProvider></AuthProvider>,
+    _layout: () => <AuthProvider runtime={f.runtime}><MapAdapterProvider map={map}><RootNavigator /></MapAdapterProvider></AuthProvider>,
     login: () => null, '(app)/index': () => null, '(app)/trips/[id]/index': () => <Text>저장한 여행</Text>,
     '(app)/trips/[id]/settings': () => <Text>하루 생활</Text>, '(app)/trips/[id]/generate': Generate,
   }, { initialUrl: '/trips/trip/generate' });
 }
 
-export async function openResult(f: ReturnType<typeof resultFixture>) {
-  await renderResult(f);
+export async function openResult(f: ReturnType<typeof resultFixture>, map?: ResultMap) {
+  await renderResult(f, map);
   await screen.findByTestId('place-panel');
 }
 

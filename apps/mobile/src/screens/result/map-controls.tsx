@@ -3,12 +3,19 @@ import { colors, radius, result, shadows, size, spacing, text } from '../../them
 import type { Notice } from './use-itinerary';
 
 /** §6 legend pill above the panel: 이동 · 도보 · 도심 밖 · 희망 N. */
-export function Legend({ wishes, bottom }: { wishes: number; bottom: number }) {
+export function Legend({ wishes, bottom, onAddWish }: { wishes: number; bottom: number; onAddWish?: () => void }) {
+  const count = <Text style={[text.tiny, styles.legendText, wishes > 0 && onAddWish && styles.wishLink]}>
+    <Text style={{ color: colors.peach.marker }}>★</Text> 희망 {wishes}
+  </Text>;
   return <View testID="map-legend" style={[styles.legend, { bottom: bottom + spacing.cardGap }]}>
     <Text style={[text.tiny, styles.legendText]}>
       <Text style={{ color: colors.sky.primary }}>━</Text> 이동 · <Text style={{ color: colors.sky.primary }}>┈</Text> 도보 ·{' '}
-      <Text style={{ color: colors.sky.primary }}>⌒</Text> 도심 밖 · <Text style={{ color: colors.peach.marker }}>★</Text> 희망 {wishes}
+      <Text style={{ color: colors.sky.primary }}>⌒</Text> 도심 밖 ·{' '}
     </Text>
+    {wishes > 0 ? <Pressable accessibilityRole="button" accessibilityLabel={`희망 장소 추가, ${wishes}곳 중 선택`}
+      disabled={!onAddWish} accessibilityState={{ disabled: !onAddWish }} onPress={onAddWish} style={styles.wishButton}>
+      {count}
+    </Pressable> : count}
   </View>;
 }
 
@@ -44,8 +51,10 @@ export function Toast({ notice, bottom, onUndo, onClose }: { notice: Notice; bot
 
 const floating = { position: 'absolute' as const, backgroundColor: colors.card, ...shadows.floating };
 const styles = StyleSheet.create({
-  legend: { ...floating, left: result.locate.inset, paddingHorizontal: spacing.cardGap, paddingVertical: spacing.steps[0],
-    borderRadius: radius.chip },
+  legend: { ...floating, left: result.locate.inset, flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.cardGap, minHeight: size.touch, borderRadius: radius.chip },
+  wishButton: { minHeight: size.touch, minWidth: size.touch, justifyContent: 'center' },
+  wishLink: { color: colors.sky.text, textDecorationLine: 'underline' },
   legendText: { color: colors.gray.secondary },
   locate: { ...floating, right: result.locate.inset, width: result.locate.size, height: result.locate.size,
     borderRadius: result.locate.size / 2, alignItems: 'center', justifyContent: 'center' },

@@ -14,7 +14,7 @@ import { buildDays, placedVisitIds, type DayModel, type LegModel } from '../../r
 import { withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
 import { colors, result } from '../../theme';
-import { cityName } from '../trip-input/presentation';
+import { cityName, kindLabels } from '../trip-input/presentation';
 import { EditSheet } from './edit-sheet';
 import { LocateButton, Legend, ShapeRetry, Toast } from './map-controls';
 import { PlacePanel, type PanelStatus } from './place-panel';
@@ -86,7 +86,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   const placed = placedVisitIds(days);
   const wishes = view.input.visits.filter(visit => visit.priority === 'WISH' && !placed.has(visit.id))
-    .map(visit => ({ visitId: visit.id, name: placeName(view, visit.place.id) }));
+    .map((visit, index) => ({ visitId: visit.id, name: view.places[visit.place.id]?.name ??
+      `희망 장소 ${index + 1} · ${kindLabels[visit.kind]} · ${visit.minutes}분` }));
   const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editSelection ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
   const scene = mapScene({ view, day, card, focus, placed, causes,
     pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
@@ -103,6 +104,10 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         : { kind: 'READY' };
 
   const chooseDate = (date: string) => { setSheet(null); select(selectDate(date)); };
+  const openWishPicker = () => {
+    const first = wishes[0];
+    if (first) setSheet({ kind: 'WISH', visitId: first.visitId, date: day.date, chooseVisit: true });
+  };
   const selectMarker = (id: string) => {
     const marker = scene.markers.find(item => item.id === id);
     if (marker?.kind === 'PLACED') {
@@ -129,7 +134,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         back={back} edit={editConditions} disabled={calculating} />
       <DateChips days={days} selected={day.date} onSelect={chooseDate} />
     </SafeAreaView>
-    {!notice && <Legend wishes={wishes.length} bottom={insets.bottom} />}
+    {!notice && <Legend wishes={wishes.length} bottom={insets.bottom} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
     {shapesFailed && displayed === shown && !notice && <ShapeRetry bottom={insets.bottom} onPress={retryShapes} />}
     <LocateButton bottom={insets.bottom} onPress={() => setLocate(value => value + 1)} />
     {notice && <Toast notice={notice} bottom={insets.bottom} onClose={dismissNotice}
@@ -140,10 +145,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       actions={{
         onIndex: index => select({ date: day.date, index }), onSchedule: () => setSheet({ kind: 'SCHEDULE' }),
         onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: target => swap(target.arrival, target.arrival?.swap?.mode),
-        onAddWish: () => {
-          const first = wishes[0];
-          if (first) setSheet({ kind: 'WISH', visitId: first.visitId, date: day.date, chooseVisit: true });
-        },
+        onAddWish: openWishPicker,
         onReleaseMode: leg => itinerary.apply({ kind: 'MODE', leg, mode: null }, withLegMode(constraints, leg, null)),
         onShowPrevious: () => setPreviousFor(phase), onRetry: itinerary.retry,
         onRevert: itinerary.revert, onEditConditions: editConditions,
