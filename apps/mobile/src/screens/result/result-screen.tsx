@@ -25,12 +25,12 @@ import { useRouteShapes } from './use-route-shapes';
 import { WishSheet } from './wish-sheet';
 
 type Sheet = { kind: 'SCHEDULE' } | { kind: 'EDIT'; visitId: string } | { kind: 'WISH'; visitId: string | null; date: string };
-type Picked = { result: unknown; selection: Selection; visitId: string | null };
+type Picked = { days: readonly DayModel[]; result: unknown; selection: Selection; visitId: string | null };
 const NOTICE_MS = 6000;
 const NOTHING: ReadonlySet<string> = new Set();
 
 const pick = (days: readonly DayModel[], result: unknown, selection: Selection): Picked =>
-  ({ result, selection, visitId: selectedCard(days, selection)?.visitId ?? null });
+  ({ days, result, selection, visitId: selectedCard(days, selection)?.visitId ?? null });
 
 /**
  * Map-first result screen (design §6–7, states 3-1–3-9). Card, marker and legs follow one selection.
@@ -52,8 +52,11 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   const [picked, setPicked] = useState<Picked>(() => pick(days, shown, initialSelection(days, causes)));
   let current = picked;
-  if (picked.result !== shown) {
-    current = pick(days, shown, conflict ? initialSelection(days, causes) : reconcileSelection(days, picked.selection, focusVisit ?? picked.visitId));
+  if (picked.days !== days || picked.result !== shown) {
+    const newResult = picked.result !== shown;
+    const visitId = newResult ? focusVisit ?? picked.visitId : picked.visitId;
+    const selection = newResult && conflict ? initialSelection(days, causes) : reconcileSelection(days, picked.selection, visitId);
+    current = pick(days, shown, selection);
     setPicked(current);
   }
   const select = (selection: Selection) => setPicked(pick(days, shown, selection));
@@ -80,7 +83,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const wishes = view.input.visits.filter(visit => visit.priority === 'WISH' && !placed.has(visit.id))
     .map(visit => ({ visitId: visit.id, name: placeName(view, visit.place.id) }));
   const editing = sheet?.kind === 'EDIT' ? days.flatMap(row => row.cards).find(item => item.visitId === sheet.visitId) ?? null : null;
-  const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : conflict ? 'CONFLICT' : editing ? 'EDIT' : 'BROWSE';
+  const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editing ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
   const scene = mapScene({ view, day, card: editing ?? card, focus, placed, shapes, causes,
     pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
   const constraints = constraintsFrom(view.input);
@@ -110,7 +113,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   return <View style={styles.screen}>
     <ResultMap markers={scene.markers} routes={scene.routes} focusIds={scene.focusIds}
-      selectedId={sheet?.kind === 'WISH' ? sheet.visitId : card?.visitId ?? null} topInset={insets.top} bottomInset={insets.bottom}
+      selectedId={sheet?.kind === 'WISH' ? sheet.visitId : (editing ?? card)?.visitId ?? null} topInset={insets.top} bottomInset={insets.bottom}
       dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
     <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}
       onLayout={event => { const top = event.nativeEvent.layout.height; setInsets(value => ({ ...value, top })); }}>

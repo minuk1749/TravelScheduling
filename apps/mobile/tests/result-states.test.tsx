@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library'
 import { constraintsFrom } from '@travel/core/contracts/results/model';
 import { colors } from '../src/theme';
 import { json } from './helpers';
-import { conflictTrip, D1, openResult, place, resultFixture, routes, trip, view } from './result-fixture';
+import { conflictTrip, D1, legId, openResult, place, resultFixture, routes, trip, view } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
 const sheet = () => within(screen.getByTestId('form-sheet'));
@@ -34,10 +34,20 @@ test('3-8: a conflicting fix selects the cause card, fades every leg, draws the 
   expect(routes()['conflict:1']).toBe(`2 TRANSIT FLOATING CONFLICT ${colors.red.text} STRAIGHT`);
   expect(screen.queryByTestId('result-toast')).toBeNull();
 
+  await press('지도 도쿄 국립박물관');
+  expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
   await press('아메요코 시장 고정 수정');
   expect(sheet().getByRole('header', { name: '아메요코 시장' })).toBeVisible();
   expect(sheet().getByLabelText('순서 고정')).toHaveProp('value', true);
+  expect(screen.getByRole('button', { name: '지도 아메요코 시장', selected: true })).toBeVisible();
+  expect(Object.entries(routes()).filter(([, route]) => / STRONG /.test(route)).map(([id]) => id)).toEqual([
+    legId(D1, 'museum', 'market'), legId(D1, 'market', 'hotel'),
+  ]);
+  expect(routes()['conflict:1']).toBeUndefined();
   await fireEvent.press(sheet().getByRole('button', { name: '취소' }));
+  expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
+  expect(routes()['conflict:1']).toMatch(/ CONFLICT /);
+  expect(Object.values(routes()).some(route => / STRONG /.test(route))).toBe(false);
 
   await press('변경 취소');
   await waitFor(() => expect(f.generate).toHaveBeenCalledTimes(3));
@@ -112,4 +122,31 @@ test('the conditions action leaves for living settings; a CONFLICT first calcula
   expect(f.shapes).not.toHaveBeenCalled();
   await press('여행 조건 수정');
   expect(screen).toHavePathname('/trips/trip/settings');
+});
+
+
+test('a conflict-only wish card falls back to the same visible card and marker in the previous schedule', async () => {
+  const f = resultFixture();
+  await openResult(f);
+  await press('지도 아사쿠사 카페');
+  f.generate.mockImplementationOnce(async () => {
+    const conflict = conflictTrip(f.current().revision);
+    conflict.capacity.unplaced = [{ visitId: 'cafe', reason: 'TIME_WINDOW', fixed: true }];
+    return json(conflict);
+  });
+  await fireEvent.press(sheet().getByRole('button', { name: '1일차에 추가하고 다시 계산' }));
+  await screen.findByRole('button', { name: '아사쿠사 카페 고정 수정' });
+  expect(screen.getByRole('button', { name: '지도 아사쿠사 카페', selected: true })).toBeVisible();
+  await press('아사쿠사 카페 고정 수정');
+  await fireEvent(sheet().getByLabelText('순서 고정'), 'valueChange', true);
+  f.generate.mockRejectedValueOnce(new Error('offline'));
+  await fireEvent.press(sheet().getByRole('button', { name: '적용하고 다시 계산' }));
+  await screen.findByText('⚠ 동선을 계산하지 못했어요');
+  await press('이전 일정 보기');
+  expect(screen.getByRole('button', { name: '2번 아메요코 시장, 13:20부터 14:05까지', selected: true })).toBeVisible();
+  expect(screen.getByRole('button', { name: '지도 아메요코 시장', selected: true })).toBeVisible();
+  expect(screen.getByText('2 / 2')).toBeVisible();
+  expect(screen.getByRole('button', { name: '다음 장소' })).toBeDisabled();
+  await press('이전 장소');
+  expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
 });
