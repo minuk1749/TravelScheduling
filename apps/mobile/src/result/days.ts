@@ -113,7 +113,7 @@ function placements(result: ItineraryResult | null): Map<string, Placement> {
 }
 
 type Context = {
-  view: ResultView; before: Map<string, Placement> | null; issues: Map<string, string>;
+  view: ResultView; before: Map<string, Placement> | null;
 };
 
 function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT' }> | null, visitId: string,
@@ -127,12 +127,12 @@ function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT
   const moved = !!stop && !!before && (minutesBetween(before.start, stop.start) !== 0 || minutesBetween(before.end, stop.end) !== 0);
   return {
     visitId, placeId, number, name: placeName(context.view, placeId), kind: visit.kind, stay: visit.minutes,
-    start: stop?.start ?? null, end: stop?.end ?? null, fixed: fixedLabel(visit), arrival, departure,
+    start: stop?.start ?? null, end: stop?.end ?? null, fixed: visit.fixedDate && visit.fixedDate !== date ? null : fixedLabel(visit), arrival, departure,
     wait: arrival && stop ? Math.max(0, Math.round(minutesBetween(arrival.arrival, stop.start))) : 0,
     returnAt: last && departure && context.view.input.lodgings.some(lodging => lodging.place.id === departure.to) ? departure.arrival : null,
     shift: stop && before?.date === date ? Math.round(minutesBetween(before.start, stop.start)) : 0,
     changed: !!context.before && !!stop && (!before || before.date !== date || moved),
-    issue: context.issues.get(visitId) ?? null,
+    issue: null,
   };
 }
 
@@ -195,10 +195,7 @@ function bounds(stops: readonly Stop[], legs: readonly LegModel[]) {
 export function buildDays(view: ResultView, shown: ItineraryResult | null, previous: ItineraryResult | null,
   causes: readonly ConflictCause[] = []): DayModel[] {
   const schedule = displayedSchedule(shown);
-  const context: Context = {
-    view, before: displayedSchedule(previous) ? placements(previous) : null,
-    issues: new Map(causes.flatMap(cause => cause.visitId ? [[cause.visitId, cause.message] as const] : [])),
-  };
+  const context: Context = { view, before: displayedSchedule(previous) ? placements(previous) : null };
   const zone = view.input.timeZone;
   const comparisons = [...shown?.comparisons ?? []].sort((a, b) => Temporal.Instant.compare(a.departure, b.departure));
   const byDeparture = byLocalDate(comparisons, zone, leg => leg.departure);
@@ -214,12 +211,19 @@ export function buildDays(view: ResultView, shown: ItineraryResult | null, previ
     return { date, number: index + 1, timeZone: scheduled?.timeZone ?? view.input.timeZone, cards, legs,
       rows: timeline(events.get(date) ?? [], stops, cards, legs), ...bounds(stops, legs), travelMinutes };
   });
-  const shownVisits = new Set(days.flatMap(day => day.cards.map(item => item.visitId)));
+  // A failed move leaves the last successful stop on its original day. The cause belongs to the
+  // requested day, where it has no scheduled time or legs until the next calculation succeeds.
   for (const cause of causes) {
-    if (!cause.visitId || shownVisits.has(cause.visitId)) continue;
-    const day = days.find(row => row.date === (cause.date ?? view.input.startDate)) ?? days[0];
-    const item = day && card(context, day.date, null, cause.visitId, null, [], false);
-    if (item) { day.cards.push(item); shownVisits.add(cause.visitId); }
+    if (!cause.visitId) continue;
+    const day = cause.date ? days.find(row => row.date === cause.date)
+      : days.find(row => row.cards.some(item => item.visitId === cause.visitId)) ?? days[0];
+    if (!day) continue;
+    const existing = day.cards.find(item => item.visitId === cause.visitId);
+    if (existing) existing.issue = cause.message;
+    else {
+      const item = card(context, day.date, null, cause.visitId, null, [], false);
+      if (item) day.cards.push({ ...item, issue: cause.message });
+    }
   }
   return days;
 }

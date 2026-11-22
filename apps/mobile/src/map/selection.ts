@@ -47,12 +47,17 @@ export function swipeTarget(index: number, distance: number, velocity: number, c
   return clampIndex(index + delta, count);
 }
 
-export function findVisit(days: readonly DayModel[], visitId: string): Selection | null {
+/** Prefer the occurrence on the requested date; without a date, prefer the actual scheduled stop. */
+export function findVisit(days: readonly DayModel[], visitId: string, preferredDate?: string | null): Selection | null {
+  let found: Selection | null = null;
   for (const day of days) {
     const index = day.cards.findIndex(card => card.visitId === visitId);
-    if (index >= 0) return { date: day.date, index };
+    if (index < 0) continue;
+    const match = { date: day.date, index };
+    if (day.date === preferredDate) return match;
+    if (!found || day.cards[index].start !== null) found = match;
   }
-  return null;
+  return found;
 }
 
 /** "날짜를 바꾸면 그날 첫 장소 카드를 선택한다." */
@@ -61,7 +66,7 @@ export const selectDate = (date: string): Selection => ({ date, index: 0 });
 /** 3-1 starts at the first date's first card; 3-8 starts at the first cause's card or date. */
 export function initialSelection(days: readonly DayModel[], causes: readonly ConflictCause[] = []): Selection {
   for (const cause of causes) {
-    const found = cause.visitId ? findVisit(days, cause.visitId) : null;
+    const found = cause.visitId ? findVisit(days, cause.visitId, cause.date) : null;
     if (found) return found;
   }
   const date = causes.find(cause => cause.date && days.some(day => day.date === cause.date))?.date;
@@ -70,7 +75,7 @@ export function initialSelection(days: readonly DayModel[], causes: readonly Con
 
 /** After a recalculation keep the same visit selected when it still exists, else the same date. */
 export function reconcileSelection(days: readonly DayModel[], previous: Selection, visitId: string | null): Selection {
-  const found = visitId ? findVisit(days, visitId) : null;
+  const found = visitId ? findVisit(days, visitId, previous.date) : null;
   if (found) return found;
   const day = dayOf(days, previous);
   return day ? { date: day.date, index: clampIndex(previous.index, day.cards.length) } : previous;

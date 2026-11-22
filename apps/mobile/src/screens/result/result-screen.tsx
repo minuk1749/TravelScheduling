@@ -82,7 +82,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const placed = placedVisitIds(days);
   const wishes = view.input.visits.filter(visit => visit.priority === 'WISH' && !placed.has(visit.id))
     .map(visit => ({ visitId: visit.id, name: placeName(view, visit.place.id) }));
-  const editing = sheet?.kind === 'EDIT' ? days.flatMap(row => row.cards).find(item => item.visitId === sheet.visitId) ?? null : null;
+  const editing = sheet?.kind === 'EDIT' ? day.cards.find(item => item.visitId === sheet.visitId) ?? null : null;
   const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editing ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
   const scene = mapScene({ view, day, card: editing ?? card, focus, placed, shapes, causes,
     pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
@@ -145,9 +145,9 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     {sheet?.kind === 'SCHEDULE' && <ScheduleSheet day={day} places={view.places} currency={currency} efficiency={displayed?.efficiency ?? null}
       onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
-      select={visitId => { setSheet(null); const found = findVisit(days, visitId); if (found) select(found); }} />}
+      select={visitId => { setSheet(null); const found = findVisit([day], visitId); if (found) select(found); }} />}
     {sheet?.kind === 'EDIT' && editing && <EditSheet view={view} card={editing} days={days} current={editOf(editing.visitId)}
-      day={days.find(row => row.cards.includes(editing)) ?? day} close={() => setSheet(null)}
+      day={day} close={() => setSheet(null)}
       apply={edit => {
         setSheet(null);
         const previousDate = editing.start ? day.date : editOf(edit.id).fixedDate;
