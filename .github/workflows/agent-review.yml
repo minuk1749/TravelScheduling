@@ -25,6 +25,7 @@ jobs:
       issues: write
       pull-requests: write
     outputs:
+      context: ${{ steps.g.outputs.context }}
       go: ${{ steps.g.outputs.go }}
       task: ${{ steps.g.outputs.task }}
       issue: ${{ steps.g.outputs.issue }}
@@ -88,6 +89,8 @@ jobs:
 
           n=$(gh api --paginate "$R/issues/$issue/comments" --jq '.[] | select(.user.login == "github-actions[bot]") | .body' | grep -c '<!-- agent-review -->' || true)
           out round "$((n + 1))"
+          review_context=$(node .github/agent/resume-review.mjs context)
+          out context "$review_context"
           out go true
 
   test:
@@ -195,9 +198,10 @@ jobs:
           echo "model=${OVERRIDE:-$(node .github/agent/model-for.mjs claude "$TASK")}" >> "$GITHUB_OUTPUT"
           echo "effort=$(node .github/agent/model-for.mjs claude-effort "$TASK")" >> "$GITHUB_OUTPUT"
           echo "schema=$(jq -c . .github/agent/review-schema.json)" >> "$GITHUB_OUTPUT"
+          jq -Rrs '"review_guide=" + tojson' .github/agent/prompts/review.md >> "$GITHUB_OUTPUT"
       - id: claude
         uses: anthropics/claude-code-action@v1
-        with:
+        with: &review_invocation
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           prompt: |
@@ -206,18 +210,32 @@ jobs:
             기준 문서와 리뷰 지침은 현재 폴더의 develop 버전을 읽어라. 변경 diff는 review-input/changes.diff,
             후보 코드와 테스트는 review-input/pr/, 작성자의 설명은 review-input/pr-body.md에 있다.
             같은 커밋의 Actions 필수 검사가 통과했다. 실제 검사 로그는 review-input/test-tail.log에 있다.
-            .github/agent/prompts/review.md를 읽고 지정된 JSON으로 응답하라.
+            ${{ fromJSON(steps.pick.outputs.review_guide) }}
           claude_args: >-
             --max-turns 40 --tools "Read,Grep,Glob" --disallowedTools "Bash,Edit,Write,NotebookEdit,Agent,Task"
             --json-schema '${{ steps.pick.outputs.schema }}'
             ${{ steps.pick.outputs.model && format('--model {0}', steps.pick.outputs.model) || '' }}
             ${{ steps.pick.outputs.effort && format('--effort {0}', steps.pick.outputs.effort) || '' }}
-      - name: Validate Claude review
+      - name: Validate Claude review ${{ needs.gate.outputs.context }}
+        id: validate_review
+        continue-on-error: true
         env:
           RESULT: ${{ steps.claude.outputs.structured_output }}
-        run: |
-          printf '%s' "$RESULT" > "$RUNNER_TEMP/claude-review.json"
-          node .github/agent/review-record.mjs review "$RUNNER_TEMP/claude-review.json" >/dev/null
+        run: &validate_review |
+          candidate=$(mktemp "$RUNNER_TEMP/claude-review.XXXXXX")
+          printf '%s' "$RESULT" > "$candidate"
+          node .github/agent/review-record.mjs review "$candidate" >/dev/null
+          mv "$candidate" "$RUNNER_TEMP/claude-review.json"
+      - name: Repeat the review once if its record is invalid
+        id: retry_claude
+        if: steps.validate_review.outcome == 'failure'
+        uses: anthropics/claude-code-action@v1
+        with: *review_invocation
+      - name: Validate repeated Claude review ${{ needs.gate.outputs.context }}
+        if: steps.validate_review.outcome == 'failure'
+        env:
+          RESULT: ${{ steps.retry_claude.outputs.structured_output }}
+        run: *validate_review
       - uses: actions/upload-artifact@v4
         with:
           name: review-json
@@ -277,7 +295,8 @@ jobs:
           path: ${{ runner.temp }}/request.json
           overwrite: true
           retention-days: 14
-      - if: steps.request.outputs.ready == 'true'
+      - name: Publish verified Codex review request
+        if: steps.request.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

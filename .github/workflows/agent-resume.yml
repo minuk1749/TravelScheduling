@@ -1,6 +1,6 @@
 # 재개: 사람이 agent-paused 이슈를 닫으면, 그 이슈가 멈춘 작업을 자동으로 다시 실행한다.
 #   <!-- resume:claude issue=N pr=M --> → 같은 작업을 다시 실행. 이전 규칙의 PR은 먼저 양쪽 리뷰를 요청
-#   <!-- resume:review pr=M -->         → PR을 닫았다 다시 열어 테스트·리뷰(agent-review)를 다시 실행
+#   <!-- resume:review pr=M -->         → 같은 입력의 리뷰 검증 실패는 원래 실행에서 재시도
 # Mac 러너(Codex)는 이슈가 닫히면 다음 실행에서 스스로 재개하므로 표시가 없다.
 # 다른 agent-paused 이슈가 아직 열려 있으면 재개하지 않는다.
 name: agent-resume
@@ -25,6 +25,10 @@ jobs:
       issues: write
       pull-requests: write
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -75,7 +79,15 @@ jobs:
               ;;
             review)
               if ! pr_open "$pr"; then gh issue comment "$CLOSED" --body "PR이 열려 있지 않아 재개할 리뷰가 없습니다."; exit 0; fi
-              restart_review
+              action=$(node .github/agent/resume-review.mjs "$pr")
+              case "$action" in
+                reopen) restart_review ;;
+                rerun) gh issue comment "$CLOSED" --body "재개: PR #$pr 의 실패했던 동일 실행에서 필수 검사와 리뷰 전체를 다시 요청했습니다." ;;
+                published|running) gh issue comment "$CLOSED" --body "재개: PR #$pr 의 기존 리뷰 실행을 이어갑니다 ($action)." ;;
+                fresh-head) gh issue comment "$CLOSED" --body "PR #$pr 의 기존 실패는 현재 입력으로 재실행할 수 없습니다. 새 PR HEAD에서 필수 검사와 양쪽 리뷰를 요청해 주세요." ;;
+                hold|collision) gh issue comment "$CLOSED" --body "PR #$pr 의 보류 또는 중복 실행을 확인해 주세요 ($action)." ;;
+                *) exit 1 ;;
+              esac
               ;;
             *) echo "::notice::알 수 없는 재개 표시: $marker"; exit 0 ;;
           esac
