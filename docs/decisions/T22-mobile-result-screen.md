@@ -41,6 +41,7 @@
 - `packages/design-tokens/tests/design.test.ts`: §4 그림자, §6–7 결과 화면 값.
 - `apps/mobile/tests/result-panel-layout.test.tsx`는 결과 화면의 실제 부모 높이로 하단 패널을 정하고, 낮은 가로 화면에서 날짜 칩과 현재 위치 버튼의 공간을 확보하는지 확인한다. 충돌 목록 끝의 고정 해제, 큰 글꼴·안전 영역, 세로 스크롤과 가로 카드 선택을 함께 검사한다.
 - `apps/mobile/tests/result-expanded-sheet.test.tsx`는 짧은 날과 긴 날에 전체 일정이 상단 안전 영역과 상단 바 아래에서 화면 하단까지 열리고, 목록과 닫기 버튼이 동작하는지 확인한다. 애니메이션을 중간 지점에서 멈춘 컴포넌트 테스트로 260ms 이동과 동작 줄이기 페이드를 구분한다. 실기기에서의 프레임과 터치 감각은 별도 확인 항목이다.
+- `apps/mobile/tests/airport-edge-indicator.test.tsx`는 Google 지도 대역의 투영 좌표와 React Native 레이아웃 이벤트로 안전 영역, 범례·현재 위치·경로 재시도, 재계산 토스트 전후의 공항 안내 경계를 검사한다. 짧은 가로 화면에서는 토스트 옆의 지도에 두 방향의 공항 안내가 겹치지 않는지 확인한다.
 - `apps/mobile/tests/result-map-route-styles.test.tsx`는 Google 지도 SDK 대역으로 구간 색과 흰 테두리의 알파·그리기 순서, 방향 화살표와 그림자의 흐림, 도보 점선의 공통 간격과 이동수단 변경 후 실선 복원을 검사한다.
 - 실제 지도 모양(선·곡선·그림자·마커 확대), 현재 위치 권한, 제스처 감각은 기기에서 사람이 확인한다.
 

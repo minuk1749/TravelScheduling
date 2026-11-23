@@ -39,13 +39,16 @@ function CalculationSummary({ label }: { label: string }) {
 /** The content of the panel never determines how much of the map it covers. */
 export function usePanelLayout(topInset = 0) {
   const window = useWindowDimensions();
-  const [parentHeight, setParentHeight] = useState<number | null>(null);
-  const height = parentHeight ?? window.height;
+  const [parent, setParent] = useState<{ width: number; height: number } | null>(null);
+  const { width, height } = parent ?? window;
   const target = height * result.panel.ratio;
   // On short parents keep the date chips and the current-location button in separate touch regions.
   const available = height - topInset - result.locate.offset - result.locate.size;
   const panelHeight = topInset ? Math.min(target, Math.max(size.touch, available)) : target;
-  return { panelHeight, onLayout: (event: LayoutChangeEvent) => setParentHeight(event.nativeEvent.layout.height) };
+  return { panelHeight, wide: width > height, onLayout: (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setParent(previous => previous?.width === width && previous.height === height ? previous : { width, height });
+  } };
 }
 
 function PanelFrame({ id, height, page, children }: { id: string; height: number; page?: string; children: ReactNode }) {

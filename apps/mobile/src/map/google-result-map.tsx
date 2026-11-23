@@ -81,11 +81,12 @@ async function requestLocation(): Promise<boolean> {
   return grants[coarse] === PermissionsAndroid.RESULTS.GRANTED || grants[fine] === PermissionsAndroid.RESULTS.GRANTED;
 }
 
-function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topInset, bottomInset, dimmed, locateRequest, onSelectMarker }: ResultMapProps) {
+function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topInset, bottomInset, overlay, dimmed, locateRequest, onSelectMarker }: ResultMapProps) {
   const map = useRef<ComponentRef<typeof MapView>>(null);
   const [mapReady, setMapReady] = useState(false);
   const [cameraVersion, setCameraVersion] = useState(0);
   const [viewport, setViewport] = useState<MapSize>({ width: 0, height: 0 });
+  const safeLeft = overlay?.left ?? 0, safeRight = overlay?.right ?? 0;
   const reduced = useReducedMotion();
   const [showUser, setShowUser] = useState(false);
   const user = useRef<LatLng | null>(null);
@@ -97,10 +98,10 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
   useEffect(() => {
     const focus: LatLng[] = JSON.parse(focusKey);
     if (!mapReady || !focus.length) return;
-    const edgePadding = { top: topInset + spacing.section, bottom: bottomInset + spacing.section, left: spacing.section * 2, right: spacing.section * 2 };
+    const edgePadding = { top: topInset + spacing.section, bottom: bottomInset + spacing.section, left: safeLeft + spacing.section * 2, right: safeRight + spacing.section * 2 };
     if (viewport.width <= edgePadding.left + edgePadding.right || viewport.height <= edgePadding.top + edgePadding.bottom) return;
     map.current?.fitToCoordinates(focus, { edgePadding, animated: true });
-  }, [focusDate, focusKey, topInset, bottomInset, mapReady, viewport.width, viewport.height]);
+  }, [focusDate, focusKey, topInset, bottomInset, safeLeft, safeRight, mapReady, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!locateRequest) return;
@@ -146,7 +147,7 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
       })}
     </MapView>
     {mapReady && viewport.width > 0 && viewport.height > 0 && <AirportEdgeIndicators map={map} markers={markers}
-      viewport={viewport} focusDate={focusDate} cameraVersion={cameraVersion} topInset={topInset} bottomInset={bottomInset} />}
+      viewport={viewport} overlay={overlay} focusDate={focusDate} cameraVersion={cameraVersion} topInset={topInset} bottomInset={bottomInset} />}
   </View>;
 }
 

@@ -33,6 +33,10 @@ export type MapRouteSpec = {
   path: MapRoutePath;
 };
 
+/** Measured in layout points from the map's top-left corner. */
+export type MapRect = { x: number; y: number; width: number; height: number };
+export type MapOverlay = { left: number; right: number; controls: readonly MapRect[]; awaitingLayout?: boolean };
+
 export type ResultMapProps = {
   markers: readonly MapMarkerSpec[];
   routes: readonly MapRouteSpec[];
@@ -45,6 +49,8 @@ export type ResultMapProps = {
   /** Height (pt) covered by the floating top bar and the bottom panel; used for camera fitting and airport edge indicators. */
   topInset: number;
   bottomInset: number;
+  /** Safe side insets and the visible controls floating above the bottom panel. */
+  overlay?: MapOverlay;
   /** 3-9: the shown result is a previous calculation; draw everything faded. */
   dimmed: boolean;
   /** Incremented by the current-location button. */

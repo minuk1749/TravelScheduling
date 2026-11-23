@@ -1,10 +1,11 @@
 import type { ComponentProps, ReactNode, Ref } from 'react';
-import { processColor } from 'react-native';
+import { processColor, StyleSheet } from 'react-native';
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { GoogleResultMap } from '../src/map/google-result-map';
 import type { LatLng, ResultMapProps } from '../src/map/types';
-import { colors } from '../src/theme';
+import { colors, spacing } from '../src/theme';
 import { deferred, json } from './helpers';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { conflictTrip, D1, D3, openResult, place, resultFixture, view } from './result-fixture';
 
 const mockProject = jest.fn<Promise<{ x: number; y: number }>, [LatLng]>();
@@ -149,4 +150,113 @@ test('an initial conflict projects the airport of each local transfer day while 
   expect(screen.queryByText(label)).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: '3일 12.5' }));
   checkTransfer(lodging, airport);
+});
+
+test('the bottom airport notice clears the measured legend, retry, location and a wrapped success toast until it is closed', async () => {
+  const safe = jest.mocked(useSafeAreaInsets), initialInsets = safe.getMockImplementation();
+  safe.mockReturnValue({ top: 34, bottom: 21, left: 24, right: 12 });
+  try {
+    const f = resultFixture();
+    f.shapes.mockRejectedValue(new Error('offline'));
+    await openResult(f);
+    const width = 390, height = 844, gap = spacing.steps[1];
+    const emitLayout = (node: ReturnType<typeof screen.getByTestId>, rect: { x: number; y: number; width: number; height: number }) =>
+      act(async () => node.props.onLayout?.({ nativeEvent: { layout: rect } }));
+    await emitLayout(screen.getByTestId('result-screen'), { x: 0, y: 0, width, height });
+    await emitLayout(screen.getByTestId('result-top-controls'), { x: 0, y: 0, width, height: 154 });
+    mockProject.mockResolvedValue({ x: 170, y: 700 });
+    await emitLayout(screen.getByTestId('native-map'), { x: 0, y: 0, width, height });
+    await fireEvent(screen.getByTestId('native-map'), 'mapReady');
+
+    async function control(node: ReturnType<typeof screen.getByTestId>, w: number, h: number) {
+      const style = StyleSheet.flatten(node.props.style);
+      const x = style.left ?? width - 24 - 12 - style.right - w;
+      const rect = { x, y: height - style.bottom - h, width: w, height: h };
+      await emitLayout(node, rect);
+      return { ...rect, x: rect.x + 24 };
+    }
+    type Rect = Awaited<ReturnType<typeof control>>;
+    async function badgeBounds() {
+      const badge = screen.getByText('✈ 하네다 공항 · 화면 밖').parent!;
+      const w = 156, h = 28;
+      await emitLayout(badge, { x: 0, y: 0, width: w, height: h });
+      expect(screen.getByText('✈ 하네다 공항 · 화면 밖')).toBeVisible();
+      const edge = StyleSheet.flatten(screen.getByTestId('airport-edges').props.style);
+      const translations = Object.assign({}, ...StyleSheet.flatten(badge.props.style).transform ?? []);
+      return { x: edge.left + (width - edge.left - edge.right - w) / 2 + (translations.translateX ?? 0),
+        y: height - edge.bottom - gap - h + (translations.translateY ?? 0), width: w, height: h };
+    }
+    function overlaps(a: Rect, b: Rect) {
+      return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    }
+    const normalControls = async () => [
+      await control(screen.getByTestId('map-legend'), 215, 44),
+      await control(screen.getByRole('button', { name: '경로 모양 다시 불러오기' }), 154, 44),
+      await control(screen.getByRole('button', { name: '현재 위치' }), 44, 44),
+    ];
+    const before = await normalControls();
+    const idleBadge = await badgeBounds();
+    await fireEvent.press(screen.getByRole('button', { name: '택시 14분 약 ¥2,300로 바꾸기' }));
+    const toast = await screen.findByTestId('result-toast');
+    const toastRect = await control(toast, width - 24 - 12 - spacing.cardGap * 2, 108);
+    const locateRect = await control(screen.getByRole('button', { name: '현재 위치' }), 44, 44);
+    const shownBadge = await badgeBounds();
+    expect(shownBadge.y + shownBadge.height).toBeLessThanOrEqual(toastRect.y);
+    expect(overlaps(shownBadge, locateRect)).toBe(false);
+    expect(overlaps(toastRect, locateRect)).toBe(false);
+    // The same toast leaves a side clear when the measured parent rotates into landscape.
+    await emitLayout(screen.getByTestId('result-screen'), { x: 0, y: 0, width: 750, height: 320 });
+    expect(toast).toHaveStyle({ width: '50%' });
+    await emitLayout(screen.getByTestId('result-screen'), { x: 0, y: 0, width, height });
+    expect(before.filter(rect => overlaps(idleBadge, rect))).toEqual([]);
+    await fireEvent.press(screen.getByRole('button', { name: '알림 닫기' }));
+    const after = await normalControls();
+    const finalBadge = await badgeBounds();
+    expect(after.filter(rect => overlaps(finalBadge, rect))).toEqual([]);
+    expect(finalBadge).toEqual(idleBadge);
+  } finally {
+    if (initialInsets) safe.mockImplementation(initialInsets);
+  }
+});
+
+test('a short map keeps separate airport groups clear of the landscape controls, preserving the usable space between them', async () => {
+  const bounds = { left: 40, right: 24, top: 125, bottom: 95 };
+  const width = 750, height = 320, gap = spacing.steps[1];
+  const toast = { x: 52, y: 127, width: 343, height: 86 };
+  const locate = { x: 670, y: 125, width: 44, height: 44 };
+  const overlay = { left: bounds.left, right: bounds.right, controls: [toast, locate] };
+  const haneda = { id: 'airport1', kind: 'AIRPORT' as const, order: null, label: '하네다', coordinate: { latitude: 35.55, longitude: 139.78 } };
+  const narita = { ...haneda, id: 'airport2', label: '나리타', coordinate: { latitude: 35.77, longitude: 140.39 } };
+  const props: ResultMapProps = {
+    markers: [haneda, narita], routes: [], selectedId: null, focusDate: D1, focusIds: [],
+    topInset: bounds.top, bottomInset: bounds.bottom, overlay, dimmed: false, locateRequest: 0, onSelectMarker() {},
+  };
+  mockProject.mockResolvedValueOnce({ x: 400, y: 450 }).mockResolvedValueOnce({ x: 105, y: 165 });
+  const rendered = await render(<GoogleResultMap {...props} />);
+  const map = screen.getByTestId('native-map');
+  await fireEvent(map, 'layout', { nativeEvent: { layout: { width, height } } });
+  await fireEvent(map, 'mapReady');
+
+  async function labelRect(name: string, left: number, top: number) {
+    const badge = screen.getByText(name).parent!, w = 128, h = 24;
+    await act(async () => badge.props.onLayout({ nativeEvent: { layout: { width: w, height: h } } }));
+    expect(screen.getByText(name)).toBeVisible();
+    const transform = Object.assign({}, ...StyleSheet.flatten(badge.props.style).transform);
+    return { x: left + transform.translateX, y: top + transform.translateY, width: w, height: h };
+  }
+  const bottom = await labelRect('✈ 하네다 · 화면 밖', (bounds.left + width - bounds.right - 128) / 2, height - bounds.bottom - gap - 24);
+  const side = await labelRect('✈ 나리타 · 화면 밖', bounds.left + gap, (bounds.top + height - bounds.bottom - 24) / 2);
+  type Rect = typeof side;
+  const separated = (a: Rect, b: Rect) => a.x >= b.x + b.width || b.x >= a.x + a.width || a.y >= b.y + b.height || b.y >= a.y + a.height;
+  expect([bottom, side].every(label => separated(label, toast) && separated(label, locate))).toBe(true);
+  expect(separated(bottom, side)).toBe(true);
+  expect(screen.getByTestId('airport-edges')).toHaveStyle(bounds);
+
+  await rendered.rerender(<GoogleResultMap {...props} overlay={{ ...overlay, controls: [locate] }} />);
+  expect(screen.queryByText('✈ 나리타 · 화면 밖')).toBeNull();
+  expect(mockProject).toHaveBeenCalledTimes(2);
+  // The notch still occludes an airport even when the toast is gone.
+  mockProject.mockResolvedValueOnce({ x: 400, y: 450 }).mockResolvedValueOnce({ x: 20, y: 165 });
+  await fireEvent(map, 'regionChangeComplete');
+  expect(within(screen.getByTestId('airport-edge-LEFT')).getByText('✈ 나리타 · 화면 밖')).toBeOnTheScreen();
 });

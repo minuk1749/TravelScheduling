@@ -126,11 +126,11 @@ export function midpointHeading(points: readonly LatLng[]): { point: LatLng; hea
 export type EdgeSide = 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT';
 
 /** Compare native map projection (layout points) to the unobscured part of the map. */
-export function offscreenSide(point: { x: number; y: number }, width: number, top: number, bottom: number): EdgeSide | null {
+export function offscreenSide(point: { x: number; y: number }, width: number, top: number, bottom: number, covered = false): EdgeSide | null {
   if (width <= 0 || bottom <= top) return null;
   const dx = 2 * point.x / width - 1;
   const dy = 2 * (point.y - top) / (bottom - top) - 1;
-  if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) return null;
+  if (!covered && Math.abs(dx) <= 1 && Math.abs(dy) <= 1) return null;
   if (Math.abs(dy) >= Math.abs(dx)) return dy < 0 ? 'TOP' : 'BOTTOM';
   return dx < 0 ? 'LEFT' : 'RIGHT';
 }

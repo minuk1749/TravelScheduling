@@ -16,7 +16,7 @@ import { freeTime, periodLabel } from '../../result/format';
 import { colors } from '../../theme';
 import { cityName, kindLabels } from '../trip-input/presentation';
 import { EditSheet } from './edit-sheet';
-import { LocateButton, Legend, ShapeRetry, Toast } from './map-controls';
+import { LocateButton, Legend, ShapeRetry, Toast, useMapControls } from './map-controls';
 import { PlacePanel, usePanelLayout, type PanelStatus } from './place-panel';
 import { ScheduleSheet } from './schedule-sheet';
 import { DateChips, TopBar } from './top-bar';
@@ -80,7 +80,9 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const [locate, setLocate] = useState(0);
   const safe = useSafeAreaInsets();
   const [topInset, setTopInset] = useState(0);
-  const { panelHeight, onLayout } = usePanelLayout(topInset);
+  const { panelHeight, wide, onLayout } = usePanelLayout(topInset);
+  const showShapeRetry = shapesFailed && displayed === shown && !notice;
+  const { overlay, measure, toastHeight } = useMapControls(safe.left, safe.right, notice, showShapeRetry);
   const { dismissNotice } = itinerary;
   useEffect(() => {
     if (!notice) return;
@@ -131,7 +133,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   return <View testID="result-screen" style={styles.screen} onLayout={onLayout}>
     <ResultMap markers={scene.markers} routes={scene.routes} focusDate={day.date} focusIds={scene.focusIds}
       selectedId={sheet?.kind === 'WISH' ? sheet.visitId : card?.visitId ?? null} topInset={topInset} bottomInset={panelHeight}
-      dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
+      overlay={overlay} dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
     <SafeAreaView testID="result-top-controls" edges={['top', 'left', 'right']} pointerEvents="box-none" style={styles.top}
       onLayout={event => setTopInset(event.nativeEvent.layout.height)}>
       <TopBar title={cityName(view.input.cityCode)} subtitle={`${periodLabel(view.input)} · ${lodgings}`}
@@ -139,10 +141,10 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       <DateChips days={days} selected={day.date} onSelect={chooseDate} />
     </SafeAreaView>
     <View testID="result-map-controls" pointerEvents="box-none" style={[StyleSheet.absoluteFill, { left: safe.left, right: safe.right }]}>
-      {!notice && <Legend wishes={wishes.length} bottom={panelHeight} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
-      {shapesFailed && displayed === shown && !notice && <ShapeRetry bottom={panelHeight} onPress={retryShapes} />}
-      <LocateButton bottom={panelHeight} onPress={() => setLocate(value => value + 1)} />
-      {notice && <Toast notice={notice} bottom={panelHeight} onClose={dismissNotice}
+      {!notice && <Legend onLayout={measure('legend')} wishes={wishes.length} bottom={panelHeight} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
+      {showShapeRetry && <ShapeRetry onLayout={measure('retry')} bottom={panelHeight} onPress={retryShapes} />}
+      <LocateButton toastHeight={wide ? 0 : toastHeight} onLayout={measure('locate')} bottom={panelHeight} onPress={() => setLocate(value => value + 1)} />
+      {notice && <Toast wide={wide} onLayout={measure('toast')} notice={notice} bottom={panelHeight} onClose={dismissNotice}
         onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
     </View>
     <PlacePanel day={day} index={selection.index} status={status} currency={currency} freeTime={freeTime(displayed?.availableByDate?.[day.date], day.timeZone)}

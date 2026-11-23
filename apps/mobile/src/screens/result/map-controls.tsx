@@ -1,13 +1,40 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import { colors, radius, result, shadows, size, spacing, text } from '../../theme';
+import type { MapRect } from '../../map/types';
 import type { Notice } from './use-itinerary';
 
+type Control = 'legend' | 'retry' | 'locate' | 'toast';
+type Measured = { onLayout(event: LayoutChangeEvent): void };
+
+export function useMapControls(left: number, right: number, notice: Notice | null, retry: boolean) {
+  const [frames, setFrames] = useState<Partial<Record<Control, { rect: MapRect; noticeId?: number }>>>({});
+  const measure = (id: Control) => (event: LayoutChangeEvent) => {
+    const rect = event.nativeEvent.layout;
+    const noticeId = id === 'toast' ? notice?.id : undefined;
+    setFrames(previous => {
+      const entry = previous[id], last = entry?.rect;
+      if (entry?.noticeId === noticeId && last && last.x === rect.x && last.y === rect.y
+        && last.width === rect.width && last.height === rect.height) return previous;
+      return { ...previous, [id]: { rect, noticeId } };
+    });
+  };
+  const active: Control[] = notice ? ['toast', 'locate'] : retry ? ['legend', 'retry', 'locate'] : ['legend', 'locate'];
+  const controls = active.flatMap(id => {
+    const rect = frames[id]?.rect;
+    // Child layout is local to the horizontally safe controls container.
+    return rect ? [{ ...rect, x: rect.x + left }] : [];
+  });
+  const toast = notice && frames.toast?.noticeId === notice.id ? frames.toast.rect : null;
+  return { measure, toastHeight: toast?.height ?? 0, overlay: { left, right, controls, awaitingLayout: !!notice && !toast } };
+}
+
 /** §6 legend pill above the panel: 이동 · 도보 · 도심 밖 · 희망 N. */
-export function Legend({ wishes, bottom, onAddWish }: { wishes: number; bottom: number; onAddWish?: () => void }) {
+export function Legend({ wishes, bottom, onAddWish, onLayout }: Measured & { wishes: number; bottom: number; onAddWish?: () => void }) {
   const count = <Text style={[text.tiny, styles.legendText, wishes > 0 && onAddWish && styles.wishLink]}>
     <Text style={{ color: colors.peach.marker }}>★</Text> 희망 {wishes}
   </Text>;
-  return <View testID="map-legend" style={[styles.legend, { bottom: bottom + spacing.cardGap }]}>
+  return <View testID="map-legend" onLayout={onLayout} style={[styles.legend, { bottom: bottom + spacing.cardGap }]}>
     <Text style={[text.tiny, styles.legendText]}>
       <Text style={{ color: colors.sky.primary }}>━</Text> 이동 · <Text style={{ color: colors.sky.primary }}>┈</Text> 도보 ·{' '}
       <Text style={{ color: colors.sky.primary }}>⌒</Text> 도심 밖 ·{' '}
@@ -20,24 +47,24 @@ export function Legend({ wishes, bottom, onAddWish }: { wishes: number; bottom: 
 }
 
 /** §7 current-location button: 56 above the panel, right 12, white circle 44. */
-export function LocateButton({ bottom, onPress }: { bottom: number; onPress(): void }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel="현재 위치" onPress={onPress}
-    style={[styles.locate, { bottom: bottom + result.locate.offset }]}>
+export function LocateButton({ bottom, toastHeight, onPress, onLayout }: Measured & { bottom: number; toastHeight: number; onPress(): void }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel="현재 위치" onPress={onPress} onLayout={onLayout}
+    style={[styles.locate, { bottom: bottom + Math.max(result.locate.offset, spacing.cardGap + toastHeight + spacing.steps[1]) }]}>
     <Text style={[text.place, { color: colors.sky.primary }]}>◎</Text>
   </Pressable>;
 }
 
 /** Shapes are optional; after a failed request legs are straight lines until this retries. */
-export function ShapeRetry({ bottom, onPress }: { bottom: number; onPress(): void }) {
-  return <Pressable accessibilityRole="button" onPress={onPress}
+export function ShapeRetry({ bottom, onPress, onLayout }: Measured & { bottom: number; onPress(): void }) {
+  return <Pressable accessibilityRole="button" onPress={onPress} onLayout={onLayout}
     style={[styles.retry, { bottom: bottom + result.locate.offset }]}>
     <Text style={[text.tiny, styles.legendText]}>경로 모양 다시 불러오기</Text>
   </Pressable>;
 }
 
 /** §5 toast right above the panel: icon tile, one line (+ moved places), gray "되돌리기". */
-export function Toast({ notice, bottom, onUndo, onClose }: { notice: Notice; bottom: number; onUndo(): void; onClose(): void }) {
-  return <View accessibilityLiveRegion="polite" testID="result-toast" style={[styles.toast, { bottom: bottom + spacing.cardGap }]}>
+export function Toast({ notice, bottom, onUndo, onClose, onLayout, wide }: Measured & { wide: boolean; notice: Notice; bottom: number; onUndo(): void; onClose(): void }) {
+  return <View accessibilityLiveRegion="polite" testID="result-toast" onLayout={onLayout} style={[styles.toast, wide && styles.wideToast, { bottom: bottom + spacing.cardGap }]}>
     <View style={styles.tile}><Text style={[text.place, { color: colors.green.text }]}>✓</Text></View>
     <Pressable accessibilityRole="button" accessibilityLabel="알림 닫기" onPress={onClose} style={styles.message}>
       <Text style={text.body}>{notice.title}</Text>
@@ -62,6 +89,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.cardGap, borderRadius: radius.chip },
   toast: { position: 'absolute', left: result.locate.inset, right: result.locate.inset, flexDirection: 'row', alignItems: 'center',
     gap: spacing.cardGap, padding: spacing.cardGap, borderRadius: radius.toast, backgroundColor: colors.card, ...shadows.toast },
+  // A short landscape map needs an open side for the airport notice and location control.
+  wideToast: { right: undefined, width: '50%' },
   tile: { width: size.iconTile, height: size.iconTile, borderRadius: radius.tile, backgroundColor: colors.green.surface,
     alignItems: 'center', justifyContent: 'center' },
   message: { flex: 1 },
