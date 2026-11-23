@@ -4,11 +4,10 @@ import { typography } from '@travel/design-tokens';
 import { constraintsFrom, type Constraints } from '@travel/core/contracts/results/model';
 import type { SharedItinerary } from '@travel/core/contracts/sharing';
 import type { TripCreation } from '@travel/core/contracts/trips/create';
-import { createDatabasePool } from '../../src/lib/db';
 import { hashOpaqueToken } from '../../src/lib/opaque-token';
 import { expectMarkers, installMapsDouble } from '../helpers/e2e-maps';
 import { expectJson, signIn, type Generated } from './support/app-client';
-import { upsertCityProfile } from './support/database';
+import { upsertCityProfile, openRunDatabase } from './support/database';
 import { googleIdToken } from './support/google-key';
 
 const TRAVELER = 'e2e-google-traveler', STRANGER = 'e2e-google-stranger';
@@ -20,15 +19,9 @@ const VISITS = [
 ] as const;
 const WISH = 'teamLab Planets';
 
-const pool = createDatabasePool();
-const removeTestUsers = () => pool.query('DELETE FROM users WHERE google_id = ANY($1::text[])', [[TRAVELER, STRANGER]]);
-test.beforeAll(async () => {
-  // global-setup.ts migrated this run's own schema; the TOKYO upsert below must never reach the base schema.
-  expect((await pool.query('SELECT current_schema() AS schema')).rows[0].schema).toBe(process.env.E2E_DATABASE_SCHEMA);
-  await removeTestUsers();
-  await upsertCityProfile(pool);
-});
-test.afterAll(async () => { await removeTestUsers(); await pool.end(); });
+// global-setup.ts migrated this run's own (empty) schema. The TOKYO upsert runs only once the pool is shown to use it,
+// and the rows this journey leaves behind go when global teardown drops that schema (no cleanup query here).
+const pool = openRunDatabase(test, upsertCityProfile);
 
 const tokyoTime = (instant: string) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' }).format(new Date(instant));
 const scheduled = (result: Generated) => result.capacity.recommendation!.schedule.days;

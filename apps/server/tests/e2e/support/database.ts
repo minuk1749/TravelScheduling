@@ -18,13 +18,14 @@ const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
 
 /**
  * The same database, but every connection resolves unqualified tables only in `schema` (libpq `options`). The existing
- * options are kept verbatim (escaped spaces in a multi-schema search_path included) and the run's setting is appended:
- * PostgreSQL applies `-c` switches in order, so the last search_path wins.
+ * options are kept byte for byte (not trimmed: a value may end in an escaped space) and the run's setting follows after
+ * one separating space: PostgreSQL applies `-c` switches in order, so the last search_path wins.
  */
 export function schemaUrl(baseUrl: string, schema: string): string {
   const url = new URL(baseUrl);
-  const options = url.searchParams.get('options')?.trim();
-  url.searchParams.set('options', [options, `-c search_path=${schema}`].filter(Boolean).join(' '));
+  const options = url.searchParams.get('options');
+  const runOption = `-c search_path=${schema}`;
+  url.searchParams.set('options', options ? `${options} ${runOption}` : runOption);
   return url.toString();
 }
 
@@ -67,6 +68,30 @@ export async function createIsolatedSchema({ baseUrl, schema, url }: IsolatedDat
     throw error;
   }
   return drop;
+}
+
+interface SuiteHooks { beforeAll(run: () => Promise<void>): void; afterAll(run: () => Promise<void>): void }
+
+/**
+ * A spec file's pool on the run's schema (Playwright passes its `test`). Before anything else runs, the connection must
+ * resolve to the run's schema; `prepare` (e.g. upsertCityProfile) only runs after that check. Afterwards the pool is
+ * only closed: specs never delete rows, because everything they write lives in the run's schema, which global teardown
+ * drops. So a failed check cannot lead to a cleanup query in whatever schema the connection did reach.
+ */
+export function openRunDatabase(
+  hooks: SuiteHooks, prepare?: (pool: Pool) => Promise<void>,
+  target: { url?: string; schema?: string } = { url: process.env.DATABASE_URL, schema: process.env[SCHEMA_ENV] },
+): Pool {
+  const pool = createDatabasePool(target.url);
+  hooks.beforeAll(async () => {
+    const { rows: [current] } = await pool.query<{ schema: string | null }>('SELECT current_schema() AS schema');
+    if (!target.schema || current.schema !== target.schema) {
+      throw new Error(`e2e DATABASE_URL resolves to schema ${current.schema}, not the run schema ${target.schema}`);
+    }
+    await prepare?.(pool);
+  });
+  hooks.afterAll(() => pool.end());
+  return pool;
 }
 
 /** Synthetic TOKYO fare profile (tests/fixtures/trip-input.ts), upserted so the e2e schema can price taxis. */

@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import { PostgresMobileSessionStore } from '../../src/lib/auth/session-store';
-import { createDatabasePool } from '../../src/lib/db';
 import { hashOpaqueToken, newOpaqueToken } from '../../src/lib/opaque-token';
 import { saveItinerary } from '../../src/repositories/itineraries';
 import { insertTrip } from '../../src/repositories/trip-inputs';
@@ -11,8 +10,10 @@ import { loadTripInputs } from '../../src/repositories/trip-snapshot';
 import { FixtureTravel, sampleDraft, sampleTrip } from '../fixtures/itinerary';
 import { encodedPolyline } from '../fixtures/route-shapes';
 import { service } from '../helpers/itinerary-service';
+import { openRunDatabase } from './support/database';
 
-const pool = createDatabasePool();
+// Registered first, so the schema check runs before the seeding below; the seeded rows go with the run's schema.
+const pool = openRunDatabase(test);
 const owner = randomUUID(), visitor = randomUUID();
 const ownerToken = newOpaqueToken(), visitorToken = newOpaqueToken(), expiredToken = newOpaqueToken();
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -45,11 +46,6 @@ test.beforeAll(async () => {
     latestId = latest.itineraryId;
     path = `/api/trips/${trip}/itinerary/shapes?inputHash=${inputHash}`;
   } finally { client.release(); }
-});
-
-test.afterAll(async () => {
-  try { await pool.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [[owner, visitor]]); }
-  finally { await pool.end(); }
 });
 
 test('the owner’s mobile session reads the latest itinerary by ID or hash and gets 409 for its predecessor', async ({ request }) => {
