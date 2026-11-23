@@ -62,6 +62,9 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   }
   const select = (selection: Selection) => setPicked(pick(days, shown, selection));
   const day = dayOf(days, current.selection)!;
+  const modeFixes = useMemo(() => conflict
+    ? conflictingModeFixes(view, day.date, causes, shown.airportTransferLimits) : null,
+  [conflict, view, day.date, causes, shown.airportTransferLimits]);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const editSelection = sheet?.kind === 'EDIT' ? findVisit([day], sheet.visitId) : null;
   const selection = editSelection ?? current.selection;
@@ -98,9 +101,9 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   const status: PanelStatus = calculating ? { kind: 'CALCULATING' }
     : failed ? (showPrevious ? { kind: 'PREVIOUS' } : { kind: 'FAILED', message: phase.message, hasPrevious: !!previousSchedule })
-      : conflict ? { kind: 'CONFLICT', count: causes.length, canUndo,
+      : modeFixes ? { kind: 'CONFLICT', count: causes.length, canUndo,
         target: card?.issue ? card : day.cards.find(item => item.issue) ?? null,
-        modeFixes: conflictingModeFixes(view, day.date, causes),
+        modeFixes,
         messages: causes.filter(cause => !cause.visitId && (!cause.date || cause.date === day.date)).map(cause => cause.message) }
         : { kind: 'READY' };
 

@@ -38,6 +38,18 @@ test('acknowledging a save needs a full input and revision while a read addition
     { ...snapshot, input: { ...view.input, endDate: '2025-12-01' } }, { ...snapshot, input: { ...view.input, flights: {} } }]) expect(validSnapshot(value)).toBe(false);
 });
 
+test('cross-date airport limits are optional and require a saved leg, a different affected date and an ordered interval', () => {
+  const result = conflictTrip(REVISION);
+  const fix = { date: '2026-12-05', affectedDate: '2026-12-04', from: 'hotel', to: 'airport', mode: 'WALK',
+    start: '2026-12-04T10:09:00Z', end: '2026-12-04T13:00:00Z' };
+  expect(validGeneratedTrip(result)).toBe(true);
+  expect(validGeneratedTrip({ ...result, airportTransferLimits: [fix] })).toBe(true);
+  for (const invalid of [{}, null, [null], [{ ...fix, affectedDate: 'invalid' }], [{ ...fix, date: fix.affectedDate }], [{ ...fix, date: '2026-12-05T00:30' }],
+    [{ ...fix, start: fix.end }], [{ ...fix, end: 'not an instant' }], [{ ...fix, mode: 'BUS' }]]) {
+    expect(validGeneratedTrip({ ...result, airportTransferLimits: invalid })).toBe(false);
+  }
+});
+
 test('the shapes contract permits an empty list, explicit NONE and legacy hash-only responses', () => {
   const leg = { date: D1, kind: 'DAY', from: 'hotel', to: 'museum', mode: 'TRANSIT', shape: { status: 'NONE' } };
   expect(validRouteShapes({ inputHash: REVISION, legs: [] })).toBe(true);

@@ -154,6 +154,7 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 ## T22 모바일 결과 화면 (지도 우선 · 장소 카드)
 
+- 생성 서비스는 고정된 공항 이동이 다른 날짜의 활동 시간창을 줄이면 충돌 응답에 `airportTransferLimits`를 포함한다. 결과 화면은 이 기록으로 해당 날짜에 영향을 준 구간을 표시하고, 저장된 제약의 기준일·출발지·도착지로 해제를 요청한다.
 - 전체 일정은 일반 입력 시트와 헤더·스크롤 본문 구조를 공유하고, `ExpandedFormSheet`로 상단 바 아래까지 펼친다.
 - `/trips/[id]/generate`(T21 생성 화면) → POST 응답 → `screens/result/result-flow.tsx`의 `OutcomeFlow`: OK·CONFLICT는 `ResultFlow`(GET `/constraints`로 입력, revision이 다르면 한 번 재계산), OVER_CAPACITY는 T23 `CapacityFlow`. T23 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름을 메모리로 오간다.
 - 모바일 `api/client.ts`는 JSON 성공 본문을 읽고, `api/result-response.ts`는 일정 생성 결과와 제약 조회·저장 응답의 필수 필드를 확인한다. 저장 응답이 손상되면 재시도 시 저장된 입력을 다시 읽어 제약 반영 여부를 확인한다.

@@ -97,5 +97,7 @@ test('date-only visit pins use the rejected visit ID; undated, order-only and ot
   expect(fixes.matched.map(row => row.fix)).toEqual([inbound]);
   expect(fixes.connected.map(row => row.fix)).toEqual([outbound]);
   expect(fixes.review.map(row => row.fix)).toEqual([elsewhere]);
-  expect(conflictingModeFixes(initial, D1, causes)).toEqual({ matched: [], connected: [], review: [] });
+  const otherDate = conflictingModeFixes(initial, D1, causes);
+  expect(otherDate).toMatchObject({ matched: [], connected: [], review: [] });
+  expect(otherDate.saved.map(row => [row.fix, row.limitsDate])).toEqual([prior, elsewhere, outbound, inbound].map(fix => [fix, false]));
 });

@@ -56,10 +56,12 @@ export class ItineraryService {
       ? verified.capacity.status : 'CONFLICT';
     const schedule = status === 'CONFLICT' ? null : verified.capacity.recommendation?.schedule ?? null;
     const comparisons = schedule ? legComparisons(schedule, prepared, verified, profile) : [];
+    const airportTransferLimits = status === 'CONFLICT' ? prepared.flatMap(day => day.airportTransferLimits) : [];
     return {
       status,
       capacity: verified.capacity,
       availableByDate: Object.fromEntries(prepared.map(({ day }) => [day.date, day.window.available])),
+      ...(airportTransferLimits.length ? { airportTransferLimits } : {}),
       verification: { verified: verified.verified, attempts: verified.attempts },
       transferIssues,
       flightConflicts,

@@ -71,9 +71,14 @@ export type TransferIssue = {
 /** `arrivalReadyAt` is when the arrival transfer ends; `departureStartBy` is the latest departure-transfer start. */
 export type FlightConflict = { date: string; arrivalReadyAt: string; departureStartBy: string };
 
+/** A confirmed fixed airport transfer shortened another local date's activity window. date is the saved flight/leg date. */
+export type AirportTransferLimit = { date: string; from: string; to: string; mode: TravelMode; start: string; end: string; affectedDate: string };
+
 export interface ItineraryResult {
   /** Flight-adjusted activity windows in the generation response. Older results can omit them. */
   availableByDate?: Readonly<Record<string, TimeWindow | null>>;
+  /** Conflict responses may identify the saved leg and exact reserved interval behind a cross-date limit. */
+  airportTransferLimits?: readonly AirportTransferLimit[];
   /** CONFLICT also covers airport transfer/flight issues and an unverified re-query loop. */
   status: CapacityResult['status'];
   capacity: CapacityResult;

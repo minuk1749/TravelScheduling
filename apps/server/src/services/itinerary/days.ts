@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { AirportTransferLimit } from '@travel/core/contracts/itinerary';
 import {
   calculateDayWindow, isPlaceable, type DayWindowResult, type MealSlot, type SchedulingDay, type TimeWindow, type Visit,
 } from '../../scheduler';
@@ -12,6 +13,7 @@ export interface PreparedDay {
   departure?: LegComparison;
   transferIssues: TransferIssue[];
   flightConflicts: FlightConflict[];
+  airportTransferLimits: AirportTransferLimit[];
   skippedMeals: { date: string; slot: MealSlot }[];
 }
 
@@ -28,7 +30,7 @@ interface Draft {
   window: DayWindowResult;
 }
 
-type Occupied = DayWindowResult['airportTransfers'][number] & { date: string };
+type Occupied = DayWindowResult['airportTransfers'][number] & { date: string; fixedLeg?: LegComparison };
 
 const compare = (a: string, b: string) => Temporal.Instant.compare(Temporal.Instant.from(a), Temporal.Instant.from(b));
 const later = (a: string, b: string) => compare(a, b) >= 0 ? a : b;
@@ -67,20 +69,27 @@ async function draftDay(context: DayContext, plan: DayPlan): Promise<Draft> {
  * wholly before the arrival or after the departure becomes unavailable. Same-date transfers are
  * already applied by the scheduler.
  */
-function clipToTransfers(window: DayWindowResult, date: string, occupied: readonly Occupied[]): { window: DayWindowResult; clipped: boolean } {
+function clipToTransfers(window: DayWindowResult, date: string, occupied: readonly Occupied[]) {
   let available = window.available;
+  const limits: AirportTransferLimit[] = [];
   for (const transfer of occupied) {
     if (!available || transfer.date === date) continue;
+    const before = available;
     available = transfer.direction === 'arrival'
       ? asWindow(later(available.start, transfer.end), available.end)
       : asWindow(available.start, earlier(available.end, transfer.start));
+    const leg = transfer.fixedLeg;
+    if (leg && (before.start !== available?.start || before.end !== available?.end) && compare(transfer.start, transfer.end) < 0) {
+      limits.push({ date: leg.date, from: leg.from, to: leg.to, mode: leg.selected.mode,
+        start: transfer.start, end: transfer.end, affectedDate: date });
+    }
   }
   const clipped = available?.start !== window.available?.start || available?.end !== window.available?.end;
-  if (!clipped) return { window, clipped };
+  if (!clipped) return { window, clipped, limits };
   const meals = window.meals.map(({ slot, window: meal }) => ({
     slot, window: available && meal ? asWindow(later(meal.start, available.start), earlier(meal.end, available.end)) : null,
   }));
-  return { window: { ...window, available, meals }, clipped };
+  return { window: { ...window, available, meals }, clipped, limits };
 }
 
 type TripConflict = { conflict: FlightConflict; dates: readonly string[] };
@@ -137,6 +146,7 @@ async function finishDay(context: DayContext, draft: Draft, occupied: readonly O
     ...(arrival?.minutes != null ? { arrival: arrival.comparison } : {}),
     ...(departure?.minutes != null ? { departure: departure.comparison } : {}),
     transferIssues,
+    airportTransferLimits: clipped.limits,
     flightConflicts: conflicts.filter(({ conflict }) => conflict.date === plan.date).map(({ conflict }) => conflict),
     skippedMeals: meals.skipped,
   };
@@ -148,7 +158,11 @@ async function finishDay(context: DayContext, draft: Draft, occupied: readonly O
  */
 export async function prepareDays(context: DayContext, plans: readonly DayPlan[]): Promise<PreparedDay[]> {
   const drafts = await Promise.all(plans.map(plan => draftDay(context, plan)));
-  const occupied = drafts.flatMap(({ plan, window }) => window.airportTransfers.map(transfer => ({ ...transfer, date: plan.date })));
+  const occupied = drafts.flatMap(({ plan, window, arrival, departure }) => window.airportTransfers.map(transfer => {
+    const route = transfer.direction === 'arrival' ? arrival : departure;
+    const leg = route?.minutes != null ? route.comparison : undefined;
+    return { ...transfer, date: plan.date, fixedLeg: leg?.selected.fixed ? leg : undefined };
+  }));
   const conflicts = flightConflicts(occupied);
   return Promise.all(drafts.map(draft => finishDay(context, draft, occupied, conflicts)));
 }

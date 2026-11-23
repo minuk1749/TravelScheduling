@@ -57,9 +57,10 @@ export function ConflictActions({ status, onEdit, onReleaseMode, onRevert, onEdi
   onEdit(card: CardModel): void; onReleaseMode(leg: LegEdit): void; onRevert(): void; onEditConditions(): void;
 }) {
   const target = status.target;
-  const { matched, connected, review } = status.modeFixes;
-  const [reviewOpen, setReviewOpen] = useState<'connected' | 'review' | null>(null);
+  const { matched, connected, review, saved } = status.modeFixes;
+  const [reviewOpen, setReviewOpen] = useState<'connected' | 'review' | 'saved' | null>(null);
   const choices = reviewOpen ? status.modeFixes[reviewOpen] : [];
+  const limited = reviewOpen === 'saved' ? saved.filter(row => row.limitsDate) : [];
   const releaseButton = ({ fix, label }: ConflictModeFix) =>
     <Button key={JSON.stringify([fix.date, fix.from, fix.to])} label={label}
       onPress={() => { setReviewOpen(null); onReleaseMode(fix); }} />;
@@ -71,15 +72,22 @@ export function ConflictActions({ status, onEdit, onReleaseMode, onRevert, onEdi
       {connected.length > 0 && <Button label="충돌 방문과 연결된 이동수단 고정 검토" onPress={() => setReviewOpen('connected')} />}
       {review.length > 0 && <Button label={matched.length || connected.length || target ? '같은 날짜의 다른 이동수단 고정 검토' : '이 날짜의 이동수단 고정 검토'}
         onPress={() => setReviewOpen('review')} />}
+      {saved.length > 0 && <Button label="여행 전체 이동수단 고정 보기" onPress={() => setReviewOpen('saved')} />}
       {target ? <Button label={`${target.name} 고정 수정`} onPress={() => onEdit(target)} />
         : <Button label="여행 조건 수정" onPress={onEditConditions} />}
       {status.canUndo && <Button label="변경 취소" primary onPress={onRevert} />}
     </View>
-    {choices.length > 0 && <FormSheet title={`${dateTitle(choices[0].fix.date)} 이동수단 고정`}
+    {choices.length > 0 && <FormSheet title={reviewOpen === 'saved' ? '여행 전체 이동수단 고정' : `${dateTitle(choices[0].fix.date)} 이동수단 고정`}
       close={() => setReviewOpen(null)} footer={<Button label="취소" onPress={() => setReviewOpen(null)} />}>
-      {target && <Text style={styles.secondary}>{reviewOpen === 'connected' ? '충돌 방문을 오가는 구간이에요.' : '이 날짜에 저장한 다른 구간이에요.'}
+      {reviewOpen === 'saved' ? <Text style={styles.secondary}>공항 이동의 고정 기준일은 항공편 날짜예요. 해제할 구간을 선택하면 방문 조건을 유지하고 다시 계산해요.</Text>
+        : target && <Text style={styles.secondary}>{reviewOpen === 'connected' ? '충돌 방문을 오가는 구간이에요.' : '이 날짜에 저장한 다른 구간이에요.'}
         {' '}해제할 고정을 선택하면 방문 조건을 유지하고 다시 계산해요.</Text>}
-      {choices.map(releaseButton)}
+      {limited.length ? <>
+        <Text style={text.name}>선택한 날짜의 활동 시간을 제한한 공항 이동</Text>
+        {limited.map(releaseButton)}
+        {limited.length < saved.length && <Text style={text.name}>그 밖의 고정</Text>}
+        {saved.filter(row => !row.limitsDate).map(releaseButton)}
+      </> : choices.map(releaseButton)}
     </FormSheet>}
   </View>;
 }

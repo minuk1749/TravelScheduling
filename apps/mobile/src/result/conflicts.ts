@@ -1,8 +1,9 @@
-import type { ItineraryResult } from '@travel/core/contracts/itinerary';
+import { Temporal } from '@js-temporal/polyfill';
+import type { AirportTransferLimit, ItineraryResult } from '@travel/core/contracts/itinerary';
 import type { LegEdit, ResultView } from '@travel/core/contracts/results/model';
 import { MEALS, MODES, placeName, REASONS } from '@travel/core/presentation';
 import { sameModeConstraint } from './edits';
-import { periodLabel } from './format';
+import { dateTitle, periodLabel, timeRange } from './format';
 
 /** One line of "고정 조건 충돌 N건": a visit that could not be placed, or a day/leg-level problem. */
 export type ConflictCause = {
@@ -84,22 +85,39 @@ export function conflictCauses(view: ResultView, result: ItineraryResult | null)
 }
 
 export type ConflictModeFix = { fix: LegEdit; label: string };
-export type ConflictModeFixes = { matched: ConflictModeFix[]; connected: ConflictModeFix[]; review: ConflictModeFix[] };
+export type ConflictModeFixes = {
+  matched: ConflictModeFix[]; connected: ConflictModeFix[]; review: ConflictModeFix[];
+  saved: (ConflictModeFix & { limitsDate: boolean })[];
+};
 
 /** A reported leg is exact. Visit timing can depend on either adjacent leg or on travel elsewhere that day. */
-export function conflictingModeFixes(view: ResultView, date: string, causes: readonly ConflictCause[]): ConflictModeFixes {
+export function conflictingModeFixes(view: ResultView, date: string, causes: readonly ConflictCause[],
+  limits: readonly AirportTransferLimit[] = []): ConflictModeFixes {
   const dayCauses = causes.filter(cause => cause.date === date);
   const route = conflictRouteLabels(view);
   const hasDayIssue = dayCauses.some(cause => cause.visitId === null && cause.leg === null);
   const timedPlaces = new Set(dayCauses.flatMap(cause => cause.timeWindowPlaceId ? [cause.timeWindowPlaceId] : []));
-  const result: ConflictModeFixes = { matched: [], connected: [], review: [] };
+  const result: ConflictModeFixes = { matched: [], connected: [], review: [], saved: [] };
   for (const fix of view.input.legModes ?? []) {
+    const label = `${route(fix.date, fix.from, fix.to)} · ${MODES[fix.mode]} 고정 해제하고 다시 계산`;
+    const bounds = limits.filter(limit => sameModeConstraint(fix, limit) && fix.mode === limit.mode);
+    const selectedLimit = bounds.find(limit => limit.affectedDate === date);
+    const interval = selectedLimit ?? bounds[0];
+    let context = `고정 기준일 ${dateTitle(fix.date)}`;
+    if (interval) {
+      const { start, end } = interval;
+      const zone = view.input.timeZone;
+      const departureDate = Temporal.Instant.from(start).toZonedDateTimeISO(zone).toPlainDate().toString();
+      context += ` · 공항 이동 ${dateTitle(departureDate)} ${timeRange(start, end, zone)}`;
+    }
+    result.saved.push({ fix, label: `${context} · ${label}`, limitsDate: !!selectedLimit });
     if (fix.date !== date) continue;
     const matched = dayCauses.some(cause => cause.leg && sameModeConstraint(cause.leg, fix));
     if (!matched && !hasDayIssue && !timedPlaces.size) continue;
     const connected = timedPlaces.has(fix.from) || timedPlaces.has(fix.to);
     const group = matched ? result.matched : connected ? result.connected : result.review;
-    group.push({ fix, label: `${route(date, fix.from, fix.to)} · ${MODES[fix.mode]} 고정 해제하고 다시 계산` });
+    group.push({ fix, label });
   }
+  result.saved.sort((a, b) => a.fix.date.localeCompare(b.fix.date));
   return result;
 }

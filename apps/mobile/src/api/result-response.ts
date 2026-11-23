@@ -36,6 +36,10 @@ const legKind = oneOf('DAY', 'AIRPORT');
 const direction = oneOf('ARRIVAL', 'DEPARTURE');
 const status = oneOf('OK', 'CONFLICT', 'OVER_CAPACITY');
 const window = fields({ start: instant, end: instant });
+const calendarDate: Check = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && date(value);
+const transferLimitFields = fields({ date: calendarDate, from: text, to: text, mode, start: instant, end: instant, affectedDate: calendarDate });
+const transferLimit: Check = value => record(value) && transferLimitFields(value) && value.date !== value.affectedDate &&
+  Temporal.Instant.compare(String(value.start), String(value.end)) < 0;
 const activity = fields({ start: clock, end: clock });
 const ref = fields({ id: text, googlePlaceId: text });
 const place = fields({
@@ -98,6 +102,7 @@ const generated = fields({
   transferIssues: list(fields({ date, direction, from: text, to: text, reason: oneOf('NO_ROUTE', 'UNVERIFIED') })),
   flightConflicts: list(fields({ date, arrivalReadyAt: instant, departureStartBy: instant })),
   skippedMeals: list(fields({ date, slot })), comparisons: list(comparison), availableByDate: optional(values(nullable(window))),
+  airportTransferLimits: optional(list(transferLimit)),
   efficiency: nullable(fields({ currency: nullable(text), selectedMinutes: number, transitMinutes: nullable(number),
     selectedFare: nullable(number), transitFare: nullable(number) })),
 } satisfies Record<keyof ItineraryResult | 'itineraryId' | 'inputHash', Check>);
