@@ -75,3 +75,27 @@ test('a floating arc dims its shadow and arrow with the route and keeps the conf
     expect(screen.getByText('▲')).toHaveStyle({ color: rgb });
   }
 });
+
+test.each([1, -1])('the outside-city road, conflict curve and road direction cross the dateline locally (%i)', async direction => {
+  const from = { latitude: 0, longitude: direction * 179.9 }, to = { latitude: 0, longitude: -from.longitude };
+  const points = [from, { latitude: 0, longitude: direction * 180 }, to];
+  const outside: MapRouteSpec = { ...road, path: { kind: 'ROAD', points }, line: 'FLOATING' };
+  const rendered = await render(draw(outside));
+  for (const route of [outside, { ...outside, emphasis: 'CONFLICT' as const, path: { kind: 'STRAIGHT' as const, from, to } }]) {
+    await rendered.rerender(draw(route));
+    const [shadow, curve] = lines();
+    expect(shadow.coordinates).toEqual(route.path.kind === 'ROAD' ? points : [from, to]);
+    expect(curve.coordinates[0]).toEqual(from);
+    expect(curve.coordinates.at(-1)).toEqual(to);
+    expect(Math.abs(curve.coordinates[Math.floor(curve.coordinates.length / 2)].longitude)).toBeCloseTo(180, 6);
+    const { coordinate, rotation } = screen.getByTestId('arrow').props;
+    expect(Math.abs(coordinate.longitude)).toBeCloseTo(180, 6);
+    expect(Math.abs(rotation - (direction === 1 ? 90 : 270))).toBeLessThan(2);
+    expect(processColor(curve.strokeColor)).toBe(processColor(route.emphasis === 'CONFLICT' ? colors.red.text : road.color));
+  }
+  await rendered.rerender(draw({ ...outside, line: 'SOLID' }));
+  for (const line of lines()) expect(line.coordinates).toEqual(points);
+  const { coordinate, rotation } = screen.getByTestId('arrow').props;
+  expect(Math.abs(coordinate.longitude)).toBeCloseTo(180, 8);
+  expect(rotation).toBeCloseTo(direction === 1 ? 90 : 270, 8);
+});

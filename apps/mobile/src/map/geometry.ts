@@ -47,11 +47,20 @@ export function withAlpha(hex: string, alpha: number): string {
 
 const EARTH_RADIUS_KM = 6371;
 const radians = (degrees: number) => (degrees * Math.PI) / 180;
+const cosLatitude = (latitude: number) => Math.abs(latitude) === 90 ? 0 : Math.cos(radians(latitude));
+
+/** Signed shortest longitude, retaining the input direction at a half-turn. */
+function wrapLongitude(degrees: number): number {
+  const value = degrees % 360;
+  if (value > 180) return value - 360;
+  if (value < -180) return value + 360;
+  return value;
+}
 
 /** Great-circle (haversine) distance in kilometres. */
 export function distanceKm(a: LatLng, b: LatLng): number {
-  const dLat = radians(b.latitude - a.latitude), dLng = radians(b.longitude - a.longitude);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  const dLat = radians(b.latitude - a.latitude), dLng = radians(wrapLongitude(b.longitude - a.longitude));
+  const h = Math.sin(dLat / 2) ** 2 + cosLatitude(a.latitude) * cosLatitude(b.latitude) * Math.sin(dLng / 2) ** 2;
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
@@ -87,15 +96,19 @@ export function isOutsideCityCentre(
 
 /** Quadratic arc lifted to the left of the travel direction; used for floating (outside-centre) legs. */
 export function arcPoints(from: LatLng, to: LatLng, segments = 24, lift = 0.2): LatLng[] {
-  const control = {
-    latitude: (from.latitude + to.latitude) / 2 + (to.longitude - from.longitude) * lift,
-    longitude: (from.longitude + to.longitude) / 2 - (to.latitude - from.latitude) * lift,
-  };
+  const dLat = to.latitude - from.latitude, dLng = wrapLongitude(to.longitude - from.longitude);
+  const midLat = (from.latitude + to.latitude) / 2;
+  // A degree of longitude shrinks towards the pole. Bend the arc in local east/north units.
+  const scale = cosLatitude(midLat);
+  const latLift = Math.max(-90 - midLat, Math.min(90 - midLat, dLng * scale * lift));
+  const lngLift = scale === 0 ? 0 : -dLat * lift / scale;
   return Array.from({ length: segments + 1 }, (_, step) => {
-    const t = step / segments, u = 1 - t;
+    if (step === 0) return from;
+    if (step === segments) return to;
+    const t = step / segments, bend = 2 * t * (1 - t);
     return {
-      latitude: u * u * from.latitude + 2 * u * t * control.latitude + t * t * to.latitude,
-      longitude: u * u * from.longitude + 2 * u * t * control.longitude + t * t * to.longitude,
+      latitude: from.latitude + t * dLat + bend * latLift,
+      longitude: wrapLongitude(from.longitude + t * dLng + bend * lngLift),
     };
   });
 }
@@ -109,14 +122,14 @@ export function midpointHeading(points: readonly LatLng[]): { point: LatLng; hea
     if (length === 0 || remaining > length) { remaining -= length; continue; }
     const a = points[index], b = points[index + 1];
     const fraction = remaining / length;
-    const deltaLng = (b.longitude - a.longitude + 540) % 360 - 180;
+    const deltaLng = wrapLongitude(b.longitude - a.longitude);
     const point = {
       latitude: a.latitude + (b.latitude - a.latitude) * fraction,
-      longitude: (a.longitude + deltaLng * fraction + 540) % 360 - 180,
+      longitude: wrapLongitude(a.longitude + deltaLng * fraction),
     };
-    const y = Math.sin(radians(deltaLng)) * Math.cos(radians(b.latitude));
-    const x = Math.cos(radians(a.latitude)) * Math.sin(radians(b.latitude))
-      - Math.sin(radians(a.latitude)) * Math.cos(radians(b.latitude)) * Math.cos(radians(deltaLng));
+    const y = Math.sin(radians(deltaLng)) * cosLatitude(b.latitude);
+    const x = cosLatitude(a.latitude) * Math.sin(radians(b.latitude))
+      - Math.sin(radians(a.latitude)) * cosLatitude(b.latitude) * Math.cos(radians(deltaLng));
     const heading = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
     return { point, heading };
   }

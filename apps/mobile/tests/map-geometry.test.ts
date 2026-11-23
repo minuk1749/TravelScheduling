@@ -88,3 +88,46 @@ test('a turn across the date line stays on that side of the globe; stationary pa
   expect(crossing?.heading).toBeCloseTo(90);
   expect(midpointHeading([hotel, hotel, hotel])).toBeNull();
 });
+
+test.each([1, -1])('a short dateline crossing keeps its lifted arc, halfway arrow and endpoints on the same side of the globe (%i)', direction => {
+  const from = { latitude: 0, longitude: direction * 179.9 };
+  const to = { latitude: 0, longitude: -from.longitude };
+  const arc = arcPoints(from, to);
+  expect(arc[0]).toEqual(from);
+  expect(arc.at(-1)).toEqual(to);
+  expect(arc.every(point => Math.abs(point.longitude) >= 179.9 && Math.abs(point.longitude) <= 180)).toBe(true);
+  const middle = arc[12];
+  expect(Math.abs(middle.longitude)).toBeCloseTo(180, 8);
+  expect(middle.latitude).toBeCloseTo(direction * 0.02, 8);
+  const arrow = midpointHeading(arc)!;
+  expect(Math.abs(arrow.point.longitude)).toBeCloseTo(180, 6);
+  expect(Math.abs(arrow.heading - (direction === 1 ? 90 : 270))).toBeLessThan(2);
+});
+
+test.each([89.999, -89.999])('even at latitude %f the arc is local in distance and every SDK coordinate is valid', latitude => {
+  const from = { latitude, longitude: 179.9 }, to = { latitude, longitude: -179.9 };
+  for (const [start, end] of [[from, to], [to, from]]) {
+    const arc = arcPoints(start, end);
+    expect(arc.every(point => Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180)).toBe(true);
+    const length = arc.slice(1).reduce((sum, point, index) => sum + distanceKm(arc[index], point), 0);
+    expect(length).toBeLessThan(1.1 * distanceKm(start, end));
+    const arrow = midpointHeading(arc)!;
+    expect(Math.abs(arrow.point.longitude)).toBeCloseTo(180, 4);
+    expect(Number.isFinite(arrow.heading)).toBe(true);
+  }
+});
+
+test('equivalent representations of a meridian or a pole do not create a route or arrow from zero distance', () => {
+  for (const [a, b] of [
+    [{ latitude: 15, longitude: 180 }, { latitude: 15, longitude: -180 }],
+    [{ latitude: 90, longitude: 175 }, { latitude: 90, longitude: -175 }],
+    [{ latitude: -90, longitude: -30 }, { latitude: -90, longitude: 10 }],
+  ]) {
+    const arc = arcPoints(a, b);
+    expect(arc[0]).toEqual(a);
+    expect(arc.at(-1)).toEqual(b);
+    expect(distanceKm(a, b)).toBe(0);
+    expect(midpointHeading(arc)).toBeNull();
+    expect(midpointHeading([a, b])).toBeNull();
+  }
+});
