@@ -34,6 +34,8 @@ type State = {
 
 const SWITCHED = { TAXI: '택시로', TRANSIT: '대중교통으로', WALK: '도보로' } as const;
 
+// The constraints endpoint returns these statuses only when access, validation or revision checks reject the write.
+const REJECTED_SAVE_STATUSES = new Set([400, 401, 403, 404, 409]);
 const isStale = (failure: unknown) => failure instanceof ApiFailure && failure.code === 'STALE_INPUT';
 const changedElsewhere = () => new ApiFailure(409, 'STALE_INPUT', '다른 기기에서 여행 정보가 바뀌었어요. 다시 계산한 뒤 변경을 적용해 주세요.');
 
@@ -86,7 +88,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
       const saved = await api.saveConstraints(tripId, current.revision, constraints, signal);
       return { ...current, ...saved };
     } catch (failure) {
-      if (!retrying || !isStale(failure) || signal.aborted) throw failure;
+      if (!retrying || signal.aborted || !(failure instanceof ApiFailure && failure.status === 409)) throw failure;
       // The original PUT can commit between the retry's GET and PUT. Observe once, without writing again.
       const latest = await api.savedInput(tripId, signal);
       if (sameConstraints(draft, constraintsFrom(latest.input))) return latest;
@@ -100,10 +102,11 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
     if (pending.current) return;
     const request = new AbortController();
     pending.current = request;
-    let reload = state.phase.kind === 'failed' && state.phase.reload;
+    const failed = state.phase.kind === 'failed' ? state.phase : null;
+    let reload = failed?.reload ?? false;
     let draft = next;
     // Only a retry of this operation may inherit its saved edit. A new no-op has nothing to undo.
-    let restore = state.phase.kind === 'failed' ? undo : null;
+    let restore = failed ? undo : null;
     setState(current => ({ ...current, phase: { kind: 'calculating', change }, notice: null }));
     try {
       const original = state.view;
@@ -116,7 +119,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
         if (!sameConstraints(draft, constraintsFrom(current.input))) {
           // Only the revision against which the draft was prepared can accept a full replacement.
           if (current.revision !== original.revision) throw changedElsewhere();
-          current = await saveDraft(current, draft, request.signal, state.phase.kind === 'failed');
+          current = await saveDraft(current, draft, request.signal, !!failed);
           if (request.signal.aborted) return;
         }
         if (!sameConstraints(draft, before)) {
@@ -142,8 +145,11 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
     } catch (failure) {
       if (request.signal.aborted) return;
       const fields = Object.values(fieldErrors(failure));
-      const stale = isStale(failure);
-      setState(value => ({ ...value, undo: stale ? null : restore, phase: { kind: 'failed', change, reload: reload || stale || !!draft, draft: stale ? null : draft,
+      // A rejected first PUT cannot own a matching remote change. Replays may still have an unacknowledged first PUT.
+      const rejected = !!draft && !failed && failure instanceof ApiFailure && REJECTED_SAVE_STATUSES.has(failure.status);
+      const discardEdit = rejected || isStale(failure);
+      setState(value => ({ ...value, undo: discardEdit ? null : restore, phase: { kind: 'failed', change,
+        reload: reload || discardEdit || !!draft, draft: discardEdit ? null : draft,
         message: fields.length ? fields.join(' ') : errorMessage(failure) } }));
     } finally {
       if (pending.current === request) pending.current = null;

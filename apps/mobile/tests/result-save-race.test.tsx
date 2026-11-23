@@ -18,7 +18,9 @@ async function loseSaveResponse(f = resultFixture()) {
   return { f, original, persist, first: f.save.mock.calls[0][0] };
 }
 
-test.each(['OK', 'CONFLICT'] as const)('a late commit before the replay PUT recovers the saved change and undo on %s', async outcome => {
+test.each([
+  ['OK', 'complete'], ['CONFLICT', 'complete'], ['OK', 'truncated'],
+] as const)('a late commit before the replay PUT recovers the saved change and undo on %s with a %s replay 409', async (outcome, body) => {
   const existing = { ...taxi, from: place('airport'), to: place('hotel'), mode: 'TRANSIT' as const };
   const { f, original, persist, first } = await loseSaveResponse(resultFixture({ ...view,
     input: { ...view.input, legModes: [existing] } }));
@@ -35,7 +37,7 @@ test.each(['OK', 'CONFLICT'] as const)('a late commit before the replay PUT reco
     expect((await persist(first)).status).toBe(200);
     const rejected = await persist(replay);
     expect(rejected.status).toBe(409);
-    return rejected;
+    return body === 'complete' ? rejected : truncated(rejected);
   });
   f.generate.mockImplementationOnce(async () => json(outcome === 'OK' ? trip(f.current().revision) : conflictTrip(f.current().revision)));
 
@@ -83,21 +85,94 @@ test('a persistent replay conflict at the original revision is bounded to one wr
   }
 });
 
-test('a definitive 409 on a fresh edit does not claim an already matching edit made by another device', async () => {
+async function truncated(response: Response) {
+  const body = await response.text();
+  return new Response(body.slice(0, -1), { status: response.status, headers: response.headers });
+}
+
+test.each(['complete', 'truncated', 'empty'] as const)(
+  'a fresh 409 with a %s body never creates an undo for a matching change made by another device', async body => {
+    const f = resultFixture();
+    await openResult(f);
+    const persist = f.save.getMockImplementation()!;
+    f.save.mockImplementationOnce(async fresh => {
+      // The other device commits independently; the actual local PUT uses the original revision and is rejected.
+      expect((await persist(fresh)).status).toBe(200);
+      const rejected = await persist(fresh);
+      expect(rejected.status).toBe(409);
+      if (body === 'truncated') return truncated(rejected);
+      if (body === 'empty') return new Response(null, { status: rejected.status });
+      return rejected;
+    });
+    await swap();
+    expect(await screen.findByText('⚠ 동선을 계산하지 못했어요')).toBeVisible();
+    expect(f.read).toHaveBeenCalledTimes(1);
+    expect(f.generate).toHaveBeenCalledTimes(1);
+    expect(f.current().input.legModes).toEqual([taxi]);
+    await press('다시 계산');
+    expect(await screen.findByTestId('result-toast')).toBeVisible();
+    expect(f.read).toHaveBeenCalledTimes(2);
+    expect(f.generate).toHaveBeenCalledTimes(2);
+    expect(f.save).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
+    expect(f.current().input.legModes).toEqual([taxi]);
+  },
+);
+
+test.each([
+  [400, 'INVALID_JSON', '올바른 JSON을 보내 주세요.'],
+  [400, 'INVALID_INPUT', '고정 날짜를 확인해 주세요.'],
+  [403, 'FORBIDDEN', '접근할 수 없습니다.'],
+  [404, 'NOT_FOUND', '여행을 찾을 수 없습니다.'],
+  [409, 'RESULT_UNAVAILABLE', '여행 입력 정보를 먼저 완성해 주세요.'],
+] as const)('a fresh constraint PUT rejected with HTTP %d preserves the error and cannot acquire a remote undo', async (status, code, error) => {
   const f = resultFixture();
   await openResult(f);
   const persist = f.save.getMockImplementation()!;
-  f.save.mockImplementationOnce(async fresh => {
-    await persist(fresh);
-    return persist(fresh);
+  const body = code === 'INVALID_INPUT' ? { code, error: '입력 내용을 확인해 주세요.', fields: { fixedDate: error } } : { code, error };
+  f.save.mockResolvedValueOnce(json(body, status));
+  await swap();
+  expect(await screen.findByText(error)).toBeVisible();
+  expect(f.current().input.legModes).toEqual([]);
+  // A different device subsequently saves the same edit before this device retries.
+  await persist(f.save.mock.calls[0][0]);
+  await press('다시 계산');
+  expect(await screen.findByTestId('result-toast')).toBeVisible();
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.current().input.legModes).toEqual([taxi]);
+  expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
+});
+
+test('a gateway error with an unknown save outcome still permits verification and undo of a committed edit', async () => {
+  const f = resultFixture();
+  await openResult(f);
+  const persist = f.save.getMockImplementation()!;
+  f.save.mockImplementationOnce(async request => {
+    await persist(request);
+    return new Response(null, { status: 502 });
   });
   await swap();
-  expect(await screen.findByText('⚠ 동선을 계산하지 못했어요')).toBeVisible();
-  expect(f.read).toHaveBeenCalledTimes(1);
+  await screen.findByText('⚠ 동선을 계산하지 못했어요');
   await press('다시 계산');
-  expect(await screen.findByText('다시 계산했어요')).toBeVisible();
+  expect(await screen.findByRole('button', { name: '되돌리기' })).toBeVisible();
   expect(f.save).toHaveBeenCalledTimes(1);
-  expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
+  expect(f.current().input.legModes).toEqual([taxi]);
+  await press('되돌리기');
+  expect(await screen.findByText('되돌리고 다시 계산했어요')).toBeVisible();
+  expect(f.current().input.legModes).toEqual([]);
+});
+
+test('a 409 from generation after an acknowledged PUT cannot reject that earlier save', async () => {
+  const f = resultFixture();
+  await openResult(f);
+  f.generate.mockResolvedValueOnce(new Response('{', { status: 409 }));
+  await swap();
+  await screen.findByText('⚠ 동선을 계산하지 못했어요');
+  await press('다시 계산');
+  expect(await screen.findByRole('button', { name: '되돌리기' })).toBeVisible();
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(f.current().input.legModes).toEqual([taxi]);
 });
 
 test('an interrupted undo and failed confirmation can be retried without another write or a new undo', async () => {
