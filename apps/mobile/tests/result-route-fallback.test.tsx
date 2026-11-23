@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from 'expo-router/testing-library';
 import { deferred, json } from './helpers';
-import { at, D1, D2, D3, legId, openResult, place, resultFixture, REVISION, ROAD, routes, trip, view } from './result-fixture';
+import { at, conflictTrip, D1, D2, D3, ITINERARY_A, legId, openResult, place, resultFixture, REVISION, ROAD, routes, trip, view } from './result-fixture';
 
 const location = (id: string) => JSON.parse(screen.getByTestId('coordinate-' + id).props.children);
 const straight = (id: string) => JSON.parse(screen.getByTestId('straight-' + id).props.children);
@@ -53,6 +53,63 @@ test('scheduled legs use their road shapes even when one or both place lookups r
   expect(screen.getByTestId('schedule-leg-' + museumLeg)).not.toHaveTextContent(/도심 밖/);
   expect(screen.getByTestId('schedule-leg-' + walkBack)).toHaveTextContent(/도보 30분/);
 });
+
+const historicalAirport = legId(D1, 'airport', 'hotel', 'AIRPORT');
+const conflictId = 'd6e9d669-28eb-4675-bbd4-dfcb08bb8938';
+const missingTransferPlaces = () => resultFixture({ ...view, places: { ...view.places, [place('airport')]: null, [place('hotel')]: null } });
+
+async function openHistoricalAirportTimeline(f: ReturnType<typeof resultFixture>) {
+  await fireEvent.press(screen.getByRole('button', { name: '이 장소 수정' }));
+  await fireEvent.changeText(screen.getByLabelText('고정 시각'), '09:00');
+  f.generate.mockImplementationOnce(async () => {
+    const conflict = conflictTrip(f.current().revision);
+    conflict.capacity.unplaced = [{ visitId: 'museum', reason: 'TIME_WINDOW', fixed: true }];
+    conflict.capacity.issues = [];
+    return json({ ...conflict, itineraryId: conflictId });
+  });
+  await fireEvent.press(screen.getByRole('button', { name: '적용하고 다시 계산' }));
+  await screen.findByRole('button', { name: '도쿄 국립박물관 고정 수정' });
+  await fireEvent.press(screen.getByRole('button', { name: '전체 일정' }));
+  expect(screen.getByText('⚠ 고정 조건 충돌 · 이전 계산 결과')).toBeVisible();
+}
+
+test.each(['before conflict', 'with the conflict timeline open'])(
+  'historical map and timeline classify the airport transfer together when verified road endpoints arrive %s', async when => {
+    const f = missingTransferPlaces(), response = deferred<Response>();
+    f.shapes.mockReturnValueOnce(response.promise);
+    await openResult(f);
+    if (when === 'before conflict') await act(async () => response.resolve(json(tokyoShapes())));
+    await openHistoricalAirportTimeline(f);
+    const row = () => screen.getByTestId('schedule-leg-' + historicalAirport);
+    if (when === 'with the conflict timeline open') {
+      expect(routes()[historicalAirport]).toBeUndefined();
+      expect(row()).not.toHaveTextContent(/도심 밖/);
+      await act(async () => response.resolve(json(tokyoShapes())));
+    }
+    expect(routes()[historicalAirport]).toMatch(/TRANSIT FLOATING DIM .* ROAD$/);
+    expect(location('airport:' + place('airport'))).toEqual({ latitude: 35.5494, longitude: 139.7798 });
+    expect(row()).toHaveTextContent(/대중교통 40분 · ¥500 · 도심 밖/);
+    expect(screen.getByTestId('schedule-leg-' + legId(D1, 'hotel', 'museum'))).not.toHaveTextContent(/도심 밖/);
+    expect(f.shapes.mock.calls.map(([url]) => [url.searchParams.get('itineraryId'), url.searchParams.get('inputHash')]))
+      .toEqual([[ITINERARY_A, REVISION]]);
+  },
+);
+
+test.each([['conflict ID', conflictId], ['legacy response without an ID', undefined]])(
+  'historical map and timeline discard road endpoints from a %s even when its input hash matches', async (_label, itineraryId) => {
+    const f = missingTransferPlaces(), response = deferred<Response>();
+    f.shapes.mockReturnValueOnce(response.promise);
+    await openResult(f);
+    await openHistoricalAirportTimeline(f);
+    await act(async () => response.resolve(json({ ...tokyoShapes(), itineraryId })));
+    expect(routes()[historicalAirport]).toBeUndefined();
+    expect(screen.queryByTestId('coordinate-airport:' + place('airport'))).toBeNull();
+    const row = screen.getByTestId('schedule-leg-' + historicalAirport);
+    expect(row).toHaveTextContent(/대중교통 40분 · ¥500/);
+    expect(row).not.toHaveTextContent(/도심 밖/);
+    expect(f.shapes).toHaveBeenCalledTimes(1);
+  },
+);
 
 test('matching roads restore missing visit, lodging and airport markers on their day and keep selection in sync', async () => {
   const lodging = view.input.lodgings[0]!.place;

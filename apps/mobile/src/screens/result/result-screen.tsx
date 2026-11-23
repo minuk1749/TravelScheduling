@@ -81,8 +81,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   // Conflict cards use the current fixes, but the historical timeline uses the input that produced its stops.
   const scheduleDay = useMemo(() => {
     if (sheet?.kind !== 'SCHEDULE' || !conflict || failed) return day;
-    return base ? buildDays(base.view, base.result, null).find(item => item.date === day.date) : undefined;
-  }, [sheet?.kind, conflict, failed, day, base]);
+    return base ? buildDays(base.view, base.result, null, [], shapes).find(item => item.date === day.date) : undefined;
+  }, [sheet?.kind, conflict, failed, day, base, shapes]);
   const [locate, setLocate] = useState(0);
   const safe = useSafeAreaInsets();
   const [topInset, setTopInset] = useState(0);

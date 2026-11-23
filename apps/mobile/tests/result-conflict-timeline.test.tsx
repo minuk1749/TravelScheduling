@@ -81,6 +81,8 @@ test('without a successful calculation the conflict timeline explains why there 
   expect(sheet().getByRole('alert', { name: noPrevious })).toBeVisible();
   expect(sheet().queryByText('배치된 장소 없음')).toBeNull();
   expect(sheet().queryByTestId('trip-efficiency')).toBeNull();
+  expect(sheet().queryAllByTestId(/^schedule-leg-/)).toHaveLength(0);
+  expect(f.shapes).not.toHaveBeenCalled();
   expect(sheet().queryByRole('button', { name: /도쿄 국립박물관/ })).toBeNull();
   await fireEvent.press(sheet().getByRole('button', { name: '닫기' }));
   expect(screen.getByRole('button', { name: '도쿄 국립박물관 고정 수정' })).toBeEnabled();
