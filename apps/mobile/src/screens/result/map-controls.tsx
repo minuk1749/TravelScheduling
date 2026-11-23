@@ -7,9 +7,9 @@ import type { Notice } from './use-itinerary';
 type Control = 'legend' | 'retry' | 'locate' | 'toast';
 type Measured = { inPanel?: boolean; onLayout?(event: LayoutChangeEvent): void };
 
-export function useMapControls(left: number, right: number, notice: Notice | null, retry: boolean, floating = true) {
+export function useMapControls(left: number, right: number, notice: Notice | null, retry: boolean) {
   const [frames, setFrames] = useState<Partial<Record<Control, { rect: MapRect; noticeId?: number }>>>({});
-  const measure = (id: Control) => !floating ? undefined : (event: LayoutChangeEvent) => {
+  const measure = (id: Control) => (event: LayoutChangeEvent) => {
     const rect = event.nativeEvent.layout;
     const noticeId = id === 'toast' ? notice?.id : undefined;
     setFrames(previous => {
@@ -20,13 +20,13 @@ export function useMapControls(left: number, right: number, notice: Notice | nul
     });
   };
   const active: Control[] = notice ? ['toast', 'locate'] : retry ? ['legend', 'retry', 'locate'] : ['legend', 'locate'];
-  const controls = !floating ? [] : active.flatMap(id => {
+  const controls = active.flatMap(id => {
     const rect = frames[id]?.rect;
     // Child layout is local to the horizontally safe controls container.
     return rect ? [{ ...rect, x: rect.x + left }] : [];
   });
   const toast = notice && frames.toast?.noticeId === notice.id ? frames.toast.rect : null;
-  return { measure, toastHeight: toast?.height ?? 0, overlay: { left, right, controls, awaitingLayout: floating && !!notice && !toast } };
+  return { measure, toastHeight: toast?.height ?? 0, overlay: { left, right, controls, awaitingLayout: !!notice && !toast } };
 }
 
 /** §6 legend pill above the panel: 이동 · 도보 · 도심 밖 · 희망 N. */
@@ -47,9 +47,9 @@ export function Legend({ inPanel, wishes, bottom, onAddWish, onLayout }: Measure
 }
 
 /** §7 current-location button: 56 above the panel, right 12, white circle 44. */
-export function LocateButton({ inPanel, bottom, toastHeight, onPress, onLayout }: Measured & { bottom: number; toastHeight: number; onPress(): void }) {
+export function LocateButton({ inPanel, bottom, offset, onPress, onLayout }: Measured & { bottom: number; offset: number; onPress(): void }) {
   return <Pressable accessibilityRole="button" accessibilityLabel="현재 위치" onPress={onPress} onLayout={onLayout}
-    style={[styles.locate, { bottom: bottom + Math.max(result.locate.offset, spacing.cardGap + toastHeight + spacing.steps[1]) }, inPanel && styles.inPanel]}>
+    style={[styles.locate, { bottom: bottom + offset }, inPanel && styles.inPanel]}>
     <Text style={[text.place, { color: colors.sky.primary }]}>◎</Text>
   </Pressable>;
 }

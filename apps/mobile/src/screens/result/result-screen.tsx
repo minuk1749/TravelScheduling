@@ -90,7 +90,9 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const safe = useSafeAreaInsets();
   const [topInset, setTopInset] = useState(0);
   const frame = useSafeAreaFrame();
-  const { height, panelHeight, controlsBottom, controlsInPanel, wide, onLayout } = usePanelLayout(topInset);
+  const showShapeRetry = shapesFailed && displayed === shown && !notice;
+  const { overlay, measure: measureFloating, toastHeight } = useMapControls(safe.left, safe.right, notice, showShapeRetry);
+  const { height, panelHeight, controlsBottom, controlsInPanel, locateOffset, wide, onLayout } = usePanelLayout(topInset, toastHeight);
   const [formTop, setFormTop] = useState<number | null>(null);
   const formOpen = formTop !== null || !!(editSelection && card) || sheet?.kind === 'WISH';
   const scheduleOpen = sheet?.kind === 'SCHEDULE';
@@ -99,8 +101,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const coveredBottom = formTop === null ? panelHeight : Math.max(panelHeight, Math.max(height, frame.y + frame.height) - formTop);
   const coverMap = scheduleOpen || (formOpen && formTop === null) || height - topInset - coveredBottom < result.mapAttributionHeight;
   const mapBottom = coverMap ? panelHeight : coveredBottom;
-  const showShapeRetry = shapesFailed && displayed === shown && !notice;
-  const { overlay, measure, toastHeight } = useMapControls(safe.left, safe.right, notice, showShapeRetry, !controlsInPanel && !formOpen && !scheduleOpen);
+  const floating = !controlsInPanel && !formOpen && !scheduleOpen;
+  const measure = floating ? measureFloating : () => undefined;
   const { dismissNotice } = itinerary;
   useEffect(() => {
     if (!notice) return;
@@ -154,7 +156,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     {!notice && <Legend {...position} onLayout={measure('legend')} wishes={wishes.length}
       onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
     {showShapeRetry && <ShapeRetry {...position} onLayout={measure('retry')} onPress={retryShapes} />}
-    <LocateButton {...position} onLayout={measure('locate')} toastHeight={wide ? 0 : toastHeight} onPress={() => setLocate(value => value + 1)} />
+    <LocateButton {...position} onLayout={measure('locate')} offset={locateOffset} onPress={() => setLocate(value => value + 1)} />
     {notice && <Toast {...position} onLayout={measure('toast')} wide={wide} notice={notice} onClose={dismissNotice}
       onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
   </View>;
@@ -162,7 +164,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   return <SheetTopContext.Provider value={setFormTop}><View testID="result-screen" style={styles.screen} onLayout={onLayout}>
     <ResultMap markers={scene.markers} routes={scene.routes} focusDate={day.date} focusIds={scene.focusIds}
       selectedId={selectedWishId ?? card?.visitId ?? null} topInset={topInset} bottomInset={mapBottom}
-      overlay={overlay} dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
+      overlay={floating ? overlay : { left: safe.left, right: safe.right, controls: [] }} dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
     {coverMap && <View testID="result-map-cover" pointerEvents="none" style={styles.cover} />}
     <SafeAreaView testID="result-top-controls" edges={['top', 'left', 'right']} pointerEvents="box-none" style={styles.top}
       onLayout={event => setTopInset(event.nativeEvent.layout.height)}>

@@ -30,6 +30,11 @@ jest.mock('react-native-maps', () => {
 
 beforeEach(() => { mockProject.mockReset(); mockFit.mockClear(); });
 
+async function measureBadge(label: string, width = 150, height = 24) {
+  const badge = screen.getByText(label, { includeHiddenElements: true }).parent!;
+  await act(async () => badge.props.onLayout({ nativeEvent: { layout: { width, height } } }));
+}
+
 test('projects the airport into visible map space, updates when the panel moves, and ignores stale camera projections', async () => {
   const coordinate = { latitude: 35.55, longitude: 139.78 };
   const props: ResultMapProps = {
@@ -46,6 +51,7 @@ test('projects the airport into visible map space, updates when the panel moves,
   expect(screen.queryByText(label)).toBeNull();
 
   await rendered.rerender(<GoogleResultMap {...props} bottomInset={350} />);
+  await measureBadge(label);
   expect(screen.getByText(label)).toBeVisible();
   expect(within(screen.getByTestId('airport-edge-BOTTOM')).getByText(label)).toBeVisible();
   expect(screen.getByTestId('airport-edges')).toHaveStyle({ bottom: 350 + result.mapAttributionHeight });
@@ -57,6 +63,7 @@ test('projects the airport into visible map space, updates when the panel moves,
   mockProject.mockReturnValueOnce(stale.promise).mockResolvedValueOnce({ x: 200, y: 50 });
   await fireEvent(map, 'regionChangeComplete');
   await fireEvent(map, 'regionChangeComplete');
+  await measureBadge(label);
   expect(screen.getByText(label)).toBeVisible();
   expect(within(screen.getByTestId('airport-edge-TOP')).getByText(label)).toBeVisible();
   expect(screen.getByTestId('airport-edges')).toHaveStyle({ top: 80 });
@@ -79,9 +86,11 @@ test('both airports share one readable edge notice, then follow rotation, map mo
   mockProject.mockReturnValueOnce(firstAirport.promise).mockResolvedValueOnce({ x: 710, y: 310 });
   await fireEvent(map, 'layout', { nativeEvent: { layout: { width: 390, height: 844 } } });
   await fireEvent(map, 'mapReady');
+  await measureBadge('✈ 나리타 · 화면 밖');
   expect(screen.getByText('✈ 나리타 · 화면 밖')).toBeVisible();
   await act(async () => { firstAirport.resolve({ x: 650, y: 280 }); });
   const combined = '✈ 하네다 · 나리타 · 화면 밖';
+  await measureBadge(combined);
   expect(within(screen.getByTestId('airport-edge-RIGHT')).getByText(combined)).toBeVisible();
   expect(screen.getByTestId('airport-edge-RIGHT')).toHaveStyle({ alignItems: 'flex-end', justifyContent: 'center' });
   expect(screen.getByTestId('airport-edges')).toHaveStyle({ top: 76, bottom: 150 + result.mapAttributionHeight });
@@ -90,15 +99,18 @@ test('both airports share one readable edge notice, then follow rotation, map mo
   await fireEvent(map, 'layout', { nativeEvent: { layout: { width: 844, height: 390 } } });
   expect(screen.queryByText(combined)).toBeNull();
   expect(screen.queryByTestId('airport-edge-RIGHT')).toBeNull();
+  await measureBadge('✈ 나리타 · 화면 밖');
   expect(within(screen.getByTestId('airport-edge-LEFT')).getByText('✈ 나리타 · 화면 밖')).toBeVisible();
 
   const oldNarita = deferred<{ x: number; y: number }>();
   mockProject.mockResolvedValueOnce({ x: 370, y: 300 }).mockReturnValueOnce(oldNarita.promise);
   await fireEvent(map, 'regionChangeComplete');
+  await measureBadge('✈ 하네다 · 화면 밖');
   expect(within(screen.getByTestId('airport-edge-BOTTOM')).getByText('✈ 하네다 · 화면 밖')).toBeVisible();
   // A selected date can retain the same airport IDs while the map is fitting a different area.
   mockProject.mockResolvedValueOnce({ x: 420, y: -80 }).mockRejectedValueOnce(new Error('no projection'));
   await rendered.rerender(<GoogleResultMap {...props} focusDate={D3} />);
+  await measureBadge('✈ 하네다 · 화면 밖');
   expect(within(screen.getByTestId('airport-edge-TOP')).getByText('✈ 하네다 · 화면 밖')).toBeVisible();
   await act(async () => { oldNarita.resolve({ x: 415, y: -80 }); });
   expect(screen.queryByText(combined)).toBeNull();
@@ -129,7 +141,8 @@ test('an initial conflict projects the airport of each local transfer day while 
   await fireEvent(map, 'mapReady');
   const label = '✈ 하네다 공항 · 화면 밖';
   const airportMarker = 'airport:' + airportId;
-  function checkTransfer(from: LatLng, to: LatLng) {
+  async function checkTransfer(from: LatLng, to: LatLng) {
+    await measureBadge(label);
     const redArcs = screen.getAllByTestId('polyline').filter(line =>
       processColor(line.props.strokeColor) === processColor(colors.red.text));
     expect(redArcs).toHaveLength(1);
@@ -143,13 +156,37 @@ test('an initial conflict projects the airport of each local transfer day while 
     expect(mockProject).toHaveBeenLastCalledWith(airport);
     expect(mockFit).toHaveBeenLastCalledWith([lodging], expect.anything());
   }
-  checkTransfer(airport, lodging);
+  await checkTransfer(airport, lodging);
   await fireEvent.press(screen.getByRole('button', { name: '2일 12.4' }));
   expect(screen.queryByTestId(airportMarker)).toBeNull();
   expect(screen.queryByTestId('polyline')).toBeNull();
   expect(screen.queryByText(label)).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: '3일 12.5' }));
-  checkTransfer(lodging, airport);
+  await checkTransfer(lodging, airport);
+});
+
+test('a tall edit sheet hides an offscreen airport badge that cannot fit above the native credits', async () => {
+  mockProject.mockResolvedValue({ x: 180, y: 0 });
+  await openResult(resultFixture());
+  const emit = (id: string, y: number, height: number) => act(async () => {
+    screen.getByTestId(id).props.onLayout?.({ nativeEvent: { layout: { x: 0, y, width: 400, height } } });
+  });
+  await emit('result-screen', 0, 800);
+  await emit('result-top-controls', 0, 125);
+  await emit('native-map', 0, 800);
+  await fireEvent(screen.getByTestId('native-map'), 'mapReady');
+  await fireEvent.press(screen.getByRole('button', { name: '이 장소 수정' }));
+  await emit('form-sheet', 165, 635);
+  const label = () => screen.getByText('✈ 하네다 공항 · 화면 밖', { includeHiddenElements: true });
+  expect(screen.queryByTestId('result-map-cover')).toBeNull();
+  expect(screen.getByTestId('native-map').props.mapPadding.bottom).toBe(635);
+  await measureBadge('✈ 하네다 공항 · 화면 밖');
+  expect(label()).not.toBeVisible();
+  await emit('form-sheet', 265, 535);
+  expect(label()).not.toBeVisible();
+  await measureBadge('✈ 하네다 공항 · 화면 밖');
+  expect(label()).toBeVisible();
+  expect(screen.getByTestId('airport-edges')).toHaveStyle({ top: 125, bottom: 535 + result.mapAttributionHeight, overflow: 'hidden' });
 });
 
 test('the bottom airport notice clears the measured legend, retry, location and a wrapped success toast until it is closed', async () => {
@@ -177,7 +214,7 @@ test('the bottom airport notice clears the measured legend, retry, location and 
     }
     type Rect = Awaited<ReturnType<typeof control>>;
     async function badgeBounds() {
-      const badge = screen.getByText('✈ 하네다 공항 · 화면 밖').parent!;
+      const badge = screen.getByText('✈ 하네다 공항 · 화면 밖', { includeHiddenElements: true }).parent!;
       const w = 156, h = 28;
       await emitLayout(badge, { x: 0, y: 0, width: w, height: h });
       expect(screen.getByText('✈ 하네다 공항 · 화면 밖')).toBeVisible();
@@ -247,7 +284,7 @@ test('a short map keeps separate airport groups clear of the landscape controls,
   await fireEvent(map, 'mapReady');
 
   async function labelRect(name: string, left: number, top: number) {
-    const badge = screen.getByText(name).parent!, w = 128, h = 24;
+    const badge = screen.getByText(name, { includeHiddenElements: true }).parent!, w = 128, h = 24;
     await act(async () => badge.props.onLayout({ nativeEvent: { layout: { width: w, height: h } } }));
     expect(screen.getByText(name)).toBeVisible();
     const transform = Object.assign({}, ...StyleSheet.flatten(badge.props.style).transform);
@@ -268,5 +305,6 @@ test('a short map keeps separate airport groups clear of the landscape controls,
   // The notch still occludes an airport even when the toast is gone.
   mockProject.mockResolvedValueOnce({ x: 400, y: 450 }).mockResolvedValueOnce({ x: 20, y: 165 });
   await fireEvent(map, 'regionChangeComplete');
+  await measureBadge('✈ 나리타 · 화면 밖');
   expect(within(screen.getByTestId('airport-edge-LEFT')).getByText('✈ 나리타 · 화면 밖')).toBeOnTheScreen();
 });

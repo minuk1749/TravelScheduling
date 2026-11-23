@@ -62,15 +62,16 @@ function ProjectedEdges({ map, airports, viewport, topInset, bottomInset, overla
     const { width, height } = event.nativeEvent.layout;
     setSizes(previous => previous[side]?.width === width && previous[side]?.height === height ? previous : { ...previous, [side]: { width, height } });
   };
-  return <View pointerEvents="none" testID="airport-edges" style={[StyleSheet.absoluteFill, { left, right, top: topInset, bottom: bottomInset }]}>
+  return <View pointerEvents="none" testID="airport-edges" style={[StyleSheet.absoluteFill, styles.bounds, { left, right, top: topInset, bottom: bottomInset }]}>
     {[...groups].map(([edge, labels]) => {
       const size = sizes[edge];
       const placement = size && placeEdgeBadge(edge, size, bounds, blocked, spacing.steps[1]);
-      const position = placement ? { transform: [{ translateX: placement.translateX }, { translateY: placement.translateY }] }
-        : blocked.length ? styles.measuring : undefined;
+      const hidden = !placement || !!overlay.awaitingLayout;
+      const position = placement && { transform: [{ translateX: placement.translateX }, { translateY: placement.translateY }] };
       if (placement) blocked.push(placement.rect);
       return <View key={edge} testID={`airport-edge-${edge}`} style={[StyleSheet.absoluteFill, styles.layer, styles[edge]]}>
-        <View onLayout={measure(edge)} style={[styles.badge, bothSides && (edge === 'LEFT' || edge === 'RIGHT') && styles.sideBadge, position, overlay.awaitingLayout && styles.measuring]}>
+        <View onLayout={measure(edge)} accessibilityElementsHidden={hidden} importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}
+          style={[styles.badge, bothSides && (edge === 'LEFT' || edge === 'RIGHT') && styles.sideBadge, position, hidden && styles.measuring]}>
           <Text style={text.tiny}>✈ {labels.join(' · ')} · 화면 밖</Text>
         </View>
       </View>;
@@ -79,6 +80,7 @@ function ProjectedEdges({ map, airports, viewport, topInset, bottomInset, overla
 }
 
 const styles = StyleSheet.create({
+  bounds: { overflow: 'hidden' },
   layer: { padding: spacing.steps[1] },
   TOP: { alignItems: 'center', justifyContent: 'flex-start' },
   BOTTOM: { alignItems: 'center', justifyContent: 'flex-end' },

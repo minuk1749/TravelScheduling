@@ -37,18 +37,21 @@ function CalculationSummary({ label }: { label: string }) {
 }
 
 /** The content of the panel never determines how much of the map it covers. */
-export function usePanelLayout(topInset = 0) {
+export function usePanelLayout(topInset = 0, toastHeight = 0) {
   const window = useWindowDimensions();
   const [parent, setParent] = useState<{ width: number; height: number } | null>(null);
   const { width, height } = parent ?? window;
   const target = height * result.panel.ratio;
   const belowDates = height - topInset - result.mapAttributionHeight;
-  const floatingSpace = belowDates - result.locate.offset - result.locate.size;
+  const wide = width > height;
+  const toastTop = spacing.cardGap + toastHeight;
+  const locateOffset = wide ? result.locate.offset : Math.max(result.locate.offset, toastTop + spacing.steps[1]);
+  const floatingSpace = belowDates - Math.max(toastTop, locateOffset + result.locate.size);
   // A short map cannot fit floating controls between the date chips and the SDK credits.
   const controlsInPanel = topInset > 0 && floatingSpace < size.touch;
   const available = controlsInPanel ? belowDates : floatingSpace;
   const panelHeight = topInset ? Math.min(target, Math.max(size.touch, available)) : target;
-  return { height, panelHeight, controlsInPanel, controlsBottom: panelHeight + result.mapAttributionHeight, wide: width > height, onLayout: (event: LayoutChangeEvent) => {
+  return { height, panelHeight, controlsInPanel, controlsBottom: panelHeight + result.mapAttributionHeight, locateOffset, wide, onLayout: (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setParent(previous => previous?.width === width && previous.height === height ? previous : { width, height });
   } };

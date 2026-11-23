@@ -34,6 +34,32 @@ test('a 280-point parent keeps the date touch row, map controls and credit strip
   expect(top.getByRole('button', { name: '14일 12.16', selected: true })).toBeOnTheScreen();
 });
 
+test('a wrapped portrait toast keeps the location touch target below all date chips', async () => {
+  const map = jest.fn(FakeResultMap);
+  await openResult(resultFixture({ ...view, input: { ...view.input, endDate: '2026-12-16' } }), map);
+  await layout('result-screen', 320, 480);
+  await layout('result-top-controls', 320, 148);
+  const panelHeight = () => StyleSheet.flatten(screen.getByTestId('place-panel').props.style).height;
+  const original = panelHeight();
+  expect(within(screen.getByTestId('result-top-controls')).getAllByRole('button', { name: /일 12\./ })).toHaveLength(14);
+  await press('택시 14분 약 ¥2,300로 바꾸기');
+  await screen.findByTestId('result-toast');
+  await layout('result-toast', 296, 108);
+  const assertTouchable = () => {
+    const locate = StyleSheet.flatten(screen.getByRole('button', { name: '현재 위치' }).props.style);
+    const top = locate.position === 'absolute' ? 480 - locate.bottom - locate.height : 480 - panelHeight();
+    expect(top).toBeGreaterThanOrEqual(148);
+    if (locate.position === 'absolute') {
+      expect(locate.bottom).toBeGreaterThanOrEqual(panelHeight() + result.mapAttributionHeight);
+    }
+    expect(map.mock.lastCall?.[0].bottomInset).toBe(panelHeight());
+  };
+  assertTouchable();
+  await press('알림 닫기');
+  expect(panelHeight()).toBe(original);
+  assertTouchable();
+});
+
 test('a long conflict stays inside the measured panel; dates, map controls and the last release remain accessible', async () => {
   const fixes = legs.map(([from, to]) => ({ date: D1, from: place(from), to: place(to), mode: 'TRANSIT' as const }));
   const fixture = resultFixture({ ...view, input: { ...view.input, legModes: fixes } });
