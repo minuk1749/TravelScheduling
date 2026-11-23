@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Text } from 'react-native';
 import type { ResultView } from '@travel/core/contracts/results/model';
-import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
+import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen } from '../../components/input/form-layout';
 import { useResultMap } from '../../map/provider';
 import { colors, text } from '../../theme';
 import { CapacityFlow } from '../capacity/capacity-flow';
 import { errorMessage } from '../trip-input/presentation';
+import { InitialResult } from './place-panel';
 import { ResultScreen } from './result-screen';
 import { useItinerary } from './use-itinerary';
 
 type FlowProps = { tripId: string; back(): void; editConditions(): void };
-type Load = { status: 'loading' } | { status: 'ready'; view: ResultView; result: GeneratedTrip } | { status: 'error'; message: string };
+type Load =
+  | { status: 'read'; result: GeneratedTrip; source: 'initial' | 'calculation'; error?: string }
+  | { status: 'calculate'; view: ResultView; error?: string }
+  | { status: 'ready'; view: ResultView; result: GeneratedTrip };
 
 function ResultEditor({ tripId, view, result, back, editConditions, overCapacity }: FlowProps & {
   view: ResultView; result: GeneratedTrip; overCapacity(result: GeneratedTrip): void;
@@ -30,31 +34,47 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
   initial: GeneratedTrip; view?: ResultView; overCapacity(result: GeneratedTrip): void;
 }) {
   const api = useTripApi();
-  const [load, setLoad] = useState<Load>(view ? { status: 'ready', view, result: initial } : { status: 'loading' });
-  const [attempt, setAttempt] = useState(0);
+  const map = useResultMap();
+  const [load, setLoad] = useState<Load>(() => view
+    ? { status: 'ready', view, result: initial }
+    : { status: 'read', result: initial, source: 'initial' });
+
   useEffect(() => {
-    if (view && !attempt) return;
+    if (load.status === 'ready' || load.error !== undefined) return;
     const request = new AbortController();
-    const read = async () => {
-      const saved = await api.savedInput(tripId, request.signal);
-      const result = saved.revision === initial.inputHash ? initial : await api.generate(tripId, request.signal);
-      verifyRevision(result, saved.revision);
-      return { view: saved, result };
-    };
-    read().then(loaded => {
+    function open(saved: ResultView, result: GeneratedTrip) {
+      if (result.status === 'OVER_CAPACITY') overCapacity(result);
+      else setLoad({ status: 'ready', view: saved, result });
+    }
+    const run = async () => {
+      if (load.status === 'read') {
+        const saved = await api.savedInput(tripId, request.signal);
+        if (request.signal.aborted) return;
+        if (saved.revision === load.result.inputHash) open(saved, load.result);
+        else if (load.source === 'initial') setLoad({ status: 'calculate', view: saved });
+        else setLoad({ status: 'calculate', view: saved, error: '계산 중 여행 정보가 바뀌었어요. 다시 계산해 주세요.' });
+        return;
+      }
+      const result = await api.generate(tripId, request.signal);
       if (request.signal.aborted) return;
-      if (loaded.result.status === 'OVER_CAPACITY') overCapacity(loaded.result);
-      else setLoad({ status: 'ready', ...loaded });
-    }, error => { if (!request.signal.aborted) setLoad({ status: 'error', message: errorMessage(error) }); });
+      // A concurrent edit may already be reflected in the result. Read the matching input before opening it.
+      if (result.inputHash === load.view.revision) open(load.view, result);
+      else setLoad({ status: 'read', result, source: 'calculation' });
+    };
+    void run().catch(error => {
+      if (!request.signal.aborted) setLoad({ ...load, error: errorMessage(error) });
+    });
     return () => request.abort();
-  }, [api, tripId, initial, view, attempt, overCapacity]);
+  }, [api, tripId, load, overCapacity]);
 
   if (load.status === 'ready') return <ResultEditor tripId={tripId} view={load.view} result={load.result}
     back={back} editConditions={editConditions} overCapacity={overCapacity} />;
-  return <FormScreen title="동선 결과" back={back} footer={load.status === 'error' && <ActionButton label="다시 불러오기"
-    onPress={() => { setLoad({ status: 'loading' }); setAttempt(value => value + 1); }} />}>
+  const retry = () => setLoad({ ...load, error: undefined });
+  if (load.status === 'calculate') return <InitialResult map={map} back={back}
+    failure={load.error === undefined ? undefined : { message: load.error, retry, editConditions }} />;
+  return <FormScreen title="동선 결과" back={back} footer={load.error !== undefined && <ActionButton label="다시 불러오기" onPress={retry} />}>
     <FormCard>
-      {load.status === 'error' ? <FormError message={load.message} /> : <>
+      {load.error !== undefined ? <FormError message={load.error} /> : <>
         <ActivityIndicator color={colors.sky.primary} />
         <Text accessibilityLiveRegion="polite" style={text.body}>동선을 불러오는 중</Text>
       </>}
