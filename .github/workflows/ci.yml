@@ -5,10 +5,17 @@ on:
   pull_request:
   push:
     branches: [main, develop]
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
   check:
+    # The later job queues on GitHub before a hosted runner is allocated.
+    concurrency:
+      group: product-checks-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.pull_request.base.sha || github.run_id }}-${{ github.event.pull_request.head.sha || github.sha }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -24,11 +31,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 2
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+      - name: Identify the checkout before running project code
+        id: source
+        if: github.event_name == 'pull_request' && github.base_ref == 'develop' && github.event.pull_request.head.repo.id == github.event.repository.id && !github.event.pull_request.draft
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$(git rev-parse 'HEAD^{tree}')" == "$(git rev-parse "${PR_HEAD}^{tree}")" ]]; then
+            echo 'exact=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check
+        run: env -u GITHUB_OUTPUT -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_STEP_SUMMARY bash .github/agent/check-required.sh
       - name: Agent automation regression tests
         run: node --test .github/agent/*.test.mjs
-      - name: Check
-        run: bash .github/agent/check-required.sh
+      - name: Common checks passed for PR ${{ github.event.pull_request.number }} base ${{ github.event.pull_request.base.sha }} head ${{ github.event.pull_request.head.sha }}
+        if: steps.source.outputs.exact == 'true'
+        run: echo 'The checked merge tree equals the candidate tree.'
