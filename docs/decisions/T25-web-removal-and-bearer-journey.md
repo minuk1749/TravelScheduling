@@ -9,7 +9,7 @@
 - `lib/auth/callbacks.ts`는 삭제했다. 이 파일의 `googleIdentity`·`validUserId`는 Auth.js 콜백만 썼고, `store.ts`의 `userExists`도 마찬가지였다. 모바일 로그인에 필요한 것은 `upsertGoogleUser` 포트 하나뿐이어서 `ports.ts`의 `GoogleUserStore`로 옮겼다. T16 목록은 이 파일을 "남기는 것"으로 분류했지만, 이는 T18이 Google 신원 확인을 다시 쓸 것으로 본 계획이었다. 실제 T18은 ID 토큰 검증기(`google-id-token.ts`)를 새로 만들었다.
 - 종단 시나리오 `tests/e2e/journey.spec.ts`는 Playwright의 HTTP 요청으로 흐름 1–10을 앱과 같은 방식으로 호출한다. 서버는 실제 `next start`, 세션 API, 라우트, 서비스, PostgreSQL을 그대로 사용한다. Google 부분만 대체한다.
   - 로그인: `playwright.config.ts`가 실행마다 가짜 RS256 키를 한 번 만들어 환경 변수에 넣는다. 서버와 테스트 워커는 이 환경 변수를 상속한다. 서버에 미리 불러온 `google-doubles.mjs`는 이 키의 공개 키를 Google JWKS로 응답하고, 테스트는 같은 키로 서명한 ID 토큰을 `POST /api/session`에 보낸다. 검증에는 실제 `JoseGoogleIdTokenVerifier`(원격 JWKS 로더)를 사용한다.
-  - 요청: `tests/e2e/support/app-client.ts`가 `apps/mobile/src/api`와 같은 경로·본문·`Idempotency-Key`를 사용한다. 앱 코드는 Expo·React Native에 의존하므로 서버 테스트에서 직접 import하지 않는다.
+  - 요청: `tests/e2e/support/app-client.ts`가 `apps/mobile/src/api`와 같은 경로·본문·`Idempotency-Key`를 사용한다. 결과 수정 두 건은 앱 결과 화면과 같이 새 `operationId`와 직전 조회의 `writeVersion`을 보내며, 응답·복구 조회의 영수증이 요청 ID와 저장 revision에 맞는지와 현재 revision에 이전 쓰기 버전을 보내면 409이고 저장 내용이 그대로인지 확인한다. 필수 장소 선택은 앱(`capacity-flow.tsx`)처럼 쓰기 옵션 없이 보낸다. 앱 코드는 Expo·React Native에 의존하므로 서버 테스트에서 직접 import하지 않는다.
   - 공유: 공유 열람 페이지는 남은 유일한 웹 화면이다. 그래서 같은 시나리오에서 실제 저장 결과를 375px 브라우저(지도 스텁)로 열어 T24의 디자인 토큰·글꼴 검사를 이어서 실행한다.
 
 ## 이유

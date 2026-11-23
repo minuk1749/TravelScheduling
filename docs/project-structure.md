@@ -108,7 +108,7 @@ CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순
 - **실제 `next start` 서버·세션 API·라우트·서비스·PostgreSQL을 그대로 쓰고 Google만 대체한다.** 저장 결과는 DB 조회(`mobile_sessions`의 해시, `trips`, `trip_places`)로도 확인하고, 설정·제약 변경과 계산·경로 모양·공유가 같은 저장 상태를 읽는다.
   - 로그인: `tests/e2e/support/google-key.ts`가 실행마다 가짜 RS256 키를 만들고(`playwright.config.ts`가 러너 프로세스에서 한 번, 서버·워커는 환경 변수로 상속), 테스트가 그 키로 서명한 ID 토큰을 `POST /api/session`에 보내 Bearer 토큰을 받는다.
   - 서버 쪽: `tests/e2e/support/google-doubles.mjs`를 `NODE_OPTIONS=--import`로 서버에 미리 불러와 Google JWKS(`www.googleapis.com/oauth2/v3/certs`), Places, Routes로 가는 `fetch`만 결정적 응답으로 바꾼다.
-  - 요청: `tests/e2e/support/app-client.ts`의 `AppClient`가 `apps/mobile/src/api`와 같은 경로·본문·`Idempotency-Key`를 쓴다. `TOKYO` 도시 프로필은 테스트가 upsert하고, 테스트 사용자는 시작·종료 때 삭제한다.
+  - 요청: `tests/e2e/support/app-client.ts`의 `AppClient`가 `apps/mobile/src/api`와 같은 경로·본문·`Idempotency-Key`를 쓴다. 필수 장소 선택은 `revision`·`constraints`만, 결과 수정(`editConstraints`)은 앱의 `use-itinerary.ts`처럼 새 `operationId`와 조회한 `writeVersion`을 보내고 영수증과 이전 쓰기 버전의 409를 확인한다. `TOKYO` 도시 프로필은 테스트가 upsert하고, 테스트 사용자는 시작·종료 때 삭제한다.
   - 공유 페이지: 같은 시나리오가 375px 브라우저로 `/share/[token]`을 열어 디자인 토큰·글꼴·타임라인·편집 제어 부재를 확인한다. `tests/helpers/e2e-maps.ts`가 `google.maps.importLibrary`를 기록용 스텁으로 바꿔 실제 `GoogleResultMap`이 만든 마커 상태를 읽는다.
 - `apps/server/playwright.config.ts`의 webServer는 가짜 `GOOGLE_MOBILE_CLIENT_IDS`·`NEXT_PUBLIC_GOOGLE_MAPS_*`로 다시 빌드한 뒤 `localhost:3210`에서 시작하고, 비로그인 `GET /api/trips`의 401로 준비를 확인한다. [T25 결정](decisions/T25-web-removal-and-bearer-journey.md)
 

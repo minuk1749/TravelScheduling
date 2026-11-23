@@ -136,18 +136,25 @@ test('T25 Bearer journey: login → create → settings → over capacity → se
   const constraints = constraintsFrom(edits.input);
   constraints.visits = constraints.visits.map(visit => visit.id === wishId ? { ...visit, fixedDate: '2026-12-02', fixedTime: '15:00', fixedOrder: 0 }
     : visit.id === released ? { ...visit, priority: 'WISH' } : visit);
-  await app.saveConstraints(id, edits.revision, constraints);
+  const datedInput = await app.editConstraints(id, edits, constraints);
   const dated = await app.generate(id);
   expect(dated.status).toBe('OK');
   const pinned = dated.comparisons.find(leg => leg.kind === 'DAY')!;
   const withLeg = await app.savedInput(id);
-  await app.saveConstraints(id, withLeg.revision, { ...constraintsFrom(withLeg.input), legModes: [{ date: pinned.date, from: pinned.from, to: pinned.to, mode: 'TRANSIT' }] });
+  expect(withLeg.writeVersion).toBe(datedInput.writeVersion);
+  const legModes = [{ date: pinned.date, from: pinned.from, to: pinned.to, mode: 'TRANSIT' as const }];
+  // An edit based on an older write version is refused on the current revision and leaves the saved input as it was.
+  await expectJson(app.put(`/api/trips/${id}/constraints`, {
+    revision: withLeg.revision, constraints: { ...constraintsFrom(withLeg.input), legModes }, operationId: randomUUID(), expectedWriteVersion: edits.writeVersion,
+  }), 409, 'STALE_INPUT');
+  expect(await app.savedInput(id)).toEqual(withLeg);
+  await app.editConstraints(id, withLeg, { ...constraintsFrom(withLeg.input), legModes });
   const edited = await app.generate(id);
   expect(edited.status).toBe('OK');
   const reopened = await app.savedInput(id);
   expect(reopened.revision).toBe(edited.inputHash);
   expect(reopened.input.visits.find(visit => visit.id === wishId)).toMatchObject({ priority: 'WISH', fixedDate: '2026-12-02', fixedTime: '15:00', fixedOrder: 0 });
-  expect(reopened.input.legModes).toEqual([{ date: pinned.date, from: pinned.from, to: pinned.to, mode: 'TRANSIT' }]);
+  expect(reopened.input.legModes).toEqual(legModes);
   const secondDay = scheduled(edited).find(day => day.date === '2026-12-02')!;
   const firstVisit = secondDay.stops.find(stop => stop.kind === 'VISIT')!;
   expect(firstVisit).toMatchObject({ kind: 'VISIT', visitId: wishId });

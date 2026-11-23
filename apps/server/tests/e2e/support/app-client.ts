@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type APIRequestContext, type APIResponse } from '@playwright/test';
 import { ITINERARY_REQUEST_HEADER, type ItineraryResult } from '@travel/core/contracts/itinerary';
-import type { Constraints, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
+import type { ConstraintWriteOptions, Constraints, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
 import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import type { LivingSettings, SettingsView } from '@travel/core/contracts/settings/model';
 import type { TripCreation, TripSummary } from '@travel/core/contracts/trips/create';
@@ -51,9 +51,28 @@ export class AppClient {
   saveSettings(id: string, revision: string, settings: LivingSettings) {
     return expectJson<SettingsView>(this.put(`/api/trips/${id}/settings`, { revision, settings }), 200);
   }
-  savedInput(id: string) { return expectJson<ResultView>(this.get(`/api/trips/${id}/constraints`), 200); }
-  saveConstraints(id: string, revision: string, constraints: Constraints) {
-    return expectJson<ResultSnapshot>(this.put(`/api/trips/${id}/constraints`, { revision, constraints }), 200);
+  savedInput(id: string, operationId?: string) {
+    const query = operationId ? `?${new URLSearchParams({ operationId })}` : '';
+    return expectJson<ResultView>(this.get(`/api/trips/${id}/constraints${query}`), 200);
+  }
+  /** Without options this is the required-place selection (capacity-flow.tsx); result edits pass write options. */
+  saveConstraints(id: string, revision: string, constraints: Constraints, operation?: ConstraintWriteOptions) {
+    return expectJson<ResultSnapshot>(this.put(`/api/trips/${id}/constraints`, { revision, constraints, ...operation }), 200);
+  }
+  /**
+   * A result-screen edit as use-itinerary.ts sends it: a fresh operationId and the writeVersion of the view being edited.
+   * The receipt must name this request and the saved revision, both in the PUT response and on the recovery GET.
+   */
+  async editConstraints(id: string, view: ResultView, constraints: Constraints) {
+    expect(view.writeVersion, 'the edited view carries its write version').toEqual(expect.any(String));
+    const operationId = randomUUID();
+    const saved = await this.saveConstraints(id, view.revision, constraints, { operationId, expectedWriteVersion: view.writeVersion });
+    expect(saved.receipt).toEqual({ operationId, revision: saved.revision });
+    expect(saved.writeVersion).toEqual(expect.any(String));
+    expect(saved.writeVersion, 'every write replaces the write version').not.toBe(view.writeVersion);
+    const recovered = await this.savedInput(id, operationId);
+    expect(recovered).toMatchObject({ revision: saved.revision, writeVersion: saved.writeVersion, receipt: saved.receipt });
+    return saved;
   }
   /** The app sends a fresh Idempotency-Key per generation and reuses it only to retry the same request (T27). */
   generate(id: string, key: string = randomUUID()) {
