@@ -15,7 +15,7 @@ import { useItinerary } from './use-itinerary';
 
 type FlowProps = { tripId: string; back(): void; editConditions(): void };
 type Load =
-  | { status: 'read'; result: GeneratedTrip; source: 'initial' | 'calculation'; error?: string }
+  | { status: 'read'; result: GeneratedTrip; source: 'initial' | 'calculation'; cachedView?: ResultView; error?: string }
   | { status: 'calculate'; view: ResultView; error?: string }
   | { status: 'ready'; view: ResultView; result: GeneratedTrip };
 
@@ -50,18 +50,20 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
     }
     const run = async () => {
       if (load.status === 'read') {
-        const saved = await api.savedInput(tripId, request.signal);
+        // A matching in-memory view already has the places needed to display a replay.
+        const saved = load.cachedView ?? await api.savedInput(tripId, request.signal);
+        const { revision } = load.cachedView ? await api.savedRevision(tripId, request.signal) : saved;
         if (request.signal.aborted) return;
-        if (saved.revision === load.result.inputHash) open(saved, load.result);
+        if (revision === load.result.inputHash) open(saved, load.result);
         else if (load.source === 'initial') setLoad({ status: 'calculate', view: saved });
         else setLoad({ status: 'calculate', view: saved, error: '계산 중 여행 정보가 바뀌었어요. 다시 계산해 주세요.' });
         return;
       }
       const { result, retried } = await calculation.run(request.signal, load.view.revision);
       if (request.signal.aborted) return;
-      // A replay can match our old view even after a remote edit. Re-read before opening it.
-      if (!retried && result.inputHash === load.view.revision) open(load.view, result);
-      else setLoad({ status: 'read', result, source: 'calculation' });
+      const cachedView = result.inputHash === load.view.revision ? load.view : undefined;
+      if (!retried && cachedView) open(cachedView, result);
+      else setLoad({ status: 'read', result, source: 'calculation', cachedView });
     };
     void run().catch(error => {
       if (!request.signal.aborted) setLoad({ ...load, error: errorMessage(error) });

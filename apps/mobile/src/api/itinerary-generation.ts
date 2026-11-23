@@ -29,7 +29,7 @@ class ItineraryGeneration {
     this.pending = attempt;
     const retried = attempt === previous;
     const result = await this.api.generate(this.tripId, signal, attempt.id);
-    const saved = retried && checkRecovered && !signal.aborted ? await this.api.savedInput(this.tripId, signal) : undefined;
+    const saved = retried && checkRecovered && !signal.aborted ? await this.api.savedRevision(this.tripId, signal) : undefined;
     if (!signal.aborted && this.pending === attempt) this.reset();
     if (saved) verifyRevision(result, saved.revision);
     return { result, retried };

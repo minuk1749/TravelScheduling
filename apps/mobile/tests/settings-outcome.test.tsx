@@ -30,6 +30,7 @@ function fixture() {
   });
   f.read.mockImplementation(() => json({ ...view, revision: current.revision, input: { ...view.input,
     activity: { start: current.settings.departureTime, end: current.settings.returnTime } } }));
+  f.readRevision.mockImplementation(() => json({ revision: current.revision }));
   f.shapes.mockImplementation(async url => json({ inputHash: url.searchParams.get('inputHash'),
     itineraryId: url.searchParams.get('itineraryId'), legs: [] }));
   f.generate.mockImplementation(async () => {

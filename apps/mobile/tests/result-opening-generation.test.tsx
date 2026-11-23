@@ -29,8 +29,9 @@ test('opening a stale result recalculates on an empty map and recovers from a 50
   await press('다시 계산');
   expect(await screen.findByTestId('place-card-row')).toBeVisible();
   expect(f.current()).toEqual(saved);
-  expect(f.read).toHaveBeenCalledTimes(2);
-  expect(f.read.mock.invocationCallOrder[1]).toBeGreaterThan(f.generate.mock.invocationCallOrder[2]);
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.readRevision).toHaveBeenCalledTimes(1);
+  expect(f.readRevision.mock.invocationCallOrder[0]).toBeGreaterThan(f.generate.mock.invocationCallOrder[2]);
   expect(f.generate).toHaveBeenCalledTimes(3);
   const [initial, recalculated, retried] = generationKeys(f);
   expect(recalculated).not.toBe(initial);

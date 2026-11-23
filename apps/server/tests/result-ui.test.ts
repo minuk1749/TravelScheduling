@@ -26,6 +26,7 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
   const generationKeys: string[] = [];
   const editor = new ResultEditService({ loadInputs: async () => ({ status: 'READY', input, inputHash: inputHash(input) }), save: async () => assert.fail('unused') }, new FixturePlaces());
   globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/constraints?fields=revision')) return Response.json(await editor.loadRevision(input.id, 'owner'));
     if (String(url).endsWith('/constraints')) {
       if (options?.method === 'PUT') {
         if (failSave) { failSave = false; return Response.json({ error: '저장 오류' }, { status: 503 }); }
@@ -85,31 +86,41 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
   }
 });
 
-test('T27 result editor hides the recovered timeline when another device changed a reservation', async () => {
-  const dom = installDom('http://localhost/trips/trip/result');
-  const previousFetch = globalThis.fetch;
-  const api = itineraryReplay();
-  globalThis.fetch = api.fetch;
-  const { render, fireEvent, cleanup } = await import('@testing-library/react');
-  const { ItineraryResults } = await import('../src/components/itinerary');
-  try {
-    const view = render(React.createElement(ItineraryResults, { tripId: 'trip' }));
-    const generate = await view.findByRole('button', { name: '저장하고 동선 재검증' });
-    fireEvent.click(generate);
-    await view.findByText('응답 본문 유실');
-    api.changeReservation();
-    fireEvent.click(generate);
-    await view.findByText(/다른 곳에서 여행 정보가 바뀌었습니다/);
-    assert.deepEqual(api.keys, [api.keys[0], api.keys[0]]);
-    assert.equal(view.queryByRole('region', { name: '날짜별 타임라인' }), null);
-    assert.equal(view.queryByText('저장된 제약으로 재계산했습니다.'), null);
+for (const changed of [false, true]) {
+  test(`T27 result editor checks a lost response during a Places outage (reservation changed: ${changed})`, async () => {
+    const dom = installDom('http://localhost/trips/trip/result');
+    const previousFetch = globalThis.fetch;
+    const api = itineraryReplay();
+    globalThis.fetch = api.fetch;
+    const { render, fireEvent, cleanup } = await import('@testing-library/react');
+    const { ItineraryResults } = await import('../src/components/itinerary');
+    try {
+      const view = render(React.createElement(ItineraryResults, { tripId: 'trip' }));
+      const generate = await view.findByRole('button', { name: '저장하고 동선 재검증' });
+      fireEvent.click(generate);
+      await view.findByText('응답 본문 유실');
+      api.setPlacesAvailable(false);
+      if (changed) api.changeReservation();
+      fireEvent.click(generate);
+      assert.deepEqual(api.keys, [api.keys[0], api.keys[0]]);
+      if (!changed) {
+        await view.findByRole('region', { name: '날짜별 타임라인' });
+        assert.deepEqual(api.counts(), { placeReads: 1, saved: 1 });
+        return;
+      }
+      await view.findByText(/다른 곳에서 여행 정보가 바뀌었습니다/);
+      assert.deepEqual(api.counts(), { placeReads: 1, saved: 1 });
+      assert.equal(view.queryByRole('region', { name: '날짜별 타임라인' }), null);
+      assert.equal(view.queryByText('저장된 제약으로 재계산했습니다.'), null);
 
-    fireEvent.click(view.getByRole('button', { name: '저장된 설정 다시 불러오기' }));
-    fireEvent.click(await view.findByRole('button', { name: '저장하고 동선 재검증' }));
-    await view.findByRole('region', { name: '날짜별 타임라인' });
-    assert.notEqual(api.keys[2], api.keys[0]);
-  } finally {
-    cleanup(); globalThis.fetch = previousFetch;
-    await dom.restore();
-  }
-});
+      api.setPlacesAvailable(true);
+      fireEvent.click(view.getByRole('button', { name: '저장된 설정 다시 불러오기' }));
+      fireEvent.click(await view.findByRole('button', { name: '저장하고 동선 재검증' }));
+      await view.findByRole('region', { name: '날짜별 타임라인' });
+      assert.notEqual(api.keys[2], api.keys[0]);
+    } finally {
+      cleanup(); globalThis.fetch = previousFetch;
+      await dom.restore();
+    }
+  });
+}

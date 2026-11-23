@@ -7,7 +7,6 @@ import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
 import { RootNavigator } from '../src/navigation/root-navigator';
 import { generationKeys, deferred, fixture, json, session } from './helpers';
-import { initialView } from './capacity-fixture';
 
 const snapshot: SettingsSnapshot = {
   revision: 'current', timeZone: 'Asia/Tokyo', startDate: '2026-12-01', endDate: '2026-12-03',
@@ -50,13 +49,13 @@ function settingsFixture() {
   const generate = jest.fn<Promise<Response>, []>();
   const path = '/api/trips/saved-trip';
   f.transport.mockImplementation(async (url, options = {}) => {
-    const { pathname } = new URL(String(url));
+    const { pathname, searchParams } = new URL(String(url));
     if (pathname === `${path}/settings`) {
       if (options.method === 'PUT') return put(options);
       if (!options.method) return json(settingsView(snapshot));
     }
     if (pathname === `${path}/itinerary` && options.method === 'POST') return generate();
-    if (pathname === `${path}/constraints` && !options.method) return json({ ...initialView, revision: resultBase.inputHash });
+    if (pathname === `${path}/constraints` && searchParams.get('fields') === 'revision' && !options.method) return json({ revision: resultBase.inputHash });
     return json({ code: 'NOT_FOUND', error: '요청을 찾을 수 없어요.' }, 404);
   });
   return { ...f, put, generate };

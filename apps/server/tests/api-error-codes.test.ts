@@ -28,8 +28,10 @@ async function expectCode(response: Response, status: number, code: string, name
 }
 
 test('constraints: stale, missing result, validation, JSON, provider and internal codes', async () => {
-  const failing = (error: unknown) => constraintHandlers({ userId: user, findOwner: owner,
-    service: () => ({ load: async () => { throw error; }, save: async () => { throw error; } }) });
+  const failing = (error: unknown) => {
+    const fail = async (): Promise<never> => { throw error; };
+    return constraintHandlers({ userId: user, findOwner: owner, service: () => ({ load: fail, loadRevision: fail, save: fail }) });
+  };
   const put = (error: unknown, body = '{}') => failing(error).put(json('/api/trips/t/constraints', 'PUT', body), 't');
   await expectCode(await put(new ResultStaleError()), 409, 'STALE_INPUT', 'stale');
   await expectCode(await put(new ResultUnavailableError()), 409, 'RESULT_UNAVAILABLE', 'unavailable');

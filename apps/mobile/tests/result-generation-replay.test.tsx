@@ -19,6 +19,7 @@ function loseGenerationResponse(f: Fixture, calculate: () => GeneratedTrip) {
     return new Response('{', { status: 200 });
   };
   f.generate.mockImplementationOnce(post).mockImplementationOnce(post);
+  return committed;
 }
 
 async function changeReservationElsewhere(f: Fixture, visitId: string) {
@@ -34,7 +35,8 @@ function expectReplay(f: Fixture) {
   const [initial, calculation, recovered] = generationKeys(f);
   expect(calculation).not.toBe(initial);
   expect(recovered).toBe(calculation);
-  expect(f.read.mock.invocationCallOrder.at(-1)).toBeGreaterThan(f.generate.mock.invocationCallOrder.at(-1)!);
+  expect(f.readRevision).toHaveBeenCalledTimes(1);
+  expect(f.readRevision.mock.invocationCallOrder[0]).toBeGreaterThan(f.generate.mock.invocationCallOrder.at(-1)!);
 }
 
 test('opening a recovered calculation requires the current reservation before displaying the itinerary', async () => {
@@ -58,17 +60,26 @@ test('opening a recovered calculation requires the current reservation before di
   expect(generationKeys(f)[3]).not.toBe(generationKeys(f)[2]);
 });
 
-test('a recovered edit cannot replace the shown result after another device changes a reservation', async () => {
+test.each([false, true])('the editor checks a recovered result during a Places outage (reservation changed: %s)', async changed => {
   const f = resultFixture();
   await openResult(f);
-  loseGenerationResponse(f, () => trip(f.current().revision));
+  const committed = loseGenerationResponse(f, () => trip(f.current().revision, plan({ museumLeg: 'TAXI', marketStart: '13:10' })));
   await press('택시 14분 약 ¥2,300로 바꾸기');
   await screen.findByText(lost);
-  await changeReservationElsewhere(f, 'market');
+  f.read.mockImplementation(() => json({ code: 'PROVIDER_UNAVAILABLE', error: '장소 조회 실패' }, 503));
+  if (changed) await changeReservationElsewhere(f, 'market');
   await press('다시 계산');
-  expect(await screen.findByText(/여행 정보가 바뀌었어요/)).toBeVisible();
-  expect(screen.queryByTestId('result-toast')).toBeNull();
-  expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
+  if (changed) {
+    expect(await screen.findByText(/여행 정보가 바뀌었어요/)).toBeVisible();
+    expect(screen.queryByTestId('place-card-row')).toBeNull();
+    expect(screen.queryByTestId('result-toast')).toBeNull();
+    expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
+  } else {
+    await fireEvent.press(await screen.findByRole('button', { name: '다음 장소' }));
+    expect(screen.getByRole('button', { name: '2번 아메요코 시장, 13:10부터 13:55까지', selected: true })).toBeVisible();
+  }
+  expect(committed.size).toBe(1);
+  expect(f.read).toHaveBeenCalledTimes(1);
   expect(f.save).toHaveBeenCalledTimes(1);
   expectReplay(f);
 });

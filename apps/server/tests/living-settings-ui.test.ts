@@ -68,7 +68,7 @@ test('T27 settings preview detects a reservation changed after response loss and
   const previousFetch = globalThis.fetch;
   const api = itineraryReplay();
   globalThis.fetch = async (url, options) => {
-    if (String(url).endsWith('/constraints') && api.keys.length === 2) {
+    if (String(url).endsWith('/constraints?fields=revision') && api.keys.length === 2) {
       return Response.json({ error: '현재 입력 조회 실패' }, { status: 503 });
     }
     return api.fetch(url, options);

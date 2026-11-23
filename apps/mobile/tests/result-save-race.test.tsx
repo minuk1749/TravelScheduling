@@ -170,8 +170,9 @@ test('a 409 from generation after an acknowledged PUT cannot reject that earlier
   await screen.findByText('⚠ 동선을 계산하지 못했어요');
   await press('다시 계산');
   expect(await screen.findByRole('button', { name: '되돌리기' })).toBeVisible();
-  expect(f.read).toHaveBeenCalledTimes(2);
-  expect(f.read.mock.invocationCallOrder[1]).toBeGreaterThan(f.generate.mock.invocationCallOrder[2]);
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.readRevision).toHaveBeenCalledTimes(1);
+  expect(f.readRevision.mock.invocationCallOrder[0]).toBeGreaterThan(f.generate.mock.invocationCallOrder[2]);
   expect(f.save).toHaveBeenCalledTimes(1);
   expect(f.current().input.legModes).toEqual([taxi]);
 });

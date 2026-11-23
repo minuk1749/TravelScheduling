@@ -8,9 +8,14 @@ export function itineraryReplay() {
   let input = sampleTrip([{ key: 'sensoji', minutes: 30 }]);
   const stored = new Map<string, string>();
   const keys: string[] = [];
+  let placeReads = 0;
+  let placesAvailable = true;
   const fetch: typeof globalThis.fetch = async (url, options) => {
+    if (String(url) === '/api/trips/trip/constraints?fields=revision') return Response.json({ revision: inputHash(input) });
     if (String(url) === '/api/trips/trip/constraints') {
       assert.equal(options?.method ?? 'GET', 'GET');
+      placeReads++;
+      if (!placesAvailable) return Response.json({ error: '장소 조회 실패' }, { status: 503 });
       return Response.json({ input, revision: inputHash(input), places: {} });
     }
     assert.equal(String(url), '/api/trips/trip/itinerary');
@@ -28,7 +33,12 @@ export function itineraryReplay() {
     }
     return new Response(stored.get(key));
   };
-  return { fetch, keys, changeReservation() {
-    input = { ...input, visits: input.visits.map(v => ({ ...v, fixedDate: '2026-12-02', fixedTime: '10:00' })) };
-  } };
+  return {
+    fetch, keys,
+    setPlacesAvailable(value: boolean) { placesAvailable = value; },
+    counts: () => ({ placeReads, saved: stored.size }),
+    changeReservation() {
+      input = { ...input, visits: input.visits.map(v => ({ ...v, fixedDate: '2026-12-02', fixedTime: '10:00' })) };
+    },
+  };
 }

@@ -1,14 +1,21 @@
 import { useMemo } from 'react';
 import { ITINERARY_REQUEST_HEADER, type ItineraryResult } from '@travel/core/contracts/itinerary';
-import type { ResultView } from '../../results/model';
+import { isResultRevision, type ResultRevision, type ResultView } from '../../results/model';
 import { newItineraryRequestId } from './request-id';
 
-export async function loadResultView(tripId: string, signal?: AbortSignal): Promise<ResultView> {
-  const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/constraints`, { cache: 'no-store', signal });
+function loadConstraints(tripId: string, fields: 'all', signal?: AbortSignal): Promise<ResultView>;
+function loadConstraints(tripId: string, fields: 'revision', signal?: AbortSignal): Promise<ResultRevision>;
+async function loadConstraints(tripId: string, fields: 'all' | 'revision', signal?: AbortSignal) {
+  const query = fields === 'revision' ? '?fields=revision' : '';
+  const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/constraints${query}`, { cache: 'no-store', signal });
   const view = await response.json();
   if (!response.ok) throw new Error(view.error ?? '여행을 불러오지 못했습니다.');
-  if (typeof view?.revision !== 'string' || !view.revision) throw new Error('여행 입력을 확인하지 못했습니다. 다시 시도해 주세요.');
+  if (!isResultRevision(view)) throw new Error('여행 입력을 확인하지 못했습니다. 다시 시도해 주세요.');
   return view;
+}
+
+export function loadResultView(tripId: string, signal?: AbortSignal) {
+  return loadConstraints(tripId, 'all', signal);
 }
 
 class ItineraryGeneration {
@@ -28,7 +35,7 @@ class ItineraryGeneration {
     if (!response.ok) throw new Error(result.fields ? `${result.error} ${Object.values(result.fields).join(' ')}` : result.error ?? '동선을 만들지 못했습니다.');
     signal?.throwIfAborted();
     // Keep the key until the recovered response and its current input have both been read.
-    const current = retry ? await loadResultView(this.tripId, signal) : undefined;
+    const current = retry ? await loadConstraints(this.tripId, 'revision', signal) : undefined;
     signal?.throwIfAborted();
     this.reset();
     if ((current && result.inputHash !== current.revision) ||

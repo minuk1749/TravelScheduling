@@ -51,7 +51,8 @@ const owned: [string, number, Call][] = [
     .generate(req(`/api/trips/${TRIP}/itinerary`, auth, { method: 'POST' }), TRIP)],
   ...(['get', 'put'] as const).map((method): [string, number, Call] => [`${method.toUpperCase()} /api/trips/[id]/constraints`, 200,
     (userId, auth) => constraintHandlers({ userId, findOwner, service: () => ({
-      load: async () => ({ input: sampleTrip(), revision: 'r', places: {} }), save: async () => ({ input: sampleTrip(), revision: 'r2' }) }) })
+      load: async () => ({ input: sampleTrip(), revision: 'r', places: {} }), loadRevision: assert.fail,
+      save: async () => ({ input: sampleTrip(), revision: 'r2' }) }) })
       [method](req(`/api/trips/${TRIP}/constraints`, auth, method === 'put' ? { method: 'PUT', body: '{}' } : {}), TRIP)]),
   ['POST /api/trips/[id]/share', 200, (userId, auth) => sharingHandlers({ userId, findOwner,
     service: () => ({ read: async () => null, rotate: async () => 'a'.repeat(43) }) })

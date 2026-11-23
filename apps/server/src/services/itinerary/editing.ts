@@ -1,5 +1,5 @@
 import type { ItineraryPlaces, TripLoad } from './types';
-import type { Constraints, ConstraintWriteOptions, ResultSnapshot, ResultView } from '../../results/model';
+import type { Constraints, ConstraintWriteOptions, ResultRevision, ResultSnapshot, ResultView } from '../../results/model';
 import { parseConstraints } from '../../results/input';
 import { TripInputError } from '../../trips/input';
 import { displayPlaces, tripPlaceRefs } from './display-places';
@@ -24,6 +24,10 @@ export class ResultEditService {
     if (!loaded) throw new ResultTripNotFoundError();
     if (loaded.status !== 'READY') throw new ResultUnavailableError();
     return loaded;
+  }
+  async loadRevision(tripId: string, ownerId: string): Promise<ResultRevision> {
+    const { inputHash } = await this.loadReady(tripId, ownerId);
+    return { revision: inputHash };
   }
   async load(tripId: string, ownerId: string, operationId?: string): Promise<ResultView> {
     const loaded = await this.loadReady(tripId, ownerId, optionalUuid(operationId, 'operationId'));

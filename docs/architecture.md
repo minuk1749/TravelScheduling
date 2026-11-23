@@ -232,7 +232,7 @@ Google ID를 함께 갖는 `PlaceRef`이며 ownerId는 담지 않는다(소유�
 같은 `trips` 행을 `FOR UPDATE`로 잠그므로 설정 수정과 일정 저장이 직렬화된다. 상세는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md).
 T27에서 요청 키가 있는 POST는 [생성 요청 저장소](../apps/server/src/repositories/itinerary-requests.ts)를 거친다.
 각 요청의 소유권 검사 후 같은 서버에서는 소유자·여행·키가 같은 진행 중 요청을 공유한다. 서버 간에는 동일 여행·키를 PostgreSQL 세션 잠금으로 직렬화하고 소유권을 확인한 저장 응답을 복구한다. 최초 생성의 요청 키와 전체 결과는 일정과 함께 커밋한다.
-새 키를 보내거나 헤더를 생략하면 새 결과를 생성한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
+앱과 웹이 복구한 결과를 이미 읽어 둔 입력과 함께 표시할 때는 `GET /api/trips/[id]/constraints?fields=revision`으로 현재 입력 해시를 확인한다. 서버는 소유자 조건으로 읽은 DB 스냅샷에서 해시를 계산하며 장소 상세 조회를 생략한다. 새 키를 보내거나 헤더를 생략하면 새 결과를 생성한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
 
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.
 
@@ -545,7 +545,7 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
 | `POST /api/trips/[id]/itinerary` | 선택 헤더 `Idempotency-Key` (소문자 하이픈 UUID 하나) | `{ itineraryId, inputHash, ...ItineraryResult }` (소유자 생성 응답의 `availableByDate`는 항공·공항 이동을 반영한 날짜별 활동 가능 시각 범위이며 닫힌 날짜는 `null`. `status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
 | `GET /api/trips/[id]/itinerary/shapes` | `inputHash` 필수, `itineraryId` 선택 (쿼리) | `{ inputHash, itineraryId, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
-| `GET /api/trips/[id]/constraints` | — | `ResultView` (`{ input, revision, places }`) | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
+| `GET /api/trips/[id]/constraints` | 선택 쿼리 `fields=revision` | 기본 응답은 `ResultView`. `fields=revision`은 소유자의 현재 DB 입력에서 계산한 `{ revision }`만 반환 | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
 | `POST /api/trips/[id]/share` | — | `{ path: "/share/{token}" }`. 앱은 설정한 서버 주소와 합쳐 OS 공유 시트로 보냄 | 401, 403, 404, 405, 500 |
 | `GET /api/share/[token]` (비로그인) | — | `SharedItinerary` | 404, 405, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |

@@ -10,8 +10,13 @@ export type LegEdit = { date: string; from: string; to: string; mode: TravelMode
 export type Constraints = { visits: VisitEdit[]; legModes: LegEdit[] };
 export type ConstraintWriteOptions = { operationId?: string; expectedWriteVersion?: string; expectedOperationId?: string };
 export type ConstraintReceipt = { operationId: string; revision: string };
-export type ResultSnapshot = {
-  input: TripInputs; revision: string;
+export type ResultRevision = { revision: string };
+export function isResultRevision(value: unknown): value is ResultRevision {
+  return typeof value === 'object' && value !== null && 'revision' in value &&
+    typeof value.revision === 'string' && value.revision.length > 0;
+}
+export type ResultSnapshot = ResultRevision & {
+  input: TripInputs;
   /** Opaque generation of the saved input. Older servers omit this field. */
   writeVersion?: string;
   /** Returned only to the caller who presents the operation ID for the current write. */

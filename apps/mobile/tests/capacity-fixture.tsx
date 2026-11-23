@@ -99,8 +99,9 @@ export function capacityFixture() {
     return json({ snapshot, calculation: calculateSettings(snapshot, snapshot.settings) });
   });
   f.transport.mockImplementation(async (url, options = {}) => {
-    const { pathname } = new URL(String(url));
+    const { pathname, searchParams } = new URL(String(url));
     if (pathname === '/api/trips/trip/itinerary' && options.method === 'POST') return generate();
+    if (pathname === '/api/trips/trip/constraints' && !options.method && searchParams.get('fields') === 'revision') return json({ revision: current.revision });
     if (pathname === '/api/trips/trip/constraints') return options.method === 'PUT' ? save(options) : read();
     if (pathname === '/api/trips/trip/settings') return settings(options);
     return json({ code: 'NOT_FOUND', error: '요청을 찾을 수 없어요.' }, 404);

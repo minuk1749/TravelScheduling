@@ -9,12 +9,14 @@ import { FixturePlaces, sampleTrip } from './fixtures/itinerary';
 import { constraintsFrom } from '../src/results/model';
 const url = 'https://app.example.test/api/trips/trip/constraints';
 test('T13 read/write authenticate and authorize before providers, guard origin and JSON', async () => {
-  for (const write of [false, true]) {
+  for (const operation of ['read', 'revision', 'write']) {
     for (const [user, owner, status] of [[undefined, 'owner', 401], ['owner', 'other', 403], ['owner', null, 404], ['owner', 'owner', 200]] as const) {
       let calls = 0;
       const handlers = constraintHandlers({ userId: async () => user, findOwner: async () => owner,
-        service: () => { calls++; return { load: async () => ({ input: sampleTrip(), revision: 'r', places: {} }), save: async () => ({ input: sampleTrip(), revision: 'r2' }) }; } });
-      const response = await (write ? handlers.put(new Request(url, { method: 'PUT', body: '{}' }), 'trip') : handlers.get(new Request(url), 'trip'));
+        service: () => { calls++; return { load: async () => ({ input: sampleTrip(), revision: 'r', places: {} }),
+          loadRevision: async () => ({ revision: 'r' }), save: async () => ({ input: sampleTrip(), revision: 'r2' }) }; } });
+      const response = operation === 'write' ? await handlers.put(new Request(url, { method: 'PUT', body: '{}' }), 'trip')
+        : await handlers.get(new Request(operation === 'revision' ? url + '?fields=revision' : url), 'trip');
       assert.equal(response.status, status); assert.equal(calls, status === 200 ? 1 : 0);
       assert.equal(response.headers.get('cache-control'), 'private, no-store');
     }
@@ -68,20 +70,21 @@ test('an owner check with no matching snapshot returns only the access error for
   const responses = [
     await handlers.get(new Request(url), 'trip'),
     await handlers.get(new Request(url + '?operationId=' + operation), 'trip'),
+    await handlers.get(new Request(url + '?fields=revision'), 'trip'),
     await handlers.put(new Request(url, { method: 'PUT', body: '{}' }), 'trip'),
   ];
   for (const response of responses) {
     assert.equal(response.status, 404);
     assert.deepEqual(await response.json(), { code: 'NOT_FOUND', error: '여행을 찾을 수 없습니다.' });
   }
-  assert.deepEqual(reads, [undefined, operation, undefined]);
+  assert.deepEqual(reads, [undefined, operation, undefined, undefined]);
   assert.deepEqual(places.detailCalls, []);
 });
 
 test('T13 errors distinguish stale, validation, missing input, provider and internal failures', async () => {
   for (const [error, status] of [[new ResultStaleError(), 409], [new ResultUnavailableError(), 409], [new TripInputError({ date: '날짜 오류' }), 400], [new PlaceProviderError('UNAVAILABLE'), 503], [new PlaceProviderError('INVALID_RESPONSE'), 502], [new Error('secret SQL'), 500]] as const) {
     const fail = async (): Promise<never> => { throw error; };
-    const handlers = constraintHandlers({ userId: async () => 'owner', findOwner: async () => 'owner', service: () => ({ load: fail, save: fail }) });
+    const handlers = constraintHandlers({ userId: async () => 'owner', findOwner: async () => 'owner', service: () => ({ load: fail, loadRevision: fail, save: fail }) });
     const response = await handlers.put(new Request(url, { method: 'PUT', body: '{}' }), 'trip');
     assert.equal(response.status, status); assert.doesNotMatch(await response.text(), /secret SQL/);
   }

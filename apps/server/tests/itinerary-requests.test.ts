@@ -5,9 +5,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Pool, type PoolClient } from 'pg';
 import { itineraryHandlers } from '../src/itineraries/http';
 import { migrate } from '../src/lib/migrations';
+import { PlaceProviderError } from '../src/places';
+import { PostgresConstraintRepository } from '../src/repositories/itinerary-constraints';
 import { PostgresItineraryRequests } from '../src/repositories/itinerary-requests';
 import { insertTrip } from '../src/repositories/trip-inputs';
+import { constraintHandlers } from '../src/results/http';
 import { ItineraryService } from '../src/services/itinerary';
+import { ResultEditService } from '../src/services/itinerary/editing';
 import { FixturePlaces, FixtureTravel, sampleDraft } from './fixtures/itinerary';
 import { withDatabase } from './helpers/database';
 
@@ -24,9 +28,13 @@ function poolFor(schema: string, max = 1) {
 
 function endpoint(authDb: PoolClient | Pool, pool: Pool, places = new FixturePlaces(), travel = new FixtureTravel()) {
   const requests = new PostgresItineraryRequests(pool);
+  const auth = {
+    userId: async (request: Request) => request.headers.get('x-test-user') ?? undefined,
+    findOwner: async (id: string) => (await authDb.query('SELECT owner_id FROM trips WHERE id = $1', [id])).rows[0]?.owner_id ?? null,
+  };
+  const constraints = constraintHandlers({ ...auth, service: () => new ResultEditService(new PostgresConstraintRepository(pool), places) });
   const handlers = itineraryHandlers({
-    userId: async request => request.headers.get('x-test-user') ?? undefined,
-    findOwner: async id => (await authDb.query('SELECT owner_id FROM trips WHERE id = $1', [id])).rows[0]?.owner_id ?? null,
+    ...auth,
     generator: (ownerId, requestId) => ({
       generator: { generate: tripId => requests.run(tripId, ownerId, requestId, (repository, profiles) =>
         new ItineraryService({ repository, profiles, places, travel }).generate(tripId)) },
@@ -34,6 +42,9 @@ function endpoint(authDb: PoolClient | Pool, pool: Pool, places = new FixturePla
     }),
   });
   return {
+    revision: (id: string, owner: string) => constraints.get(new Request(`https://test.local/api/trips/${id}/constraints?fields=revision`, {
+      headers: { 'x-test-user': owner },
+    }), id),
     post: (id: string, owner: string, key?: string) => handlers.generate(new Request(`https://test.local/api/trips/${id}/itinerary`, {
       method: 'POST', headers: { 'x-test-user': owner, ...(key ? { 'Idempotency-Key': key } : {}) },
     }), id),
@@ -113,6 +124,36 @@ test('T27 a slow provider, concurrent retry and lost response recover exactly on
       travel.resume.resolve();
       await Promise.all([firstPool.end(), retryPool.end()]);
     }
+  });
+});
+
+test('T27 recovery checks the current DB inputs during a Places outage without recalculating or saving', async t => {
+  await withDatabase(async (client, schema) => {
+    await migrate(client);
+    const { id, owner } = await ownedTrip(client);
+    const pool = poolFor(schema), places = new FixturePlaces(), key = randomUUID();
+    const api = endpoint(client, pool, places);
+    try {
+      const lost = await api.post(id, owner, key);
+      assert.equal(lost.status, 200);
+      await lost.body!.cancel();
+      const saved = (await client.query('SELECT id, input_hash FROM itineraries WHERE trip_id = $1', [id])).rows[0];
+      const calls = api.calls();
+      const unavailable = t.mock.method(places, 'details', async () => { throw new PlaceProviderError('UNAVAILABLE'); });
+      for (const changed of [false, true]) {
+        if (changed) await client.query('UPDATE trip_places SET duration_minutes = duration_minutes + 1 WHERE trip_id = $1', [id]);
+        const replay = await successful(await api.post(id, owner, key));
+        assert.equal(replay.itineraryId, saved.id);
+        assert.equal(replay.inputHash, saved.input_hash);
+        const current = await successful(await api.revision(id, owner));
+        assert.deepEqual(Object.keys(current), ['revision']);
+        assert.match(current.revision, /^[a-f0-9]{64}$/);
+        assert.equal(current.revision === replay.inputHash, !changed);
+        assert.equal(unavailable.mock.callCount(), 0);
+        assert.deepEqual(api.calls(), calls);
+        assert.deepEqual((await client.query('SELECT id, input_hash FROM itineraries WHERE trip_id = $1', [id])).rows, [saved]);
+      }
+    } finally { await pool.end(); }
   });
 });
 

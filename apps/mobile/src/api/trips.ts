@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import type { CityProfile } from '@travel/core/fare';
 import { ITINERARY_REQUEST_HEADER, type ItineraryResult } from '@travel/core/contracts/itinerary';
 import type { PlaceLocation, PlaceSummary } from '@travel/core/contracts/places';
-import type { Constraints, ConstraintWriteOptions, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
+import { isResultRevision, type Constraints, type ConstraintWriteOptions, type ResultRevision, type ResultSnapshot, type ResultView } from '@travel/core/contracts/results/model';
 import type { RouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import type { LivingSettings, SettingsView } from '@travel/core/contracts/settings/model';
 import type { TripCreation, TripSummary } from '@travel/core/contracts/trips/create';
@@ -46,6 +46,9 @@ class TripApi {
   savedInput(id: string, signal: AbortSignal, operationId?: string) {
     const query = operationId ? `?${new URLSearchParams({ operationId })}` : '';
     return this.api.request<ResultView>(`${trip(id)}/constraints${query}`, { signal, validate: validResultView });
+  }
+  savedRevision(id: string, signal: AbortSignal) {
+    return this.api.request<ResultRevision>(`${trip(id)}/constraints?fields=revision`, { signal, validate: isResultRevision });
   }
   saveConstraints(id: string, revision: string, constraints: Constraints, signal: AbortSignal,
     operation?: ConstraintWriteOptions) {
