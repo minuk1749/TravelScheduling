@@ -37,6 +37,8 @@ export type CardModel = {
   shift: number;
   changed: boolean;
   issue: string | null;
+  /** The place gave no opening hours, so none were checked. A closed place is an issue instead. */
+  hoursUnknown: boolean;
 };
 
 export type EndpointRole = 'LODGING_OUT' | 'LODGING_IN' | 'AIRPORT_ARRIVAL' | 'AIRPORT_DEPARTURE';
@@ -155,9 +157,8 @@ function placements(result: ItineraryResult | null): Map<string, Placement> {
   return placed;
 }
 
-type Context = {
-  view: ResultView; before: Map<string, Placement> | null;
-};
+/** `unknownHours`: scheduled visits whose hours were not checked (separate from travel-time verification). */
+type Context = { view: ResultView; before: Map<string, Placement> | null; unknownHours?: ReadonlySet<string> };
 
 const fixOnDate = (visit: ResultView['input']['visits'][number], date: string) =>
   !visit.fixedDate || visit.fixedDate === date ? fixedLabel(visit) : null;
@@ -180,6 +181,7 @@ function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT
     shift: Math.round(startDifference),
     changed: !!context.before && !!stop && (!before || before.date !== date || moved),
     issue: null,
+    hoursUnknown: !!stop && !!context.unknownHours?.has(visitId),
   };
 }
 
@@ -242,7 +244,9 @@ function bounds(stops: readonly Stop[], legs: readonly LegModel[]) {
 export function buildDays(view: ResultView, shown: ItineraryResult | null, previous: ItineraryResult | null,
   causes: readonly ConflictCause[] = [], shapes?: RoadShapes): DayModel[] {
   const schedule = displayedSchedule(shown);
-  const context: Context = { view, before: displayedSchedule(previous) ? placements(previous) : null };
+  const context: Context = {
+    view, before: displayedSchedule(previous) ? placements(previous) : null, unknownHours: new Set(shown?.openingHoursUnknown),
+  };
   const zone = view.input.timeZone;
   const comparisons = [...shown?.comparisons ?? []].sort((a, b) => Temporal.Instant.compare(a.departure, b.departure));
   const dates = tripDates(view.input.startDate, view.input.endDate);

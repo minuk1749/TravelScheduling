@@ -104,7 +104,7 @@ const generated = fields({
   transferIssues: list(fields({ date, direction, from: text, to: text, reason: oneOf('NO_ROUTE', 'UNVERIFIED') })),
   flightConflicts: list(fields({ date, arrivalReadyAt: instant, departureStartBy: instant })),
   skippedMeals: list(fields({ date, slot })), comparisons: list(comparison), availableByDate: optional(values(nullable(window))),
-  airportTransferLimits: optional(list(transferLimit)),
+  airportTransferLimits: optional(list(transferLimit)), openingHoursUnknown: optional(list(text)),
   efficiency: nullable(fields({ currency: nullable(text), selectedMinutes: number, transitMinutes: nullable(number),
     selectedFare: nullable(number), transitFare: nullable(number) })),
 } satisfies Record<keyof ItineraryResult | 'itineraryId' | 'inputHash', Check>);

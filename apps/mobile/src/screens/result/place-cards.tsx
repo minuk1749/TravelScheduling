@@ -6,7 +6,7 @@ import { colors, motion, result, spacing, text } from '../../theme';
 import { useReducedMotion } from '../../theme/use-reduced-motion';
 import { swipeTarget } from '../../map/selection';
 import type { CardModel } from '../../result/days';
-import { durationLabel, legLabel, shiftLabel, timeRange } from '../../result/format';
+import { durationLabel, HOURS_UNKNOWN_LABEL, legLabel, shiftLabel, timeRange } from '../../result/format';
 import { SwapChip } from './swap-chip';
 import { MODE_ICONS } from './icons';
 
@@ -56,6 +56,7 @@ export function PlaceCard({ card, selected, zone, currency, interactive, onSelec
       </Text>
       {card.issue ? <Text numberOfLines={1} style={[text.tiny, styles.issue]}>⚠ {card.issue}</Text>
         : <Text numberOfLines={1} style={[text.tiny, styles.fixed]}>{card.fixed ? `🔒 ${card.fixed}` : ' '}</Text>}
+      {card.hoursUnknown ? <Text numberOfLines={1} style={[text.tiny, styles.fixed]}>ⓘ {HOURS_UNKNOWN_LABEL}</Text> : null}
     </Pressable>
     <View style={styles.divider} />
     {card.start ? <ArrivalRows card={card} currency={currency} zone={zone} active={selected && interactive} onSwap={onSwap} />

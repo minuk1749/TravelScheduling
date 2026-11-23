@@ -9,6 +9,9 @@ const SYMBOLS: Readonly<Record<string, string>> = {
 };
 const WEEKDAYS = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'] as const;
 
+/** The provider gave no opening hours: scheduled without checking them. Not the travel-time verification state. */
+export const HOURS_UNKNOWN_LABEL = '영업시간 확인 못함 · 방문 전 확인해 주세요';
+
 /** "45분", "1시간", "2시간 15분". Fractional minutes round up like the scheduler's reserved time. */
 export function durationLabel(minutes: number): string {
   const total = Math.ceil(minutes);

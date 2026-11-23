@@ -175,3 +175,7 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 ## T27 일정 생성 재시도
 
 앱의 최초 생성·설정 저장·결과 편집·필수 장소 재검증과 웹의 생성 화면이 POST에 `Idempotency-Key`를 보낸다. 앱과 웹은 재시도 응답을 표시하기 전에 현재 저장 입력의 revision을 확인한다. 웹 결과 화면과 생활 설정 미리보기는 `components/itinerary/generation.ts`에서 요청 키를 관리한다. 앱과 웹의 편집 화면은 복구 시 `GET /constraints?fields=revision`을 호출한다. `ResultEditService.loadRevision`은 소유권을 확인한 DB 스냅샷의 입력 해시만 반환한다. 서버의 `itineraries/http.ts`가 매 요청의 소유권과 키를 검사하고, 서버 인스턴스가 공유하는 `repositories/itinerary-requests.ts`가 같은 소유자·여행·키의 동시 요청을 한 실행으로 합친다. 그 실행이 DB 잠금을 얻어 기존 결과를 조회하거나 T12 서비스를 실행한다. 마이그레이션 009가 저장 행과 요청 키를 연결한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
+
+## T28 희망 장소 누락과 영업시간 미상
+
+`services/itinerary/places.ts`는 고정하지 않은 희망 장소(WISH, 날짜·순서 미고정)만 쓰는 장소의 상세 정보가 없으면 그 방문을 스케줄러 입력에서 빼고 계속한다. 필수·고정 방문과 공항·숙소는 기존 `ItineraryInputError`를 유지하고 제공자 장애는 전파한다. 영업시간은 정상·휴업(`[]`)·미상(`undefined`)을 구별하며, 배치된 방문 중 미상인 방문 ID는 `ItineraryResult.openingHoursUnknown`(선택)으로 응답하고 `itineraries.details`에 저장한다. 앱은 `result/days.ts`의 `CardModel.hoursUnknown`으로 카드·전체 일정에 안내를 보이며 이동시간 검증 실패(`verification`)와 구별한다. [T28 결정](decisions/T28-optional-wish-and-unknown-hours.md)

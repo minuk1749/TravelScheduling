@@ -6,7 +6,7 @@ import { localTime, MEALS } from '@travel/core/presentation';
 import { ExpandedFormSheet } from '../../components/input/form-layout';
 import { colors, radius, result, size, spacing, text } from '../../theme';
 import type { DayModel, LegModel, TimelineRow } from '../../result/days';
-import { dateTitle, durationLabel, legLabel, moneyLabel, timeRange } from '../../result/format';
+import { dateTitle, durationLabel, HOURS_UNKNOWN_LABEL, legLabel, moneyLabel, timeRange } from '../../result/format';
 import { kindLabels } from '../trip-input/presentation';
 import { PreviousBadge } from './panel-states';
 import { SwapChip } from './swap-chip';
@@ -48,6 +48,7 @@ function Row({ row, zone, currency, select, onSwap }: {
     <View style={styles.flex}>
       <Text style={text.place}>{card.name}</Text>
       <Text style={styles.move}>{kindLabels[card.kind]} · {durationLabel(card.stay)}{card.fixed ? ` · 🔒 ${card.fixed}` : ''}</Text>
+      {card.hoursUnknown ? <Text style={styles.move}>ⓘ {HOURS_UNKNOWN_LABEL}</Text> : null}
     </View>
   </Pressable>;
 }
