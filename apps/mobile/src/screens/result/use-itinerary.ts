@@ -34,6 +34,9 @@ type State = {
 
 const SWITCHED = { TAXI: '택시로', TRANSIT: '대중교통으로', WALK: '도보로' } as const;
 
+const isStale = (failure: unknown) => failure instanceof ApiFailure && failure.code === 'STALE_INPUT';
+const changedElsewhere = () => new ApiFailure(409, 'STALE_INPUT', '다른 기기에서 여행 정보가 바뀌었어요. 다시 계산한 뒤 변경을 적용해 주세요.');
+
 function noticeTitle(change: Change, view: ResultView): string {
   if (change.kind === 'MODE') return change.mode === null
     ? '이동수단 고정을 해제하고 다시 계산했어요' : `${SWITCHED[change.mode]} 바꾸고 다시 계산했어요`;
@@ -77,6 +80,22 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
   /** Stable so the toast's auto-dismiss timer is not restarted by unrelated renders. */
   const dismissNotice = useCallback(() => setState(value => ({ ...value, notice: null })), []);
 
+  async function saveDraft(current: ResultView, draft: Constraints, signal: AbortSignal, retrying: boolean): Promise<ResultView> {
+    const constraints = parseConstraints(draft, current.input);
+    try {
+      const saved = await api.saveConstraints(tripId, current.revision, constraints, signal);
+      return { ...current, ...saved };
+    } catch (failure) {
+      if (!retrying || !isStale(failure) || signal.aborted) throw failure;
+      // The original PUT can commit between the retry's GET and PUT. Observe once, without writing again.
+      const latest = await api.savedInput(tripId, signal);
+      if (sameConstraints(draft, constraintsFrom(latest.input))) return latest;
+      if (latest.revision !== current.revision) throw changedElsewhere();
+      // The original revision is still visible. Preserve the draft for the next explicit retry.
+      throw new Error('저장 결과를 확인하지 못했어요. 다시 계산해 주세요.');
+    }
+  }
+
   async function run(change: Change, next: Constraints | null) {
     if (pending.current) return;
     const request = new AbortController();
@@ -96,12 +115,9 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
         const before = constraintsFrom(original.input);
         if (!sameConstraints(draft, constraintsFrom(current.input))) {
           // Only the revision against which the draft was prepared can accept a full replacement.
-          if (current.revision !== original.revision) {
-            throw new ApiFailure(409, 'STALE_INPUT', '다른 기기에서 여행 정보가 바뀌었어요. 다시 계산한 뒤 변경을 적용해 주세요.');
-          }
-          const saved = await api.saveConstraints(tripId, original.revision, parseConstraints(draft, current.input), request.signal);
+          if (current.revision !== original.revision) throw changedElsewhere();
+          current = await saveDraft(current, draft, request.signal, state.phase.kind === 'failed');
           if (request.signal.aborted) return;
-          current = { ...current, ...saved };
         }
         if (!sameConstraints(draft, before)) {
           restore = change.kind === 'UNDO' ? null : { revision: current.revision, constraints: before, change };
@@ -126,7 +142,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
     } catch (failure) {
       if (request.signal.aborted) return;
       const fields = Object.values(fieldErrors(failure));
-      const stale = failure instanceof ApiFailure && failure.code === 'STALE_INPUT';
+      const stale = isStale(failure);
       setState(value => ({ ...value, undo: stale ? null : restore, phase: { kind: 'failed', change, reload: reload || stale || !!draft, draft: stale ? null : draft,
         message: fields.length ? fields.join(' ') : errorMessage(failure) } }));
     } finally {

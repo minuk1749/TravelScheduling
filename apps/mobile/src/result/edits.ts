@@ -17,7 +17,19 @@ export type Change =
   | { kind: 'UNDO'; of: Change }
   | { kind: 'RETRY' };
 
-export const sameConstraints = (a: Constraints, b: Constraints) => JSON.stringify(a) === JSON.stringify(b);
+const modeKey = (leg: ModeConstraintLeg) => JSON.stringify([leg.date, leg.from, leg.to]);
+
+/** The server applies visits by ID and mode fixes by directed leg, regardless of JSON or row order. */
+export function sameConstraints(a: Constraints, b: Constraints): boolean {
+  if (a.visits.length !== b.visits.length || a.legModes.length !== b.legModes.length) return false;
+  const visits = new Map(b.visits.map(visit => [visit.id, visit]));
+  const modes = new Map(b.legModes.map(leg => [modeKey(leg), leg.mode]));
+  return a.visits.every(visit => {
+    const other = visits.get(visit.id);
+    return other?.priority === visit.priority && other.fixedDate === visit.fixedDate &&
+      other.fixedTime === visit.fixedTime && other.fixedOrder === visit.fixedOrder;
+  }) && a.legModes.every(leg => modes.get(modeKey(leg)) === leg.mode);
+}
 
 /** The saved mode applies to every leg on this date in this direction, including airport transfers. */
 export function sameModeConstraint(a: ModeConstraintLeg, b: ModeConstraintLeg): boolean {
