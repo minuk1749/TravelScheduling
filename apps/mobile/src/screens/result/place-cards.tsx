@@ -14,7 +14,8 @@ const STRIDE = result.cardRow.width + result.cardRow.gap;
 
 export function cardLabel(card: CardModel, zone: string) {
   if (!card.start || !card.end) return `${card.name}, 배치되지 않음`;
-  return `${card.number}번 ${card.name}, ${localTime(card.start, zone)}부터 ${localTime(card.end, zone)}까지`;
+  const hours = card.hoursUnknown ? `, ${HOURS_UNKNOWN_LABEL}` : '';
+  return `${card.number}번 ${card.name}, ${localTime(card.start, zone)}부터 ${localTime(card.end, zone)}까지${hours}`;
 }
 
 function ArrivalRows({ card, currency, zone, active, onSwap }: {

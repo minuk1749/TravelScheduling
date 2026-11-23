@@ -87,8 +87,10 @@ export interface ItineraryResult {
   /** Travel times were re-queried at the actual departures. Says nothing about opening hours. */
   verification: { verified: boolean; attempts: number };
   /**
-   * Visit IDs in the displayed schedule whose opening hours could not be checked. Absent or empty
-   * means every scheduled visit's hours were known (a closed place is rejected, never listed here).
+   * Visit IDs in the displayed schedule whose opening hours could not be checked (a closed place is
+   * rejected, never listed here). Results generated since T28 always carry the list: an empty array
+   * means every scheduled visit's hours were known. Absent means the result predates T28 and whether
+   * hours were known was not recorded, so consumers must not read absence as "all known".
    */
   openingHoursUnknown?: readonly string[];
   transferIssues: readonly TransferIssue[];

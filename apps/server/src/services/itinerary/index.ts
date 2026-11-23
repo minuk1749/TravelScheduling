@@ -64,7 +64,7 @@ export class ItineraryService {
       availableByDate: Object.fromEntries(prepared.map(({ day }) => [day.date, day.window.available])),
       ...(airportTransferLimits.length ? { airportTransferLimits } : {}),
       verification: { verified: verified.verified, attempts: verified.attempts },
-      ...(openingHoursUnknown.length ? { openingHoursUnknown } : {}),
+      openingHoursUnknown,
       transferIssues,
       flightConflicts,
       skippedMeals: prepared.flatMap(day => day.skippedMeals),

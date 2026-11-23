@@ -178,4 +178,4 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 ## T28 희망 장소 누락과 영업시간 미상
 
-`services/itinerary/places.ts`는 고정하지 않은 희망 장소(WISH, 날짜·순서 미고정)만 쓰는 장소의 상세 정보가 없으면 그 방문을 스케줄러 입력에서 빼고 계속한다. 필수·고정 방문과 공항·숙소는 기존 `ItineraryInputError`를 유지하고 제공자 장애는 전파한다. 영업시간은 정상·휴업(`[]`)·미상(`undefined`)을 구별하며, 배치된 방문 중 미상인 방문 ID는 `ItineraryResult.openingHoursUnknown`(선택)으로 응답하고 `itineraries.details`에 저장한다. 앱은 `result/days.ts`의 `CardModel.hoursUnknown`으로 카드·전체 일정에 안내를 보이며 이동시간 검증 실패(`verification`)와 구별한다. [T28 결정](decisions/T28-optional-wish-and-unknown-hours.md)
+`services/itinerary/places.ts`는 고정하지 않은 희망 장소(WISH, 날짜·순서 미고정)만 쓰는 장소의 상세 정보가 없으면 그 방문을 스케줄러 입력에서 빼고 계속한다. 필수·고정 방문과 공항·숙소는 기존 `ItineraryInputError`를 유지하고 제공자 장애는 전파한다. 영업시간은 정상·휴업(`[]`)·미상(`undefined`)을 구별하며, 배치된 방문 중 미상인 방문 ID는 `ItineraryResult.openingHoursUnknown`으로 응답하고(새 결과는 빈 배열 포함, 필드 부재는 T28 이전 결과) `itineraries.details`에 저장한다. 앱은 `result/days.ts`의 `CardModel.hoursUnknown`으로 카드·전체 일정에 안내를 보이며 이동시간 검증 실패(`verification`)와 구별한다. [T28 결정](decisions/T28-optional-wish-and-unknown-hours.md)

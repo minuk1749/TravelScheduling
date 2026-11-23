@@ -42,7 +42,7 @@ function Row({ row, zone, currency, select, onSwap }: {
   }
   if (row.kind === 'MEAL') return <View style={styles.row}>{time}<Text style={text.body}>{MEALS[row.slot]} 식사</Text></View>;
   const { card } = row;
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${localTime(row.at, zone)} ${card.name}`}
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${localTime(row.at, zone)} ${card.name}${card.hoursUnknown ? `, ${HOURS_UNKNOWN_LABEL}` : ''}`}
     onPress={() => select(card.visitId)} style={styles.row}>
     {time}
     <View style={styles.flex}>

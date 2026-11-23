@@ -11,7 +11,7 @@ export type ItineraryDetails = {
   recommendation: { requiredCount: number; requiredVisitIds: string[] } | null;
   verification: ItineraryResult['verification']; transferIssues: ItineraryResult['transferIssues'];
   flightConflicts: ItineraryResult['flightConflicts']; skippedMeals: ItineraryResult['skippedMeals'];
-  /** Absent in rows saved before T28 and when every scheduled visit's hours were known. */
+  /** Absent only in rows saved before T28 (not recorded); an empty array means every scheduled visit's hours were known. */
   openingHoursUnknown?: ItineraryResult['openingHoursUnknown'];
   /** Airport legs; day legs live in the normalized `legs` rows. */
   transfers: LegComparison[];

@@ -31,7 +31,7 @@ test('T28 an unpinned wish without place details is skipped and the itinerary is
   assert.deepEqual(placed(result), placed(baseline));
   assert.ok(!placed(result).includes('visit-teamlab'));
   assert.deepEqual(result.capacity.unplaced, []);
-  assert.deepEqual(result.openingHoursUnknown ?? [], []);
+  assert.deepEqual(result.openingHoursUnknown, []);
 });
 
 test('T28 a required place without details is still an input error', async () => {
@@ -105,16 +105,18 @@ test('T28 unknown hours are separate from the travel-time verification result', 
   const unverified = await service({ places, maxAttempts: 1 }).service.compute(input);
   assert.equal(unverified.status, 'CONFLICT');
   assert.equal(unverified.verification.verified, false);
-  assert.equal(unverified.openingHoursUnknown, undefined);
+  assert.deepEqual(unverified.openingHoursUnknown, []);
 
   // Stored with the itinerary, so reopening the result tells the same story.
   const stored = JSON.parse(JSON.stringify(encodeItineraryDetails(result, schedule(result))));
   assert.deepEqual(stored.openingHoursUnknown, ['visit-unknown']);
-  assert.equal(encodeItineraryDetails(unverified, null).openingHoursUnknown, undefined);
+  assert.deepEqual(encodeItineraryDetails(unverified, null).openingHoursUnknown, []);
 });
 
 test('T28 a trip whose hours are all known reports no unknown hours', async () => {
   const result = await service().service.compute(sampleTrip());
-  assert.equal(result.openingHoursUnknown, undefined);
-  assert.equal(encodeItineraryDetails(result, schedule(result)).openingHoursUnknown, undefined);
+  // New results record "checked, none unknown" as an empty array, distinct from a pre-T28 row without the field.
+  assert.deepEqual(result.openingHoursUnknown, []);
+  const stored = JSON.parse(JSON.stringify(encodeItineraryDetails(result, schedule(result))));
+  assert.deepEqual(stored.openingHoursUnknown, []);
 });

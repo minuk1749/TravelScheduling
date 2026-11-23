@@ -1,4 +1,4 @@
-import { screen, within } from 'expo-router/testing-library';
+import { fireEvent, screen, within } from 'expo-router/testing-library';
 import { validGeneratedTrip } from '../src/api/result-response';
 import { buildDays } from '../src/result/days';
 import { HOURS_UNKNOWN_LABEL } from '../src/result/format';
@@ -39,4 +39,17 @@ test('a result without unchecked hours shows no note, and an unverified conflict
   expect(screen.queryByText(note)).toBeNull();
   expect(validGeneratedTrip({ ...conflictTrip(REVISION), verification: { verified: false, attempts: 8 } })).toBe(true);
   expect(buildDays(view, conflictTrip(REVISION), null).every(day => day.cards.every(card => !card.hoursUnknown))).toBe(true);
+});
+
+test('screen readers hear the unchecked-hours note on the card and the whole-day row, only for the unchecked place', async () => {
+  const f = resultFixture();
+  f.generate.mockImplementation(async () => json({ ...trip(f.current().revision), openingHoursUnknown: ['museum'] }));
+  await openResult(f);
+  expect(screen.getByRole('button', { name: `1번 도쿄 국립박물관, 11:00부터 12:00까지, ${HOURS_UNKNOWN_LABEL}` })).toBeVisible();
+  expect(screen.getByRole('button', { name: '2번 아메요코 시장, 13:20부터 14:05까지' })).toBeVisible();
+
+  await fireEvent.press(screen.getByRole('button', { name: '전체 일정' }));
+  const sheet = within(screen.getByTestId('form-sheet'));
+  expect(sheet.getByRole('button', { name: `11:00 도쿄 국립박물관, ${HOURS_UNKNOWN_LABEL}` })).toBeVisible();
+  expect(sheet.getByRole('button', { name: '13:20 아메요코 시장' })).toBeVisible();
 });
