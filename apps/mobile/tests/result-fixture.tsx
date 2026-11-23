@@ -52,12 +52,12 @@ export const view: ResultView = {
 export const at = (date: string, time: string) => new Date(`${date}T${time}:00+09:00`).toISOString().replace('.000Z', 'Z');
 const estimate = (minutes: number, fare: number | null) => ({ minutes, fare });
 type Alternatives = LegComparison['alternatives'];
-function leg(date: string, kind: 'DAY' | 'AIRPORT', from: Name, to: Name, departure: string, mode: 'TRANSIT' | 'TAXI' | 'WALK',
+export function leg(date: string, kind: 'DAY' | 'AIRPORT', from: Name, to: Name, departure: string, mode: 'TRANSIT' | 'TAXI' | 'WALK',
   minutes: number, fare: number | null, alternatives: Alternatives, fixed = false): LegComparison {
   return { date, kind, from: place(from), to: place(to), departure: at(date, departure),
     selected: { mode, minutes, fare, fixed }, baseline: { mode: 'TRANSIT', minutes, fare }, alternatives };
 }
-const stop = (date: string, id: string, start: string, end: string) =>
+export const stop = (date: string, id: string, start: string, end: string) =>
   ({ kind: 'VISIT' as const, visitId: id, start: at(date, start), end: at(date, end) });
 const scheduleLeg = (comparison: LegComparison) => ({
   from: comparison.from, to: comparison.to, mode: comparison.selected.mode, fixed: comparison.selected.fixed,

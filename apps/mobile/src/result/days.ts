@@ -33,7 +33,7 @@ export type CardModel = {
   wait: number;
   /** Arrival at the lodging after the day's last visit. */
   returnAt: string | null;
-  /** Minutes later (+) or earlier (−) than the previous calculation on the same date. */
+  /** Minutes later (+) or earlier (−) than this visit's previous start instant. */
   shift: number;
   changed: boolean;
   issue: string | null;
@@ -167,13 +167,14 @@ function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT
   const arrival = stop ? legs.findLast(leg => leg.to === placeId && Temporal.Instant.compare(leg.arrival, stop.start) <= 0) ?? null : null;
   const departure = stop ? legs.find(leg => leg.from === placeId && Temporal.Instant.compare(leg.departure, stop.end) >= 0) ?? null : null;
   const before = context.before?.get(visitId);
-  const moved = !!stop && !!before && (minutesBetween(before.start, stop.start) !== 0 || minutesBetween(before.end, stop.end) !== 0);
+  const startDifference = stop && before ? minutesBetween(before.start, stop.start) : 0;
+  const moved = !!stop && !!before && (startDifference !== 0 || minutesBetween(before.end, stop.end) !== 0);
   return {
     visitId, placeId, number, name: placeName(context.view, placeId), kind: visit.kind, stay: visit.minutes,
     start: stop?.start ?? null, end: stop?.end ?? null, fixed: visit.fixedDate && visit.fixedDate !== date ? null : fixedLabel(visit), arrival, departure,
     wait: arrival && stop ? Math.max(0, Math.round(minutesBetween(arrival.arrival, stop.start))) : 0,
     returnAt: last && departure && context.view.input.lodgings.some(lodging => lodging.place.id === departure.to) ? departure.arrival : null,
-    shift: stop && before?.date === date ? Math.round(minutesBetween(before.start, stop.start)) : 0,
+    shift: Math.round(startDifference),
     changed: !!context.before && !!stop && (!before || before.date !== date || moved),
     issue: null,
   };
