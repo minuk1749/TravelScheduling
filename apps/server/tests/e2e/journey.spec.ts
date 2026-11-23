@@ -5,10 +5,10 @@ import { constraintsFrom, type Constraints } from '@travel/core/contracts/result
 import type { SharedItinerary } from '@travel/core/contracts/sharing';
 import type { TripCreation } from '@travel/core/contracts/trips/create';
 import { createDatabasePool } from '../../src/lib/db';
-import { migrate } from '../../src/lib/migrations';
 import { hashOpaqueToken } from '../../src/lib/opaque-token';
 import { expectMarkers, installMapsDouble } from '../helpers/e2e-maps';
-import { expectJson, signIn, upsertCityProfile, type Generated } from './support/app-client';
+import { expectJson, signIn, type Generated } from './support/app-client';
+import { upsertCityProfile } from './support/database';
 import { googleIdToken } from './support/google-key';
 
 const TRAVELER = 'e2e-google-traveler', STRANGER = 'e2e-google-stranger';
@@ -23,9 +23,8 @@ const WISH = 'teamLab Planets';
 const pool = createDatabasePool();
 const removeTestUsers = () => pool.query('DELETE FROM users WHERE google_id = ANY($1::text[])', [[TRAVELER, STRANGER]]);
 test.beforeAll(async () => {
-  // CI may run e2e on a database that unit tests left empty; apply the (idempotent) schema first.
-  const client = await pool.connect();
-  try { await migrate(client); } finally { client.release(); }
+  // global-setup.ts migrated this run's own schema; the TOKYO upsert below must never reach the base schema.
+  expect((await pool.query('SELECT current_schema() AS schema')).rows[0].schema).toBe(process.env.E2E_DATABASE_SCHEMA);
   await removeTestUsers();
   await upsertCityProfile(pool);
 });

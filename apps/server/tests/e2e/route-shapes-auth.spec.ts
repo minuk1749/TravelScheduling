@@ -4,7 +4,6 @@ import { expect, test } from '@playwright/test';
 import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import { PostgresMobileSessionStore } from '../../src/lib/auth/session-store';
 import { createDatabasePool } from '../../src/lib/db';
-import { migrate } from '../../src/lib/migrations';
 import { hashOpaqueToken, newOpaqueToken } from '../../src/lib/opaque-token';
 import { saveItinerary } from '../../src/repositories/itineraries';
 import { insertTrip } from '../../src/repositories/trip-inputs';
@@ -22,7 +21,6 @@ let path: string, inputHash: string, firstId: string, latestId: string, legCount
 test.beforeAll(async () => {
   const client = await pool.connect();
   try {
-    await migrate(client);
     await client.query(`INSERT INTO users (id, google_id, email)
       SELECT id, id::text, 'shapes@example.test' FROM unnest($1::uuid[]) AS u(id)`, [[owner, visitor]]);
     const sessions = new PostgresMobileSessionStore(() => client);

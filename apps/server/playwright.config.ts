@@ -1,9 +1,13 @@
 import { defineConfig } from '@playwright/test';
+import { isolateDatabase } from './tests/e2e/support/database';
 import { E2E_MOBILE_CLIENT, ensureSigningKey } from './tests/e2e/support/google-key';
 
 const origin = 'http://localhost:3210';
 // Created once in the runner process; the server and the test workers inherit it (see tests/e2e/support/google-key.ts).
 ensureSigningKey();
+// Likewise the run's own schema: DATABASE_URL now points at it for the server and the workers; global-setup.ts
+// creates and migrates it and drops it afterwards, so the base schema (e.g. a development database) is never written.
+isolateDatabase();
 // Fake credentials only: Google signing keys, Places and Routes are answered by tests/e2e/support/google-doubles.mjs
 // and the Maps JavaScript API on the share page by a browser stub, so the build must embed (fake) NEXT_PUBLIC_* Maps settings.
 const env = {
@@ -13,7 +17,7 @@ const env = {
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: 'e2e-maps-key', NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: 'e2e-map-id',
 };
 export default defineConfig({
-  testDir: './tests/e2e', fullyParallel: false, workers: 1,
+  testDir: './tests/e2e', fullyParallel: false, workers: 1, globalSetup: './tests/e2e/support/global-setup.ts',
   use: { serviceWorkers: 'block', baseURL: origin, viewport: { width: 375, height: 812 }, trace: 'retain-on-failure' },
   webServer: {
     // Rebuild so the fake Maps settings are inlined; the server then starts with the Google doubles preloaded.
