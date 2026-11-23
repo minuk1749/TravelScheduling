@@ -193,7 +193,9 @@ API는 `GET /api/places?query=도쿄&regionCode=JP`,
 T9 [이동시간 제공자](../apps/server/src/travel-time/index.ts)는 기존 matrix/route 계약을 구현한다.
 `matrix`는 고유 장소 ID(최대 100개)의 방향성 행렬이며 대각선도 Google 응답을 따른다.
 `GoogleTravelTimeProvider`는 `computeRouteMatrix`를 TRANSIT 10×10, WALK/DRIVE 25×25로
-분할하고 응답 인덱스로 복원한다. 수단별 경로 없음은 해당 키 생략, 요금 없음은 null이다.
+분할하고 응답 인덱스로 복원한다. 같은 서버 런타임의 `GoogleRoutesClient`는 행렬 타일·구간·지도 모양 HTTP 요청을 합해 최대 4건까지 동시에 처리한다. 응답 본문 읽기를 마치거나 실패하면 다음 대기 요청이 시작된다. [T29 결정과 측정](decisions/T29-transport-and-routes-budget.md)
+
+수단별 경로 없음은 해당 키 생략, 요금 없음은 null이다.
 TRANSIT 요금의 units/nanos를 통화와 함께 숫자로 변환하고 WALK/DRIVE 요금은 null이다.
 `route`는 행렬 응답 대신 `computeRoutes`를 사용한다. TRANSIT에 정확한 출발 instant를 전달하며
 실시간 교통 제외 요구에 따라 DRIVE는 `TRAFFIC_UNAWARE`를 사용한다. WALK/DRIVE 외부 요청에는
@@ -527,6 +529,8 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 
 ### 13.2 앱 ↔ 서버 API 계약
 
+- 운영 앱의 API origin은 HTTPS여야 한다. 개발 빌드의 로컬 HTTP 주소 범위는 [앱 설정](../apps/mobile/README.md)에 있다.
+- JSON 본문은 UTF-8 바이트 단위로 제한한다. 로그인은 16,384, 여행 생성은 100,000, 생활 설정은 30,000, 제약 저장은 262,144바이트다. 한도를 넘기면 413 `PAYLOAD_TOO_LARGE`를 반환한다.
 - 모든 요청은 `Authorization: Bearer <세션 토큰>`을 보낸다(로그인·공유 열람 제외). 본문은 `Content-Type: application/json`.
 - 응답은 기존 `private, no-store` JSON. DTO 타입은 core가 기준이며 앱은 같은 타입을 import한다.
 - 시각: 현지 날짜(`YYYY-MM-DD`)·현지 시각(`HH:mm`, 항공은 `YYYY-MM-DDTHH:mm`)과 오프셋 있는 instant를 구분하고 항상 IANA 시간대를 함께 보낸다(§5).
@@ -548,7 +552,7 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `POST /api/trips/[id]/itinerary` | 선택 헤더 `Idempotency-Key` (소문자 하이픈 UUID 하나) | `{ itineraryId, inputHash, ...ItineraryResult }` (소유자 생성 응답의 `availableByDate`는 항공·공항 이동을 반영한 날짜별 활동 가능 시각 범위이며 닫힌 날짜는 `null`. `status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
 | `GET /api/trips/[id]/itinerary/shapes` | `inputHash` 필수, `itineraryId` 선택 (쿼리) | `{ inputHash, itineraryId, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `GET /api/trips/[id]/constraints` | 선택 쿼리 `fields=revision` | 기본 응답은 `ResultView`. `fields=revision`은 소유자의 현재 DB 입력에서 계산한 `{ revision }`만 반환 | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
-| `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
+| `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 413, 500 |
 | `POST /api/trips/[id]/share` | — | `{ path: "/share/{token}" }`. 앱은 설정한 서버 주소와 합쳐 OS 공유 시트로 보냄 | 401, 403, 404, 405, 500 |
 | `GET /api/share/[token]` (비로그인) | — | `SharedItinerary` | 404, 405, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 

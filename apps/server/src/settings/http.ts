@@ -1,3 +1,4 @@
+import { readJsonBody } from '../lib/json-body';
 import { apiError, privateJson as json, isCrossSiteRequest } from '../lib/http';
 import { TripInputError } from '../trips/input';
 import { SettingsError } from './model';
@@ -11,11 +12,9 @@ export function settingsHandlers(deps: { userId(request: Request): Promise<strin
       if (request.method !== 'PUT') throw new SettingsError(405, '허용되지 않은 메서드입니다.');
       if (isCrossSiteRequest(request)) throw new SettingsError(403, '허용되지 않은 요청입니다.');
       if (!request.headers.get('content-type')?.startsWith('application/json')) throw new SettingsError(415, 'JSON 입력이 필요합니다.');
-      const body = await request.text();
-      if (body.length > 30_000) throw new SettingsError(413, '입력 크기를 줄여 주세요.');
-      let raw: unknown;
-      try { raw = JSON.parse(body); } catch { throw new SettingsError(400, '올바른 JSON 입력이 필요합니다.'); }
-      return json(await deps.service.save(id, ownerId, raw));
+      const body = await readJsonBody(request, 30_000);
+      if ('error' in body) return body.error;
+      return json(await deps.service.save(id, ownerId, body.value));
     } catch (error) {
       if (error instanceof TripInputError) return apiError(400, 'INVALID_INPUT', error.message, error.fields);
       if (error instanceof SettingsError) return apiError(error.status, error.code, error.message);

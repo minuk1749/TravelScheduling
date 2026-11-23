@@ -2,7 +2,8 @@ import { defineConfig } from '@playwright/test';
 import { isolateDatabase } from './tests/e2e/support/database';
 import { E2E_MOBILE_CLIENT, ensureSigningKey } from './tests/e2e/support/google-key';
 
-const origin = 'http://localhost:3210';
+// All test clients and the server must use the same loopback address family.
+const server = new URL('http://127.0.0.1:3210');
 // Created once in the runner process; the server and the test workers inherit it (see tests/e2e/support/google-key.ts).
 ensureSigningKey();
 // Likewise the run's own schema: DATABASE_URL now points at it for the server and the workers; global-setup.ts
@@ -18,11 +19,11 @@ const env = {
 };
 export default defineConfig({
   testDir: './tests/e2e', fullyParallel: false, workers: 1, globalSetup: './tests/e2e/support/global-setup.ts',
-  use: { serviceWorkers: 'block', baseURL: origin, viewport: { width: 375, height: 812 }, trace: 'retain-on-failure' },
+  use: { serviceWorkers: 'block', baseURL: server.origin, viewport: { width: 375, height: 812 }, trace: 'retain-on-failure' },
   webServer: {
     // Rebuild so the fake Maps settings are inlined; the server then starts with the Google doubles preloaded.
     // Ready check: an unauthenticated API call answers 401 (there is no web home page any more).
-    command: 'npm run build && NODE_OPTIONS="--import ./tests/e2e/support/google-doubles.mjs" npm run start -- --hostname localhost --port 3210',
-    url: `${origin}/api/trips`, reuseExistingServer: false, timeout: 480_000, env,
+    command: `npm run build && NODE_OPTIONS="--import ./tests/e2e/support/google-doubles.mjs" npm run start -- --hostname ${server.hostname} --port ${server.port}`,
+    url: `${server.origin}/api/trips`, reuseExistingServer: false, timeout: 480_000, env,
   },
 });

@@ -1,3 +1,4 @@
+import { RoutesRequestBudget } from './request-budget';
 import { TravelProviderError, type Location, type ProviderMode } from './index';
 
 export function invalid(): never { throw new TravelProviderError('INVALID_RESPONSE'); }
@@ -18,17 +19,26 @@ export function options(mode: ProviderMode, departure: string) {
 
 /** Shared Google transport; never persists responses or includes provider bodies in errors. */
 export class GoogleRoutesClient {
+  private static readonly budget = new RoutesRequestBudget();
+
   constructor(private readonly apiKey: string, private readonly fetcher: typeof fetch = fetch) {}
 
   async request(path: string, fields: string, body: unknown): Promise<unknown> {
     if (!this.apiKey) throw new TravelProviderError('UNAVAILABLE');
+    return GoogleRoutesClient.budget.run(() => this.post(path, fields, body));
+  }
+
+  private async post(path: string, fields: string, body: unknown): Promise<unknown> {
     try {
       const response = await this.fetcher(`https://routes.googleapis.com/${path}`, {
         method: 'POST', body: JSON.stringify(body),
         headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': this.apiKey, 'X-Goog-FieldMask': fields },
         cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10_000),
       });
-      if (!response.ok) throw new TravelProviderError('UNAVAILABLE');
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new TravelProviderError('UNAVAILABLE');
+      }
       try { return await response.json(); }
       catch { return invalid(); }
     } catch (error) {

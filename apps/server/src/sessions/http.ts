@@ -1,9 +1,9 @@
+import { readJsonBody } from '../lib/json-body';
 import { GoogleKeysUnavailableError } from '../lib/auth/google-id-token';
 import type { MobileSessionService } from '../lib/auth/mobile-sessions';
 import { readBearer, type RequestAuthenticator } from '../lib/auth/request-authenticator';
 import { apiError, privateJson, privateNoContent } from '../lib/http';
 
-const MAX_BODY = 16_384;
 const MAX_ID_TOKEN = 8_192;
 const UNAUTHENTICATED = '로그인 후 다시 시도해 주세요.';
 
@@ -21,11 +21,9 @@ export function sessionHandlers(deps: SessionDependencies) {
     async create(request: Request): Promise<Response> {
       try {
         if (!request.headers.get('content-type')?.startsWith('application/json')) return apiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'JSON 입력이 필요합니다.');
-        const body = await request.text();
-        if (body.length > MAX_BODY) return apiError(413, 'PAYLOAD_TOO_LARGE', '입력 크기를 줄여 주세요.');
-        let raw: unknown;
-        try { raw = JSON.parse(body); } catch { return apiError(400, 'INVALID_JSON', '올바른 JSON 입력이 필요합니다.'); }
-        const idToken = idTokenOf(raw);
+        const body = await readJsonBody(request, 16_384);
+        if ('error' in body) return body.error;
+        const idToken = idTokenOf(body.value);
         if (!idToken) return apiError(400, 'INVALID_INPUT', 'Google 로그인 정보가 필요합니다.', { idToken: 'Google ID 토큰을 보내 주세요.' });
         const session = await deps.service().signIn(idToken);
         if (!session) return apiError(401, 'INVALID_GOOGLE_TOKEN', 'Google 로그인을 확인하지 못했습니다. 다시 로그인해 주세요.');

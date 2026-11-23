@@ -1,3 +1,4 @@
+import { apiOrigin } from './origin';
 import { isApiErrorCode, type ApiErrorCode, type ApiErrorFields } from '@travel/core/contracts/errors';
 import type { ApiSession } from '../auth/ports';
 
@@ -36,15 +37,7 @@ export class ApiClient {
   ) {}
 
   origin(): string {
-    let base: URL;
-    try { base = new URL(this.baseUrl); } catch {
-      throw new Error('서버 주소 설정을 확인해 주세요.');
-    }
-    if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password
-      || base.pathname !== '/' || base.search || base.hash) {
-      throw new Error('서버 주소 설정을 확인해 주세요.');
-    }
-    return base.origin;
+    return apiOrigin(this.baseUrl);
   }
 
   async request<T>(path: string, { expectNoContent, validate, ...options }: RequestOptions = {}, authenticated = true): Promise<T> {
