@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import type { ScheduleResult, TravelMode } from '../scheduler';
-import type { ItineraryResult, LegComparison, TripInputs } from '../services/itinerary/types';
+import type { ItineraryResult, LegComparison } from '../services/itinerary/types';
 import type { ItineraryDisplayResult } from '../results/model';
 import { isCompleteItineraryDetails, type ItineraryDetails } from './itinerary-details';
 
@@ -19,11 +19,13 @@ type StoredLeg = {
   fare: string | null; alternatives: { baseline: LegComparison['baseline']; options: LegComparison['alternatives'] };
 };
 
-/** Reads the existing normalized T12 storage, with a constant number of queries. */
-export async function readSharedResult(client: PoolClient, input: TripInputs, inputHash: string): Promise<ItineraryDisplayResult | null> {
-  const row = (await client.query<StoredResult>(`SELECT id, input_hash, status, unplaced, efficiency_summary, details
-    FROM itineraries WHERE trip_id = $1 ORDER BY generation DESC LIMIT 1`, [input.id])).rows[0];
-  if (!row || row.input_hash !== inputHash) return null;
+export async function readLatestItinerary(client: PoolClient, tripId: string): Promise<StoredResult | null> {
+  return (await client.query<StoredResult>(`SELECT id, input_hash, status, unplaced, efficiency_summary, details
+    FROM itineraries WHERE trip_id = $1 ORDER BY generation DESC LIMIT 1`, [tripId])).rows[0] ?? null;
+}
+
+/** Restores the selected row and its normalized T12 legs in the caller's read snapshot. */
+export async function readSharedResult(client: PoolClient, row: StoredResult, timeZone: string): Promise<ItineraryDisplayResult | null> {
   const d = row.details;
   if (!isCompleteItineraryDetails(d)) return null;
   const comparisons = [...d.transfers];
@@ -41,7 +43,7 @@ export async function readSharedResult(client: PoolClient, input: TripInputs, in
     const legs = (await client.query<StoredLeg>(`SELECT l.* FROM legs l JOIN day_plans d ON d.id = l.day_plan_id
       WHERE d.itinerary_id = $1 ORDER BY d.date, l.position`, [row.id])).rows;
     const byId = new Map(days.map(day => [day.id, {
-      date: day.date, timeZone: input.timeZone, stops: [] as ScheduleResult['days'][number]['stops'],
+      date: day.date, timeZone, stops: [] as ScheduleResult['days'][number]['stops'],
       legs: [] as ScheduleResult['days'][number]['legs'],
     }]));
     for (const stop of stops) {

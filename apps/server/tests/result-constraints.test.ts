@@ -65,7 +65,7 @@ test('T13 editor service deduplicates metadata, keeps it transient and rejects s
     },
   };
   const places = new FixturePlaces(), editor = new ResultEditService(repository, places);
-  const view = await editor.load(input.id);
+  const view = await editor.load(input.id, 'owner');
   assert.equal(new Set(places.detailCalls).size, places.detailCalls.length);
   const result = await service().service.compute(input);
   const markers = mapMarkers(view, result);
@@ -77,7 +77,7 @@ test('T13 editor service deduplicates metadata, keeps it transient and rejects s
   const draft = constraintsFrom(input); draft.visits[0].fixedDate = '2026-12-02';
   const saved = await editor.save(input.id, 'owner', { revision: view.revision, constraints: draft });
   assert.notEqual(saved.revision, view.revision); assert.equal('places' in saved, false);
-  assert.equal((await editor.load(input.id)).input.visits[0].fixedDate, '2026-12-02');
+  assert.equal((await editor.load(input.id, 'owner')).input.visits[0].fixedDate, '2026-12-02');
   await assert.rejects(editor.save(input.id, 'owner', { revision: view.revision, constraints: draft }), ResultStaleError);
   repository.save = async () => null;
   await assert.rejects(editor.save(input.id, 'owner', { revision: saved.revision, constraints: draft }), ResultStaleError);

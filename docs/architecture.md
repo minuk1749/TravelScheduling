@@ -385,7 +385,8 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
 - [공유 DTO](../apps/server/src/results/model.ts), [검증](../apps/server/src/results/input.ts), [표시 변환](../apps/server/src/results/presentation.ts)은 브라우저/서버 공용이며 DB·네트워크에 의존하지 않는다.
 - [결과 서비스](../apps/server/src/services/itinerary/editing.ts)는 ConstraintRepository와 장소 제공자 포트만 사용한다. [HTTP](../apps/server/src/results/http.ts)가 인증·소유권·동일 출처·오류를 처리하고 server.ts가 구체 구현을 조립한다.
 - [저장소](../apps/server/src/repositories/itinerary-constraints.ts)는 여행 행 잠금 아래 소유권과 전체 입력 해시를 재검사하고 방문/수단 제약을 원자적으로 저장한다.
-- GET `/api/trips/[id]/constraints`는 `{ input, revision, places }`, PUT은 `{ revision, constraints: { visits, legModes } }`를 받고 `{ input, revision }`을 반환한다. revision은 동선 입력 해시다. 누락/중복/다른 여행 ID·기간 밖 날짜·DST 모호 시각을 거부한다.
+- GET `/api/trips/[id]/constraints`는 `{ input, revision, writeVersion, places }`를 반환한다. PUT은 `{ revision, constraints: { visits, legModes } }`를 받고 `{ input, revision, writeVersion }`을 반환한다. revision은 동선 입력 해시이고 writeVersion은 매 제약·생활 설정 저장 때 바뀌는 UUID다. 누락/중복/다른 여행 ID·기간 밖 날짜·DST 모호 시각을 거부한다.
+- PUT은 선택적으로 `operationId`, `expectedWriteVersion`, `expectedOperationId`(UUID v4)를 받는다. 서버는 여행 행을 잠그고 전달된 조건을 모두 확인한다. 불일치는 409다. operationId가 있는 성공 응답에는 `receipt: { operationId, revision }`이 추가된다. 응답이 유실되면 GET의 `?operationId=…`로 소유 여행의 최신 쓰기인지 확인할 수 있다. [008](../apps/server/migrations/008_constraint_write_receipt.sql)은 여행마다 최신 쓰기의 증거만 보관한다.
 - 방문 제약은 기존 trip_places에, 구간 제약은 [006](../apps/server/migrations/006_itinerary_constraints.sql)의 trips.leg_modes에 저장한다. 후자는 날짜·출발/도착 장소 ID·수동 수단 배열이다. 장소 이름/귀속 정보는 실시간 응답에만 포함한다.
 - [일상 구간 적용](../apps/server/src/services/itinerary/constraints.ts)은 기존 짐 속성을 유지하고, 공항 이동은 기존 transfer 선택에 fixedMode를 전달한다. 입력 해시에 수단 제약도 포함된다.
 - PUT 성공 뒤 기존 POST `/api/trips/[id]/itinerary`로 재검증한다. POST 응답에 inputHash를 추가해 다른 입력으로 생성된 결과 표시를 막는다. 생성 실패 시 저장한 제약은 유지된다. 화면 재접속은 입력을 복원하고 버튼으로 재생성한다.
@@ -455,7 +456,7 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력까지 구현했다. T22–T25 화면은 아래 계획을 따른다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력, T22 결과 화면(§13.4.3, §13.5), T23 필수 선택까지 구현했다. T24–T25 화면은 아래 계획을 따른다.
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
 결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
@@ -475,7 +476,7 @@ apps/
     migrations/, scripts/, tests/   기존 SQL·실행기·서버 테스트
   mobile/                  @travel/mobile. T20 Expo SDK 58 앱
     app/                   expo-router 화면 라우트
-    src/{api,auth,theme,components,screens,navigation}/  map은 T22 계획
+    src/{api,auth,theme,components,screens,navigation}/  T22: map(지도 계약·순수 계산·어댑터), result(결과 순수 모델)
     assets/fonts/, tests/  Pretendard·jest-expo 컴포넌트 검사
 packages/
   core/                    @travel/core
@@ -538,8 +539,8 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `GET /api/trips/[id]` | — | `{ id }` (T18: `trips/http.ts`의 `tripAccessHandler` + `RequestAuthenticator`, `private, no-store`, §13.3) | 401, 403, 404, 500 |
 | `GET /api/trips/[id]/settings` | — | `SettingsView` (`{ snapshot, calculation }`) | 401, 403, 404, 409 `INCOMPLETE_TRIP`(초 단위 시각 등 저장 형식 불일치), 500 |
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
-| `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (`status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
-| `GET /api/trips/[id]/itinerary/shapes` (T19 신규) | `?inputHash=` | `{ inputHash, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
+| `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (소유자 생성 응답의 `availableByDate`는 항공·공항 이동을 반영한 날짜별 활동 가능 시각 범위이며 닫힌 날짜는 `null`. `status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
+| `GET /api/trips/[id]/itinerary/shapes` | `inputHash` 필수, `itineraryId` 선택 (쿼리) | `{ inputHash, itineraryId, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `GET /api/trips/[id]/constraints` | — | `ResultView` (`{ input, revision, places }`) | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
 | `POST /api/trips/[id]/share` | — | `{ path: "/share/{token}" }`. 앱은 설정한 서버 주소와 합쳐 OS 공유 시트로 보냄 | 401, 403, 404, 405, 500 |
@@ -589,7 +590,7 @@ export const documentedApiErrors: [
 | 폐기 | 로그아웃 `DELETE /api/session`이 해당 해시 행 삭제. 앱은 응답과 관계없이 보안 저장소의 토큰을 지운다 |
 | 탈퇴 | `DELETE /api/account` → 기존 `deleteUser` → FK cascade로 여행 데이터와 **모든** 세션 삭제 |
 | 앱 저장 | `expo-secure-store`(iOS Keychain, Android Keystore)에 `{ token, expiresAt }`. AsyncStorage·로그에 쓰지 않음. 401을 받으면 지우고 로그인 화면으로 |
-| 소유권 연결 | 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)가 받는 `userId()`를 `userId(request)`로 바꾸고, 각 `server.ts`가 같은 `RequestAuthenticator`를 주입한다. 처리기를 거치지 않고 `auth()`를 직접 부르는 API 라우트 `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 `RequestAuthenticator.userId(request)`로 바꾼다. 그러면 API 라우트 중 `apps/server/src/auth.ts`를 참조하는 것은 Auth.js 라우트뿐이고, 나머지 참조(웹 화면 `apps/server/src/app/page.tsx`·`apps/server/src/app/actions.ts`)와 함께 T25에서 지운다. 그 뒤의 `authorizeTrip`(401/403/404)과 저장소의 owner_id 조건은 그대로다 |
+| 소유권 연결 | `trips`, `places`, `itineraries`, `route-shapes`, `settings`, `results`, `sharing`의 `server.ts`가 공통 `requestAuthenticator.userId(request)`를 주입한다. `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 인증을 거친다. 소유자 전용 라우트에서는 `authorizeTrip`이 접근 권한(401/403/404)을 검사하고 저장소가 `owner_id`로 조회 범위를 제한한다. T25에서 Auth.js 라우트와 웹 화면(`apps/server/src/app/page.tsx`·`apps/server/src/app/actions.ts`)의 `apps/server/src/auth.ts` 참조를 제거한다 |
 | 전환 기간 (T18–T25) | `Authorization` 헤더가 있으면 Bearer만 검사하고 실패면 401(쿠키로 넘어가지 않음). 헤더가 없으면 Auth.js 쿠키 세션. T25가 쿠키 경로와 Auth.js를 지운다 |
 | 공유 토큰 | 별개. 공유 토큰은 읽기 전용 GET만 허용하고 세션으로 승격되지 않는다(T14) |
 
@@ -646,11 +647,12 @@ T18 검증: 가짜 RS256 키와 JWKS 픽스처(`apps/server/tests/helpers/google
 - T19 구현: `route-shapes/http.ts` → `services/route-shapes.ts` → `repositories/route-shapes.ts`·`PlaceProvider.location`·`travel-time/shapes.ts`의 `RouteShapeProvider`.
   구체 Google 모양 어댑터는 `travel-time/google-shapes.ts`이며 기존 이동시간 어댑터와 `google-client.ts`의 HTTP·시간 옵션만 공유한다.
   [T19 결정](decisions/T19-route-shapes.md)에 오류 우선순위·동시성·인증 연결을 기록한다.
-- T19 시작 기준 develop에는 T18 인증 구현이 아직 없다. HTTP의 `userId(request)`는 T18 계약을 받지만 조립은 현재 Auth.js 쿠키를 사용하며,
-  Authorization 헤더가 있는 요청은 쿠키로 우회하지 않고 401이다. T18 통합 때 `route-shapes/server.ts`에도 공통 RequestAuthenticator를 주입한다.
+- `route-shapes/server.ts`는 일정 생성 라우트와 같은 `requestAuthenticator`를 사용한다(§13.3). 소유자의 유효한 Bearer 세션으로 경로 모양을 조회할 수 있다.
 - `GET /api/trips/[id]/itinerary/shapes?inputHash=` (T19). 인증·소유권 → 최신 저장 일정과 현재 입력 해시를 한 읽기 트랜잭션으로 조회
   (공유 결과 읽기 `shared-itinerary.ts`와 같은 방식) → 요청 해시·저장 해시·현재 해시가 다르면 409 `STALE_INPUT`, 결과가 없으면 409 `RESULT_UNAVAILABLE`.
-  inputHash는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.
+  `inputHash`는 소문자 SHA-256 hex 64자 하나만 허용한다. 저장 결과가 없는 경우를 먼저 확인하고, 해시가 일치해도 복원할 수 없는 구형 결과는 `RESULT_UNAVAILABLE`이다.
+- 생성 응답의 `itineraryId`를 선택 쿼리로 보낼 수 있다(소문자 하이픈 UUID 하나). 해시가 일치해도 해당 여행의 최신 저장 ID와 다르면 409 `RESULT_UNAVAILABLE`이다.
+  ID를 생략하면 최신 결과를 읽는다. 성공 본문에는 두 경우 모두 실제 저장 행의 `itineraryId`가 들어간다. 지도 소비자는 응답을 적용하기 전에 ID와 해시가 표시 중인 일정과 모두 일치하는지 확인해야 한다.
 - 대상 구간은 저장된 `comparisons`(DAY·AIRPORT) 전부이고, 키는 `date`·`kind`·`from`·`to`(장소 ID)다. 좌표는 기존 좌표 캐시(`PlaceProvider.location`)로 얻는다.
 - 각 구간을 `computeRoutes`로 요청한다. 수단은 `selected.mode`(TAXI는 DRIVE), 출발은 저장된 `departure` instant(TRANSIT만 시간표에 전달, DRIVE는 `TRAFFIC_UNAWARE`, §4).
   field mask는 `routes.polyline.encodedPolyline` 하나다. 요청당 최대 4개 구간 작업을 실행하고 응답은 저장 구간 순서대로 돌려준다.
@@ -668,7 +670,9 @@ export type LegShape = {
   date: string; kind: 'DAY' | 'AIRPORT'; from: string; to: string; mode: 'TRANSIT' | 'WALK' | 'TAXI';
   shape: { status: 'OK'; encodedPolyline: string } | { status: 'NONE' };
 };
-export type RouteShapesResponse = { inputHash: string; legs: LegShape[] };
+export type RouteShapesQuery = { inputHash: string; itineraryId?: string };
+export type RouteShapesResponse = RouteShapesQuery & { legs: LegShape[] }; // 구형 서버 응답도 읽는 클라이언트용
+export type SavedRouteShapesResponse = RouteShapesResponse & { itineraryId: string }; // 현재 서버의 성공 응답
 export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터페이스 분리)
   shape(request: { from: { latitude: number; longitude: number }; to: { latitude: number; longitude: number };
     mode: 'TRANSIT' | 'WALK' | 'DRIVE'; departure: string; timeZone: string }): Promise<{ encodedPolyline: string } | null>;
@@ -689,33 +693,60 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
 - `OVER_CAPACITY`는 여행 생성과 하루 생활 재계산 화면에서 `CapacityFlow`를 연다. 기존 `GET /api/trips/[id]/constraints`의 `ResultView`로 후보와 저장된 제약을 채우며, `revision`과 최초 계산의 `inputHash`가 다르면 현재 입력을 계산한다.
 - `constraintsFrom`, `parseConstraints`를 재사용한다. 필수 장소를 해제하면 `WISH`로 저장하며, 확인한 경우에만 해당 방문의 날짜·시각·순서를 함께 해제한다. 이동수단 고정과 다른 방문의 조건은 기존 값대로 전송한다.
 - 변경 시 `PUT /api/trips/[id]/constraints`와 `POST /api/trips/[id]/itinerary`를 순서대로 호출한다. POST 실패 후에는 저장된 선택으로 POST를 재시도한다. 입력 변경 오류 시 저장된 설정을 다시 불러올 수 있다.
-- 입력 해시가 맞는 `OK`에서 `동선 보기`를 누르면 기존 생성 응답을 메모리에서 읽어 날짜별 읽기 전용 일정으로 표시한다. [T23 결정](decisions/T23-mobile-capacity-selection.md)
+- 입력 해시가 맞는 `OK`에서 `동선 보기`를 누르면 기존 생성 응답을 메모리에서 T22 결과 화면으로 넘긴다(§13.4.3). [T23 결정](decisions/T23-mobile-capacity-selection.md)
+
+### 13.4.3 모바일 결과 화면 (T22)
+
+- 진입: `/trips/[id]/generate`가 기존 `POST …/itinerary`를 실행하고, 응답을 `OutcomeFlow`에 넘긴다. OK·CONFLICT는 결과 화면(`ResultFlow`), OVER_CAPACITY는 T23 선택 화면이다. T23의 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름으로 오간다. 하루 생활 재계산의 OVER_CAPACITY도 `OutcomeFlow`를 연다.
+- `ResultFlow`는 `GET …/constraints`로 입력을 읽는다. revision이 응답의 `inputHash`와 같으면 응답을 그대로 쓰고, 다르면 한 번 다시 계산한다.
+- 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `constraintsFrom`으로 만든 제약을 `withVisit`·`withLegMode`로 바꿔 `PUT …/constraints`(core `parseConstraints`로 검증) → `POST …/itinerary` → `verifyRevision` 순서로 처리한다. 저장 직전 제약은 `변경 취소`·`되돌리기`에 쓰고, POST 실패 뒤에는 저장된 입력으로 POST만 다시 실행한다.
+- 순수 모델: `apps/mobile/src/result/days.ts`가 저장 입력과 결과에서 날짜별 카드(도착 구간·대기·숙소 복귀·당겨짐/늦춰짐·고정 조건)·구간(순서 색·도심 밖·바꿀 수단)·전체 일정 줄을 만든다. `conflicts.ts`는 3-8 원인, `edits.ts`는 제약 수정, `format.ts`는 문구다.
+- 경로 모양은 OK 결과의 `inputHash`와 `itineraryId`로 `GET …/itinerary/shapes`를 요청한다. 앱은 응답의 두 값이 일치할 때만 구간을 받고, 여행·해시·일정 ID가 표시 중인 결과와 일치하는 메모리 데이터만 사용한다. 결과를 바꾸면 이전 요청을 취소한다. [T22 결정](decisions/T22-mobile-result-screen.md)
 
 ### 13.5 지도 어댑터 인터페이스 (앱)
 
-화면은 `ResultMap` 계약만 알고 지도 SDK를 import하지 않는다. 구현은 `GoogleResultMap`(`react-native-maps`, `PROVIDER_GOOGLE`, 앱 전용 Maps SDK 키)과
-`FakeResultMap`(테스트: 마커·구간을 `testID`로 그리고 누름을 흉내 냄) 두 개이며, `MapAdapterProvider` 컨텍스트로 주입한다.
-서버 Places/Routes 키는 앱에 넣지 않는다.
+화면은 `ResultMapProps` 계약만 알고 지도 SDK를 import하지 않는다. 구현은 `GoogleResultMap`(`apps/mobile/src/map/google-result-map.tsx`: `react-native-maps`, `PROVIDER_GOOGLE`, 앱 전용 Maps SDK 키)과
+`FakeResultMap`(`apps/mobile/tests/fake-result-map.tsx`: 마커를 "지도 {이름}" 버튼으로, 구간을 순서·수단·선·강조·색·경로 종류 글자로 그리고 누름을 흉내 냄) 두 개이며,
+`MapAdapterProvider`(`apps/mobile/src/map/provider.tsx`) 컨텍스트로 주입한다. 앱 루트 레이아웃이 Google, 컴포넌트 테스트가 가짜를 넣는다.
+결과 흐름이 컨텍스트에서 한 번 읽어 화면에 prop으로 넘긴다. 서버 Places/Routes 키는 앱에 넣지 않는다. 마커는 계약의 `kind`·`order`와 `selectedId`로 모양을 정하고,
+구간은 화면이 정한 `color`·`line`·`emphasis`를 그대로 그린다(어댑터에 상태 규칙 없음).
 
-```ts
-// 계획(T22): apps/mobile/src/map/types.ts
-export type LatLng = { latitude: number; longitude: number };
-export type MapMarkerSpec = { id: string; coordinate: LatLng; kind: 'PLACED' | 'WISH' | 'LODGING'; order: number | null; label: string };
-export type MapRouteSpec = {
-  id: string; order: number; mode: 'TRANSIT' | 'WALK' | 'TAXI';
-  path: { kind: 'ROAD'; points: readonly LatLng[] } | { kind: 'STRAIGHT'; from: LatLng; to: LatLng };
+```typescript
+// T22 구현: apps/mobile/src/map/types.ts. 문서의 계약과 실제 export가 같아야 한다.
+import type * as ResultMapContract from '../apps/mobile/src/map/types';
+type DocumentedLatLng = { latitude: number; longitude: number };
+type DocumentedMarker = {
+  id: string; coordinate: DocumentedLatLng; kind: 'PLACED' | 'WISH' | 'LODGING' | 'AIRPORT'; order: number | null; label: string;
 };
-export type ResultMapProps = {
-  markers: readonly MapMarkerSpec[]; routes: readonly MapRouteSpec[]; selectedId: string | null;
-  /** 패널이 가린 아래쪽 높이(pt). 카메라 맞춤에 사용 */
-  bottomInset: number;
+type DocumentedRoute = {
+  id: string; order: number; mode: 'TRANSIT' | 'WALK' | 'TAXI'; color: string;
+  line: 'SOLID' | 'DOTTED' | 'FLOATING'; emphasis: 'STRONG' | 'DIM' | 'CONFLICT';
+  path: { kind: 'ROAD'; points: readonly DocumentedLatLng[] } | { kind: 'STRAIGHT'; from: DocumentedLatLng; to: DocumentedLatLng };
+};
+type DocumentedResultMapProps = {
+  markers: readonly DocumentedMarker[]; routes: readonly DocumentedRoute[]; selectedId: string | null;
+  /** 선택 날짜. 최초 계산 중에는 null. 날짜가 바뀌면 같은 숙소라도 다시 맞춘다. */
+  focusDate: string | null;
+  /** 카메라가 맞출 그날의 장소·숙소. 공항은 화면 밖이면 가장자리 표시 */
+  focusIds: readonly string[];
+  /** 떠 있는 상단 바·날짜 칩과 장소 패널이 가린 높이(pt). 카메라 맞춤에 사용 */
+  topInset: number; bottomInset: number;
+  /** 3-9 이전 결과 흐리게 */
+  dimmed: boolean;
+  /** 현재 위치 버튼을 누를 때마다 증가 */
+  locateRequest: number;
   onSelectMarker(id: string): void;
 };
+export const documentedResultMap: [
+  SameType<DocumentedMarker, ResultMapContract.MapMarkerSpec>, SameType<DocumentedRoute, ResultMapContract.MapRouteSpec>,
+  SameType<DocumentedResultMapProps, ResultMapContract.ResultMapProps>,
+] = [true, true, true];
 ```
 
 지도 SDK와 무관한 계산은 `apps/mobile/src/map/`의 순수 함수로 두고 단위 테스트한다: polyline 해독(`decodePolyline`),
-구간 순서 색(6색, 넘으면 보간. 색 값은 design-tokens), 도심 밖 판정, 장소 카드 선택·이전/다음과 강조할 구간(결과 화면 R2). 선 모양 차이(나눠 그리기·떠 있는 곡선)는
-어댑터 안에서 가까운 표현으로 처리하고 `docs/questions.md`에 남긴다(요구사항 §5 주의).
+구간 순서 색(`legColor`: 6색, 넘으면 보간. 색 값은 design-tokens), 도심 밖 판정(`isOutsideCityCentre`, 도시별 `CITY_CENTRES`), 곡선·화살표·화면 밖 방향(`geometry.ts`),
+장소 카드 선택·이전/다음·스와이프 목표와 강조할 구간(`selection.ts`), 상태별 마커·구간 명세(`scene.ts`). 선 모양 차이(나눠 그리기·떠 있는 곡선)는
+어댑터 안에서 가까운 표현으로 처리하고 [질문](questions.md#t22-결과-화면-가정)에 남긴다(요구사항 §5 주의).
 
 ### 13.6 앱 테스트 전략
 
@@ -723,8 +754,8 @@ export type ResultMapProps = {
 |---|---|---|
 | core·design-tokens | `node:test` + `tsx` 순수 함수 테스트, 순수성 구조 검사, 토큰 값 = `docs/design.md` 표 값 | 없음 |
 | 서버 | 기존 HTTP·SQL·구조 테스트(PostgreSQL 16), T18 Bearer·JWKS 픽스처, T19 경로 모양 픽스처, T25 Bearer HTTP 종단 시나리오(흐름 1–10, Google만 가짜) | 실제 Google 키·약관 범위, 배포 서버(T26D) |
-| 앱 화면 | `jest-expo` + React Native Testing Library 컴포넌트 테스트. 목 API 클라이언트·가짜 지도·가짜 보안 저장소. `docs/design.md` 9절 상태별 렌더링, "입력 → 저장 → 다시 열면 값 유지" | 실제 화면 모양, 글꼴 렌더링, 제스처 감각(패널 끌기·스냅), 동작 줄이기 |
-| 앱 순수 계산 | 패널 스냅·도심 밖·구간 색·polyline 해독 단위 테스트 | 없음 |
+| 앱 화면 | `jest-expo` + React Native Testing Library 컴포넌트 테스트. 목 API 클라이언트·가짜 지도·가짜 보안 저장소. `docs/design.md` 9절 상태별 렌더링, "입력 → 저장 → 다시 열면 값 유지" | 실제 화면 모양, 글꼴 렌더링, 제스처 감각(카드 넘김), 동작 줄이기 |
+| 앱 순수 계산 | 장소 카드 선택·이전/다음·스와이프·강조 구간, 도심 밖·구간 색·polyline 해독, 결과 날짜 모델 단위 테스트 | 없음 |
 | 앱 빌드 | `expo export --platform ios`·`--platform android` JS 번들 생성, `tsc --noEmit`, ESLint. T26에서 `expo config` 검사 | 네이티브 빌드·설치(Xcode, APK), 7일 재설치 |
 | 로그인·지도 SDK | 네이티브 모듈은 목으로 대체해 흐름만 검사 | 실제 Google 로그인(iOS·Android), Google 지도 표시, OS 공유 시트, Keychain/Keystore 보관 |
 

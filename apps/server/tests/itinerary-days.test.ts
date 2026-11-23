@@ -11,6 +11,30 @@ import { localDateTime, localTime, schedule, service } from './helpers/itinerary
 const [arrivalFlight, departureFlight] = sampleTrip().flights;
 const itemsOf = (day: { stops: readonly { start: string; end: string }[]; legs: readonly { start: string; end: string }[] }) => [...day.stops, ...day.legs];
 
+// The mobile conflict screen must also work without a previous itinerary or an explicitly rejected leg.
+test('a saved walk on either side of a visit or via the airport can surface as only the booked visit missing its window', async () => {
+  const itinerary = service().service;
+  for (const [date, fixedTime, from, to, returnTime] of [
+    ['2026-12-02', '09:30', 'hotel', 'sensoji', '21:00'],
+    ['2026-12-02', '16:30', 'sensoji', 'hotel', '17:30'],
+    ['2026-12-01', '12:00', 'airport', 'hotel', '21:00'],
+    ['2026-12-03', '13:00', 'hotel', 'airport', '21:00'],
+  ] as const) {
+    const input = sampleTrip([{ key: 'sensoji', minutes: 30, fixedDate: date, fixedTime }], {
+      mealSlots: [], daySettings: [{ date, departureTime: '09:00', returnTime, mealSlots: [] }],
+    });
+    const result = await itinerary.compute({ ...input, legModes: [{ date, from: placeId(from), to: placeId(to), mode: 'WALK' }] });
+    assert.equal(result.status, 'CONFLICT');
+    assert.deepEqual(result.capacity.unplaced, [{ visitId: 'visit-sensoji', reason: 'TIME_WINDOW', fixed: true }]);
+    assert.deepEqual([...result.capacity.issues, ...result.transferIssues, ...result.flightConflicts], []);
+    const released = await itinerary.compute(input);
+    assert.equal(released.status, 'OK');
+    const stop = schedule(released).days.flatMap(day => day.stops).find(row => row.kind === 'VISIT' && row.visitId === 'visit-sensoji');
+    assert.ok(stop);
+    assert.equal(localDateTime(stop.start), `${date}T${fixedTime}`);
+  }
+});
+
 test('T12 direct-to-airport ends the last day at the airport with luggage legs; no lodging transfer', async () => {
   const result = await service().service.compute(sampleTrip(okVisits, { luggageOption: 'DIRECT_TO_AIRPORT' }));
   assert.equal(result.status, 'OK');
@@ -19,6 +43,43 @@ test('T12 direct-to-airport ends the last day at the airport with luggage legs; 
   assert.equal(result.comparisons.filter(leg => leg.kind === 'AIRPORT').length, 1);
   const lastDay = schedule(result).days.at(-1)!;
   assert.ok(localTime(lastDay.legs.at(-1)!.end) <= '15:30');
+});
+
+test('a fixed airport transfer reports its flight-date key and actual interval when it clips a booking on another day', async () => {
+  const date = '2026-12-02', itinerary = service().service;
+  for (const arriving of [false, true]) {
+    const flightDate = arriving ? '2026-12-01' : '2026-12-03';
+    const fixedTime = arriving ? '02:00' : '19:30';
+    const flights = arriving ? [{ ...arrivalFlight, localDateTime: `${flightDate}T23:00` }, departureFlight]
+      : [arrivalFlight, { ...departureFlight, localDateTime: `${flightDate}T00:30` }];
+    const input = sampleTrip([{ key: arriving ? 'hotel' : 'tower', minutes: 30, fixedDate: date, fixedTime }], {
+      flights, mealSlots: [], daySettings: [{ date, departureTime: arriving ? '00:00' : '09:00', returnTime: arriving ? '09:00' : '23:00', mealSlots: [] }],
+    });
+    const fix = { date: flightDate, from: placeId(arriving ? 'airport' : 'hotel'), to: placeId(arriving ? 'hotel' : 'airport'), mode: 'WALK' as const };
+    const keep = { ...fix, date };
+    const rejected = await itinerary.compute({ ...input, legModes: [keep, fix] });
+    assert.equal(rejected.status, 'CONFLICT');
+    assert.deepEqual(rejected.capacity.unplaced, [{ visitId: input.visits[0].id, fixed: true, reason: 'TIME_WINDOW' }]);
+    assert.deepEqual([...rejected.capacity.issues, ...rejected.flightConflicts, ...rejected.transferIssues], []);
+    assert.equal(rejected.airportTransferLimits?.length, 1);
+    const [limit] = rejected.airportTransferLimits ?? [];
+    assert.ok(limit);
+    assert.deepEqual(limit, { ...fix, affectedDate: date, start: limit.start, end: limit.end });
+    assert.equal(localDateTime(limit.start), `${date}T${arriving ? '00:30' : '19:09'}`);
+    assert.equal(localDateTime(limit.end), `${date}T${arriving ? '03:21' : '22:00'}`);
+    assert.equal(rejected.availableByDate?.[date]?.[arriving ? 'start' : 'end'], arriving ? limit.end : limit.start);
+    const released = await itinerary.compute({ ...input, legModes: [keep] });
+    assert.equal(released.status, 'OK');
+    const stop = schedule(released).days.flatMap(day => day.stops).find(row => row.kind === 'VISIT');
+    assert.ok(stop);
+    assert.equal(localDateTime(stop.start), `${date}T${fixedTime}`);
+    // A conflict at a different hour does not make a cross-date transfer relevant to an untouched day window.
+    const unrelated = await itinerary.compute({ ...input, daySettings: [{ date, departureTime: '09:00', returnTime: '18:00', mealSlots: [] }], legModes: [fix], visits: [
+      { ...input.visits[0], fixedTime: '06:00' },
+    ] });
+    assert.equal(unrelated.status, 'CONFLICT');
+    assert.equal(unrelated.airportTransferLimits, undefined);
+  }
 });
 
 test('T12 an unreachable airport transfer is a CONFLICT with a transfer issue', async () => {
@@ -85,6 +146,8 @@ test('T12 an early-morning departure transfer that starts the previous evening b
   const [, secondDay, lastDay] = schedule(early).days;
   assert.ok(itemsOf(secondDay).every(item => Date.parse(item.end) <= Date.parse(departure.departure)));
   assert.deepEqual(itemsOf(lastDay), []);
+  assert.equal(early.availableByDate?.[lastDay.date], null);
+  assert.equal(Date.parse(early.availableByDate![secondDay.date]!.end), Date.parse(departure.departure));
 });
 
 test('T12 a late arrival whose transfer ends after midnight bounds the next morning', async () => {
@@ -107,6 +170,8 @@ test('T12 a late arrival whose transfer ends after midnight bounds the next morn
   assert.deepEqual([arrival.kind, localDateTime(arrival.departure)], ['AIRPORT', '2026-12-02T00:30']);
   const readyAt = Date.parse(arrival.departure) + Math.ceil(arrival.selected.minutes) * 60_000;
   const secondDay = schedule(result).days[1];
+  assert.equal(result.availableByDate?.['2026-12-01'], null);
+  assert.equal(Date.parse(result.availableByDate![secondDay.date]!.start), readyAt);
   assert.ok(itemsOf(secondDay).length > 0 && itemsOf(secondDay).every(item => Date.parse(item.start) >= readyAt));
 
   // A visit pinned inside the transfer cannot be kept.

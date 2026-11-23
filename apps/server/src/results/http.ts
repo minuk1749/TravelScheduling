@@ -1,7 +1,7 @@
 import { accessError, apiError, privateJson as json, hasForeignOrigin, providerError } from '../lib/http';
 import { authorizeTrip } from '../lib/auth/authorization';
 import { PlaceProviderError } from '../places';
-import { ResultStaleError, ResultUnavailableError, type ResultEditService } from '../services/itinerary/editing';
+import { ResultStaleError, ResultTripNotFoundError, ResultUnavailableError, type ResultEditService } from '../services/itinerary/editing';
 import { TripInputError } from '../trips/input';
 
 type Dependencies = {
@@ -16,12 +16,16 @@ export function constraintHandlers(deps: Dependencies) {
       const userId = await deps.userId(request);
       const access = await authorizeTrip(userId, id, deps.findOwner);
       if (access !== 200) return accessError(access, ACCESS_ERRORS[access]);
-      if (!write) return json(await deps.service().load(id));
+      if (!write) {
+        const operationId = new URL(request.url).searchParams.get('operationId');
+        return json(await deps.service().load(id, userId!, operationId ?? undefined));
+      }
       let body: unknown;
       try { body = await request.json(); } catch { return apiError(400, 'INVALID_JSON', '올바른 JSON을 보내 주세요.'); }
       return json(await deps.service().save(id, userId!, body));
     } catch (error) {
       if (error instanceof TripInputError) return apiError(400, 'INVALID_INPUT', '입력 내용을 확인해 주세요.', error.fields);
+      if (error instanceof ResultTripNotFoundError) return accessError(404, ACCESS_ERRORS[404]);
       if (error instanceof ResultStaleError) return apiError(409, 'STALE_INPUT', '다른 곳에서 여행 정보가 바뀌었습니다. 다시 불러온 후 수정해 주세요.');
       if (error instanceof ResultUnavailableError) return apiError(409, 'RESULT_UNAVAILABLE', '여행 입력 정보를 먼저 완성해 주세요.');
       if (error instanceof PlaceProviderError) return providerError(error.kind, '장소를 불러오지 못했습니다. 다시 시도해 주세요.');

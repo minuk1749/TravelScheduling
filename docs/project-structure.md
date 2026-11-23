@@ -44,10 +44,12 @@ CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순
 | `packages/core/src/contracts/` | 공용 DTO·검증·설정 계산. `trips/`, `settings/`, `results/`, `itinerary.ts`, `places.ts`, `travel-time.ts`, `sharing.ts`, `errors.ts`(T18 오류 `code` 목록) | core 내부, Temporal | 서버 포트, Node·DB·네트워크·React·React Native |
 | `packages/core/src/presentation/` | 표시 변환·한국어 라벨 | core DTO, Temporal | 화면 프레임워크·I/O |
 | `apps/server/src/scheduler/`, `fare/`와 기존 공용 모듈 경로 | `@travel/core` 재내보내기, 기존 호출 지점 유지 | core의 공개 하위 경로 | 계산·검증 복사본 |
-| `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, T21 여행 생성·하루 생활·장소 입력(`screens/trip-input/`), 공통 버튼·상태·전환 | 앱 auth·theme·core 검증, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장 |
-| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`) | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
+| `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, T21 여행 생성·하루 생활·장소 입력(`screens/trip-input/`), T22 결과 화면·시트·재계산 흐름(`screens/result/`), 공통 버튼·상태·전환 | 앱 auth·theme·core 검증, `map/`·`result/`, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장, 지도 SDK 직접 import(어댑터 계약만) |
+| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`), T22 경로 모양 요청·`verifyRevision` | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
+| `apps/mobile/src/map/` | T22 결과 지도 계약(`types.ts`), 순수 계산(`geometry.ts` polyline·구간 색·도심 밖·곡선, `selection.ts` 카드 선택·이전/다음·강조 구간, `scene.ts` 마커·구간 명세), 어댑터 주입(`provider.tsx`)·Google 구현(`google-result-map.tsx`)·화면 밖 공항 이름을 가장자리별로 묶는 `airport-edge-indicators.tsx`·표시 중인 컨트롤과 안내의 실측 경계를 반영하는 `edge-layout.ts`·지도 키 확인(`config.ts`) | design-tokens, `result/` 모델 타입, `react-native-maps`(Google 어댑터만) | 화면 import, 서버 코드, 순수 파일의 React Native |
+| `apps/mobile/src/result/` | T22 결과 순수 모델: 날짜별 카드·구간·전체 일정 줄(`days.ts`), 배치 여부와 편집할 희망 장소(`wishes.ts`), 충돌 원인(`conflicts.ts`), 제약 수정(`edits.ts`), 문구(`format.ts`) | core 계약·표시, `map/geometry`, Temporal | React Native, I/O |
 | `apps/mobile/src/theme/`, `assets/fonts/` | 디자인 값의 RN 스타일 변환, Pretendard 400/600, 동작 줄이기 | design-tokens, React Native·expo-font | 화면별 색·수치 복제 |
-| `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·움직임 값, 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
+| `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·그림자·움직임 값, T22 결과 화면 값(`result`), 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
 
 결과 화면(T13)은 아래 T13 연결 절을 따른다.
 
@@ -58,7 +60,7 @@ CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순
 - **조립 지점:** 구체 구현을 고르는 곳은 각 모듈의 `server.ts` 하나다. 모듈 import 시점에는 연결·네트워크 작업을 하지 않고, 처음 쓸 때 만든다. 테스트는 같은 인터페이스에 가짜 구현을 넣는다.
 - **오류:** 입력 오류(`*InputError`)와 제공자 장애(`*ProviderError`)를 구분한다. 장애를 빈 결과나 null로 숨기지 않는다. 응답 본문은 `{ code, error, fields? }`이며 `code`는 core `contracts/errors.ts`의 목록만 쓴다(T18).
 - **시간:** 모든 시각은 IANA 시간대와 함께 다룬다. 현지 날짜·시각 문자열과 오프셋이 있는 instant를 구분한다.
-- **요청 인증(T18):** 6개 HTTP 처리기(`trips`, `places`, `itineraries`, `settings`, `results`, `sharing`)와 `GET /api/trips/[id]`(`trips/http.ts`의 `tripAccessHandler`)는 `userId(request)`를 주입받는다. 각 `server.ts`가 `lib/auth/server.ts`의 `requestAuthenticator`를 넘긴다: `Authorization` 헤더가 있으면 Bearer 세션만(실패 401), 없으면 Auth.js 쿠키. 그 뒤 `authorizeTrip`·저장소 owner 조건은 그대로다. API 라우트 중 `src/auth.ts`를 import하는 것은 Auth.js 라우트뿐이다.
+- **요청 인증(T18)** 시 HTTP 처리기(`trips`, `places`, `itineraries`, `route-shapes`, `settings`, `results`, `sharing`)와 `GET /api/trips/[id]`(`trips/http.ts`의 `tripAccessHandler`)는 각 `server.ts`에서 `lib/auth/server.ts`의 `requestAuthenticator.userId(request)`를 주입받는다. `Authorization` 헤더가 있으면 Bearer 세션을 검증하고 실패 시 401을 반환한다. 헤더가 없으면 Auth.js 쿠키를 사용한다. 이후 `authorizeTrip`과 저장소의 `owner_id` 조건으로 소유권을 검사한다. API 라우트 중 `src/auth.ts`를 직접 참조하는 곳은 Auth.js 라우트뿐이다.
 - **모바일 로그인(T18):** 앱 → `POST /api/session { idToken }` → `MobileSessionService` → `JoseGoogleIdTokenVerifier`(Google JWKS, `GOOGLE_MOBILE_CLIENT_IDS`) → `upsertGoogleUser` → `mobile_sessions`(해시·30일) → `{ token, expiresAt }`. 로그아웃 `DELETE /api/session`, 탈퇴 `DELETE /api/account`(Bearer 전용, `users` cascade로 모든 세션 삭제). 상세: [T18 결정](decisions/T18-mobile-session-tokens.md).
 - **앱 연결(T20):** 루트 글꼴 로드 → `native-runtime.ts`가 Google/SecureStore를 `runtime.ts`에 주입 → `SessionManager.restore` → `Stack.Protected` 로그인/첫 화면. API가 401을 받으면 해당 요청의 세션만 지우며, 늦은 이전 세션 응답으로 새 로그인을 지우지 않는다. 로그아웃은 서버 실패에도 기기 토큰을 지운다. 저장소 오류는 접근을 막고 삭제 재시도를 제공한다. SDK의 Web ID를 서버 허용 aud 목록에 포함하는 설정은 [앱 README](../apps/mobile/README.md), 결정·검증은 [T20 결정](decisions/T20-mobile-shell-and-auth.md).
 - **생활 설정:** `/trips/[id]/settings` → GET/PUT `/api/trips/[id]/settings` → LivingSettingsService → LivingSettingsRepository. 여행 생성 성공 화면에서 진입한다. 설정 변경 즉시 scheduler의 시간창을 다시 계산하며 고정 시각 충돌을 표시한다. 입력 중 결과는 TIME_WINDOWS이며 저장 후 T12 POST로 전체 동선을 재계산한다.
@@ -137,8 +139,8 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 ## T19 구간 경로 모양 연결
 
-- GET `/api/trips/[id]/itinerary/shapes?inputHash=` → `route-shapes/http.ts`(인증·소유권·해시 검증) → `RouteShapeService` → `PostgresRouteShapeRepository`·`PlaceProvider.location`·`RouteShapeProvider`.
-- `repositories/route-shapes.ts`는 소유자·최신 저장 해시·현재 입력을 read-only repeatable-read 트랜잭션으로 읽고 `shared-itinerary.ts`의 기존 복원을 재사용한다. 스키마·저장 동작은 바꾸지 않는다.
+- GET `/api/trips/[id]/itinerary/shapes`(필수 `inputHash`, 선택 `itineraryId`) → `route-shapes/http.ts`(인증·소유권·쿼리 검증) → `RouteShapeService` → `PostgresRouteShapeRepository`·`PlaceProvider.location`·`RouteShapeProvider`.
+- `repositories/route-shapes.ts`는 소유자·현재 입력·여행의 최신 저장 일정을 read-only repeatable-read 트랜잭션에서 확인한다. 지도와 공유 링크 모두 `shared-itinerary.ts`로 선택한 행의 구간을 복원한다. 지도 성공 응답에는 그 행의 ID가 들어가며, 현재 해시에 다른 ID를 지정하면 409 `RESULT_UNAVAILABLE`이다.
 - `travel-time/shapes.ts`는 이동시간과 분리된 포트, `google-shapes.ts`는 polyline 전용 어댑터다. 기존 이동시간 어댑터와 `google-client.ts`의 HTTP·요청 옵션·오류 정규화를 공유한다. 모양 캐시는 없다.
 - DTO는 `packages/core/src/contracts/route-shapes.ts`. 서비스는 DAY·AIRPORT 구간 순서를 유지하고 요청당 최대 4개 구간을 처리한다. 좌표만 요청 안에서 중복 조회를 합치며 모양 응답은 재사용하지 않는다.
 - T18 병행 작업과의 인증 연결·검증 범위는 [T19 결정](decisions/T19-route-shapes.md), 저장 정책은 [ADR 0005](decisions/0005-travel-time-provider-and-cache.md)를 따른다.
@@ -150,7 +152,21 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 - 앱의 생활 설정 화면은 PUT 성공 후 기존 `POST /api/trips/[id]/itinerary`로 전체 동선을 재검증한다. 계산 요청이 실패하면 저장된 설정을 유지하고 POST만 재시도한다.
 - core의 `contracts/trips/create.ts`, `contracts/results/fixed-visit.ts`, `contracts/settings/defaults.ts`가 생성 계약·고정 조건 검증·기본값을 연결한다. 지도와 주소 검색은 같은 장소 ID 계약을 쓴다. [T21 결정](decisions/T21-mobile-trip-input.md)
 
+## T22 모바일 결과 화면 (지도 우선 · 장소 카드)
+
+- 제약 저장소 `itinerary-constraints.ts`는 일반 조회, 영수증 조회, 저장 전 조회에서 인증된 소유자와 여행을 같은 스냅샷에서 확인한 뒤 입력과 쓰기 버전을 읽고, 여행 행 잠금 아래에서 조건부 저장과 요청별 영수증 발급을 처리한다. [마이그레이션 008](../apps/server/migrations/008_constraint_write_receipt.sql)이 제약·생활 설정 쓰기마다 버전을 교체하여 같은 값으로 돌아온 경우에도 오래된 재시도를 식별한다.
+- 생성 서비스는 고정된 공항 이동이 다른 날짜의 활동 시간창을 줄이면 충돌 응답에 `airportTransferLimits`를 포함한다. 결과 화면은 이 기록으로 해당 날짜에 영향을 준 구간을 표시하고, 저장된 제약의 기준일·출발지·도착지로 해제를 요청한다.
+- 전체 일정은 일반 입력 시트와 헤더·스크롤 본문 구조를 공유하고, `ExpandedFormSheet`로 상단 바 아래까지 펼친다.
+- `/trips/[id]/generate`(T21 생성 화면) → POST 응답 → `screens/result/result-flow.tsx`의 `OutcomeFlow`: OK·CONFLICT는 `ResultFlow`(GET `/constraints`로 입력, revision이 다르면 한 번 재계산), OVER_CAPACITY는 T23 `CapacityFlow`. T23 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름을 메모리로 오간다.
+- 하루 생활 설정을 저장한 뒤에는 결과 요약의 `동선 보기`가 방금 받은 OK·CONFLICT 응답을 같은 `OutcomeFlow`로 전달한다. 설정을 다시 편집하면 이전 결과를 닫는다.
+- 모바일 `api/client.ts`는 JSON 성공 본문을 읽고, `api/result-response.ts`는 일정 생성 결과와 제약 조회·저장 응답의 필수 필드를 확인한다. 저장 응답이 손상되면 재시도 시 저장된 입력을 다시 읽어 제약 반영 여부를 확인한다.
+- `result-screen.tsx`가 선택 `{ date, index }` 하나로 카드·지도 마커·강조 구간을 계산한다(`map/selection.ts`·`scene.ts`, `result/days.ts`). 지도는 `MapAdapterProvider`로 주입한 `ResultMapProps` 구현만 그린다(앱: `GoogleResultMap`, 테스트: `tests/fake-result-map.tsx`).
+- 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `use-itinerary.ts`가 기존 `PUT /constraints` → `POST /itinerary` → `verifyRevision`으로 처리하고, 저장 직전 제약으로 `변경 취소`·`되돌리기`를 한다. T19 GET은 표시 중인 일정 ID와 해시를 대조하며, `use-route-shapes.ts`는 여행·해시·일정 ID가 일치하는 경로를 날짜별 구간 모델에 전달한다. 지도 마커, 직선 대체 경로, 전체 일정의 도심 밖 판정은 같은 날짜별 장소 좌표를 사용한다. 장소 상세 좌표가 없으면 표시 날짜에 출발하는 구간의 실제 도로 끝점을 우선하고, 다음으로 같은 일정의 다른 날에서 같은 장소 ID의 도로 끝점을 찾는다.
+- 충돌 상태의 지도와 전체 일정 시트는 마지막 성공 입력·결과·경로 모양으로 만든 날짜별 일정을 공유한다. 고정 편집, 미배치 원인 마커와 이동수단 해제 후보는 충돌이 발생한 입력을 사용한다.
+- 장소 카드와 전체 일정 시트는 `swap-chip.tsx`로 같은 구간 대안의 소요 시간·요금과 변경 동작을 표시한다. 전체 일정에서는 공항·숙소 구간도 변경할 수 있다.
+- 디자인 §4 그림자와 §6–7 값은 design-tokens의 `shadow`·`result`(토큰 테스트가 문서와 비교). [T22 결정](decisions/T22-mobile-result-screen.md), [가정](questions.md#t22-결과-화면-가정)
+
 ## T23 모바일 필수 장소 선택
 
 - 여행 생성 화면과 하루 생활 재계산이 `OVER_CAPACITY`를 받으면 `apps/mobile/src/screens/capacity/`의 선택 화면을 연다. 저장된 장소와 최초 계산을 같은 입력 해시로 맞춘다.
-- 재검증은 `src/api/trips.ts`의 제약 조회·저장과 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 일정으로 표시한다. [T23 결정](decisions/T23-mobile-capacity-selection.md)
+- 재검증은 `src/api/trips.ts`의 제약 조회·저장과 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 T22 결과 화면으로 연다. [T23 결정](decisions/T23-mobile-capacity-selection.md)

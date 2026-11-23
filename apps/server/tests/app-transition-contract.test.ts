@@ -71,7 +71,7 @@ test('T18: only the Auth.js route imports auth.ts; every user API module authent
     const imports = /from '(?:\.\.\/)+auth'/.test(await readFile(path.join(root, file), 'utf8'));
     assert.equal(imports, file.includes('[...nextauth]'), `${file} must not authenticate with Auth.js directly`);
   }
-  for (const name of ['trips', 'places', 'itineraries', 'settings', 'results', 'sharing']) {
+  for (const name of ['trips', 'places', 'itineraries', 'route-shapes', 'settings', 'results', 'sharing']) {
     const source = await readFile(path.join(root, `apps/server/src/${name}/server.ts`), 'utf8');
     assert.doesNotMatch(source, /from '\.\.\/auth'/, name);
     assert.match(source, /requestAuthenticator\.userId\(request\)/, `${name} must pass the request to RequestAuthenticator`);

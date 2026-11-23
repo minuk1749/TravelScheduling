@@ -2,9 +2,13 @@ import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 import { calculateSettings } from '@travel/core/contracts/settings/calculate';
 import type { SettingsSnapshot } from '@travel/core/contracts/settings/model';
 import { parseTripCreation, type TripCreation } from '@travel/core/contracts/trips/create';
+import type { ResultView } from '@travel/core/contracts/results/model';
 import { flightBuffers } from '@travel/core/contracts/settings/defaults';
+import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
+import { MapAdapterProvider } from '../src/map/provider';
 import { RootNavigator } from '../src/navigation/root-navigator';
+import { FakeResultMap } from './fake-result-map';
 import Home from '../app/(app)/index';
 import Login from '../app/login';
 import NewTrip from '../app/(app)/trips/new';
@@ -18,6 +22,15 @@ const names: Record<string, string> = {
 };
 const place = (id: string) => ({ googlePlaceId: id, name: names[id], attributions: [] });
 const ref = (id: string) => ({ id, googlePlaceId: id });
+/** OK calculation placing the fixed museum visit (ID = Google place ID in this fixture) on 12-02 11:00. */
+const generated = (inputHash: string): GeneratedTrip => {
+  const schedule = { unplaced: [], issues: [], days: [{ date: '2026-12-02', timeZone: 'Asia/Tokyo', legs: [], stops: [
+    { kind: 'VISIT' as const, visitId: 'museum', start: '2026-12-02T02:00:00Z', end: '2026-12-02T03:15:00Z' }] }] };
+  return { status: 'OK', inputHash, itineraryId: 'new-route', verification: { verified: true, attempts: 1 },
+    transferIssues: [], flightConflicts: [], skippedMeals: [], comparisons: [], efficiency: null,
+    capacity: { status: 'OK', unplaced: [], issues: [], recommendation: { requiredCount: 1, requiredVisitIds: ['museum'], schedule },
+      time: { availableMinutes: 720, visitMinutes: 75, mealMinutes: 0, travelMinutesLowerBound: 0, requiredMinutesLowerBound: 75 } } };
+};
 
 export function tripFixture() {
   const f = fixture(JSON.stringify(session));
@@ -51,7 +64,7 @@ export function tripFixture() {
       return json({ places: (byQuery[searchParams.get('query') ?? ''] ?? []).map(place), attribution: 'Google Maps' });
     }
     if (pathname === '/api/places/city') return json({ place: { coordinates: { latitude: 35.68, longitude: 139.76 } } });
-    if (pathname.endsWith('/itinerary')) return json({ status: 'OK', inputHash: 'saved', itineraryId: 'new-route' });
+    if (pathname.endsWith('/itinerary')) return json(generated(snapshot.revision));
     if (pathname.endsWith('/settings')) {
       if (method === 'PUT') {
         const body = JSON.parse(String(options?.body));
@@ -62,12 +75,17 @@ export function tripFixture() {
     }
     if (pathname.endsWith('/constraints') && created) {
       return json({ revision: snapshot.revision,
-        input: { ...created,
-          visits: created.visits.map(visit => ({ ...visit, place: ref(visit.googlePlaceId) })),
+        input: { ...created, id, activity: { start: snapshot.settings.departureTime, end: snapshot.settings.returnTime },
+          mealSlots: snapshot.settings.mealSlots, mealWindows: snapshot.settings.mealWindows, daySettings: snapshot.settings.days,
+          arrivalBufferMinutes: flightBuffers.ARRIVAL, departureBufferMinutes: flightBuffers.DEPARTURE, legModes: [],
+          visits: created.visits.map(visit => ({ ...visit, id: visit.googlePlaceId, place: ref(visit.googlePlaceId),
+            fixedDate: visit.fixedDate ?? undefined, fixedTime: visit.fixedTime ?? undefined, fixedOrder: visit.fixedOrder ?? undefined })),
           flights: created.flights.map(flight => ({ ...flight, airport: ref(flight.googlePlaceId) })),
           lodgings: created.lodgings.map(lodging => ({ ...lodging, place: ref(lodging.googlePlaceId) })),
-        }, places: Object.fromEntries(Object.keys(names).map(id => [id, place(id)])),
-      });
+        }, places: Object.fromEntries(Object.keys(names).map(id => [id, {
+          ...place(id), coordinates: { latitude: 35.68, longitude: 139.76 },
+        }])),
+      } satisfies ResultView);
     }
     return json({ code: 'NOT_FOUND', error: '요청을 찾을 수 없어요.' }, 404);
   });
@@ -76,7 +94,7 @@ export function tripFixture() {
 
 export async function renderTripApp(f: ReturnType<typeof tripFixture>, initialUrl = '/trips/new') {
   return renderRouter({
-    _layout: () => <AuthProvider runtime={f.runtime}><RootNavigator /></AuthProvider>,
+    _layout: () => <AuthProvider runtime={f.runtime}><MapAdapterProvider map={FakeResultMap}><RootNavigator /></MapAdapterProvider></AuthProvider>,
     login: Login, '(app)/index': Home, '(app)/trips/new': NewTrip, '(app)/trips/[id]/index': SavedTrip,
     '(app)/trips/[id]/settings': Settings, '(app)/trips/[id]/generate': Generate,
   }, { initialUrl });

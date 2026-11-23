@@ -77,7 +77,10 @@ test('input → save → reopen: trip, lodging, fixed place and settings round t
   await press('+15분');
   await press('저장');
   await press('동선 만들기');
-  expect(await screen.findByText('✓ 동선을 저장했어요')).toBeVisible();
+  expect(await screen.findByRole('header', { name: '도쿄' })).toBeVisible();
+  await press('2일 12.2');
+  expect(screen.getByRole('button', { name: '1번 도쿄 미술관, 11:00부터 12:15까지', selected: true })).toBeVisible();
+  expect(screen.getByText('🔒 날짜 고정')).toBeVisible();
   expect(f.created()).toMatchObject({
     cityCode: 'TOKYO', timeZone: 'Asia/Tokyo', taxiPolicy: 'PREFER',
     flights: [{ googlePlaceId: 'airport', localDateTime: '2026-12-01T08:00' }, { googlePlaceId: 'airport' }],
@@ -86,7 +89,7 @@ test('input → save → reopen: trip, lodging, fixed place and settings round t
     settings: { taxiPolicy: 'PREFER', days: [{ date: '2026-12-02', departureTime: '10:00', mealSlots: [] }] },
   });
   expect(f.created()?.visits[0]).not.toHaveProperty('place');
-  await press('저장한 여행 보기');
+  await press('뒤로');
   expect(await screen.findByText(/도쿄 호텔 · 2026-12-01/)).toBeVisible();
   expect(screen.getByText(/고정 · 2026-12-02/)).toBeVisible();
   await press('뒤로');
@@ -124,9 +127,10 @@ test('retrying itinerary generation reuses the saved trip after a provider failu
   await fireEvent.press(await screen.findByRole('button', { name: '도쿄 미술관 추가' }));
   await press('저장');
   await press('동선 만들기');
-  expect(await screen.findByText('여행 입력은 저장되어 있어요.')).toBeVisible();
+  expect(await screen.findByText('입력한 장소와 고정 조건은 그대로 있어요')).toBeVisible();
   await press('다시 계산');
-  expect(await screen.findByText('✓ 동선을 저장했어요')).toBeVisible();
+  expect(await screen.findByRole('header', { name: '도쿄' })).toBeVisible();
+  expect(screen.getByText('배치된 장소 없음')).toBeVisible();
   const writes = f.transport.mock.calls.filter(([, options]) => options?.method === 'POST').map(([url]) => new URL(String(url)).pathname);
   expect(writes).toEqual(['/api/trips', '/api/trips/new-trip/itinerary', '/api/trips/new-trip/itinerary']);
 });
