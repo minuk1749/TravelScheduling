@@ -22,6 +22,7 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
     }
   };
   let input = sampleTrip(okVisits.map(v => ({ ...v, minutes: 300 }))), failSave = true, failGeneration = false, generations = 0;
+  const generationKeys: string[] = [];
   const editor = new ResultEditService({ loadInputs: async () => ({ status: 'READY', input, inputHash: inputHash(input) }), save: async () => assert.fail('unused') }, new FixturePlaces());
   globalThis.fetch = async (url, options) => {
     if (String(url).endsWith('/constraints')) {
@@ -33,6 +34,9 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
       }
       return Response.json(await editor.load(input.id, 'owner'));
     }
+    const key = new Headers(options?.headers).get('Idempotency-Key');
+    assert.ok(key);
+    generationKeys.push(key);
     generations++;
     if (failGeneration) { failGeneration = false; return Response.json({ error: '경로 조회 실패' }, { status: 503 }); }
     return Response.json({ ...await service().service.compute(input), inputHash: inputHash(input) });
@@ -64,6 +68,8 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
     assert.equal((view.getByLabelText(`${name} 시각`) as HTMLInputElement).value, '15:00');
     assert.equal(input.visits.find(v => v.id === 'visit-teamlab')?.fixedDate, '2026-12-02');
     run(); await view.findByText('저장된 제약으로 재계산했습니다.');
+    assert.equal(generationKeys[3], generationKeys[2]);
+    assert.equal(new Set(generationKeys).size, 3);
     fireEvent.click(view.getByRole('button', { name: '저장된 설정 다시 불러오기' }));
     await waitFor(() => assert.equal((view.getByLabelText(`${name} 시각`) as HTMLInputElement).value, '15:00'));
     // A closed-hour pin is a conflict; the UI must not display a plausible timeline as success.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Text } from 'react-native';
 import type { ResultView } from '@travel/core/contracts/results/model';
+import { useItineraryGeneration } from '../../api/itinerary-generation';
 import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen } from '../../components/input/form-layout';
@@ -34,6 +35,7 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
   initial: GeneratedTrip; view?: ResultView; overCapacity(result: GeneratedTrip): void;
 }) {
   const api = useTripApi();
+  const calculation = useItineraryGeneration(tripId);
   const map = useResultMap();
   const [load, setLoad] = useState<Load>(() => view
     ? { status: 'ready', view, result: initial }
@@ -55,7 +57,7 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
         else setLoad({ status: 'calculate', view: saved, error: '계산 중 여행 정보가 바뀌었어요. 다시 계산해 주세요.' });
         return;
       }
-      const result = await api.generate(tripId, request.signal);
+      const result = await calculation.run(request.signal, load.view.revision);
       if (request.signal.aborted) return;
       // A concurrent edit may already be reflected in the result. Read the matching input before opening it.
       if (result.inputHash === load.view.revision) open(load.view, result);
@@ -65,7 +67,7 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
       if (!request.signal.aborted) setLoad({ ...load, error: errorMessage(error) });
     });
     return () => request.abort();
-  }, [api, tripId, load, overCapacity]);
+  }, [api, calculation, tripId, load, overCapacity]);
 
   if (load.status === 'ready') return <ResultEditor tripId={tripId} view={load.view} result={load.result}
     back={back} editConditions={editConditions} overCapacity={overCapacity} />;

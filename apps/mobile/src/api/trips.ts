@@ -1,6 +1,7 @@
+import { uuid } from 'expo';
 import { useMemo } from 'react';
 import type { CityProfile } from '@travel/core/fare';
-import type { ItineraryResult } from '@travel/core/contracts/itinerary';
+import { ITINERARY_REQUEST_HEADER, type ItineraryResult } from '@travel/core/contracts/itinerary';
 import type { PlaceLocation, PlaceSummary } from '@travel/core/contracts/places';
 import type { Constraints, ConstraintWriteOptions, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
 import type { RouteShapesResponse } from '@travel/core/contracts/route-shapes';
@@ -58,8 +59,10 @@ class TripApi {
   saveSettings(id: string, revision: string, settings: LivingSettings, signal?: AbortSignal) {
     return this.api.request<SettingsView>(`${trip(id)}/settings`, { ...json('PUT', { revision, settings }), signal });
   }
-  generate(id: string, signal?: AbortSignal) {
-    return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST', signal, validate: validGeneratedTrip });
+  generate(id: string, signal?: AbortSignal, requestId: string = uuid.v4()) {
+    return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, {
+      method: 'POST', headers: { [ITINERARY_REQUEST_HEADER]: requestId }, signal, validate: validGeneratedTrip,
+    });
   }
   /** T19 road shapes for the saved result; kept in memory only (never persisted). */
   async shapes(id: string, inputHash: string, itineraryId: string, signal: AbortSignal) {

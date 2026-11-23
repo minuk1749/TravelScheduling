@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor } from 'expo-router/testing-library';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
 import { colors, layout } from '../src/theme';
 import { button, capacityFixture, checkbox, conflict, excess, initialView, openCapacity, press, success, toggle } from './capacity-fixture';
-import { deferred, json } from './helpers';
+import { generationKeys, deferred, json } from './helpers';
 
 test('4-1 and 4-2: opens on over-capacity, keeps the saved priorities and updates the count and color', async () => {
   const f = capacityFixture();
@@ -145,6 +145,9 @@ test('retains saved selections and retries only POST after a provider error', as
   expect(await screen.findByRole('header', { name: '배치 가능' })).toBeVisible();
   expect(f.save).toHaveBeenCalledTimes(1);
   expect(f.generate).toHaveBeenCalledTimes(3);
+  const [initial, selection, retry] = generationKeys(f);
+  expect(selection).not.toBe(initial);
+  expect(retry).toBe(selection);
 });
 
 test('blocks verification after a stale save and reloads the stored selection on request', async () => {

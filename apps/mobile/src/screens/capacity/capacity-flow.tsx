@@ -4,6 +4,7 @@ import { parseConstraints } from '@travel/core/contracts/results/input';
 import { constraintsFrom, type ResultView, type VisitEdit } from '@travel/core/contracts/results/model';
 import { placeName } from '@travel/core/presentation';
 import { ApiFailure } from '../../api/client';
+import { useItineraryGeneration } from '../../api/itinerary-generation';
 import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen, form } from '../../components/input/form-layout';
@@ -26,12 +27,13 @@ type Selection = { view: ResultView; result: GeneratedTrip };
 
 export function CapacityFlow({ tripId, initial, back, editConditions, viewResult }: FlowProps) {
   const api = useTripApi();
+  const calculation = useItineraryGeneration(tripId);
   const load = useCallback(async (signal: AbortSignal): Promise<Selection> => {
     const view = await api.savedInput(tripId, signal);
-    const result = view.revision === initial.inputHash ? initial : await api.generate(tripId, signal);
+    const result = view.revision === initial.inputHash ? initial : await calculation.run(signal, view.revision);
     verifyRevision(result, view.revision);
     return { view, result };
-  }, [api, initial, tripId]);
+  }, [api, calculation, initial, tripId]);
   const { state, retry } = useTripResource(load);
   if (state.status === 'ready') return <SelectionEditor tripId={tripId} initial={state.data}
     back={back} editConditions={editConditions} reload={retry} viewResult={viewResult} />;
@@ -50,6 +52,7 @@ function SelectionEditor({ tripId, initial, back, editConditions, reload, viewRe
   initial: Selection; reload(): void;
 }) {
   const api = useTripApi();
+  const calculation = useItineraryGeneration(tripId);
   const reduced = useReducedMotion();
   const [view, setView] = useState(initial.view);
   const [draft, setDraft] = useState(() => constraintsFrom(initial.view.input));
@@ -65,6 +68,7 @@ function SelectionEditor({ tripId, initial, back, editConditions, reload, viewRe
 
   const count = draft.visits.filter(visit => visit.priority === 'REQUIRED').length;
   function change(next: VisitEdit) {
+    calculation.reset();
     setDraft(previous => ({ ...previous, visits: previous.visits.map(visit => visit.id === next.id ? next : visit) }));
     setResult(null);
     setError(previous => previous?.stale ? previous : undefined);
@@ -98,7 +102,7 @@ function SelectionEditor({ tripId, initial, back, editConditions, reload, viewRe
         setView({ ...view, ...saved });
         setDraft(constraintsFrom(saved.input));
       }
-      const checked = await api.generate(tripId, request.signal);
+      const checked = await calculation.run(request.signal, revision);
       if (request.signal.aborted) return;
       verifyRevision(checked, revision);
       if (checked.status === 'OVER_CAPACITY') setMaximum(checked.capacity.recommendation?.requiredCount);

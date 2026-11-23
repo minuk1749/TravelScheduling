@@ -6,7 +6,7 @@ import Settings from '../app/(app)/trips/[id]/settings';
 import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
 import { RootNavigator } from '../src/navigation/root-navigator';
-import { deferred, fixture, json, session } from './helpers';
+import { generationKeys, deferred, fixture, json, session } from './helpers';
 
 const snapshot: SettingsSnapshot = {
   revision: 'current', timeZone: 'Asia/Tokyo', startDate: '2026-12-01', endDate: '2026-12-03',
@@ -111,6 +111,8 @@ test('keeps the saved settings and retries only calculation after a provider fai
   expect(screen.getByLabelText('기본 외출 시각')).toHaveDisplayValue('10:00');
   expect(f.put).toHaveBeenCalledTimes(1);
   expect(f.generate).toHaveBeenCalledTimes(2);
+  const [initial, retry] = generationKeys(f);
+  expect(retry).toBe(initial);
 });
 
 test('does not start calculation if the settings update is rejected', async () => {

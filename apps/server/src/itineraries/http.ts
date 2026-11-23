@@ -1,3 +1,5 @@
+import { ITINERARY_REQUEST_HEADER } from '@travel/core/contracts/itinerary';
+import { canonicalUuidOrNull } from '../lib/db';
 import { accessError, apiError, privateJson as json, hasForeignOrigin, providerError } from '../lib/http';
 import { authorizeTrip } from '../lib/auth/authorization';
 import { PlaceInputError, PlaceProviderError } from '../places';
@@ -12,7 +14,7 @@ type Dependencies = {
   userId(request: Request): Promise<string | undefined>;
   findOwner(tripId: string): Promise<string | null>;
   /** Created only after authorization; `dispose` releases per-request provider resources. */
-  generator(): { generator: ItineraryGenerator; dispose(): void };
+  generator(ownerId: string, requestId: string | null): { generator: ItineraryGenerator; dispose(): void };
 };
 
 const ACCESS_ERRORS = { 401: '로그인 후 다시 시도해 주세요.', 403: '접근할 수 없습니다.', 404: '여행을 찾을 수 없습니다.' } as const;
@@ -33,9 +35,14 @@ export function itineraryHandlers(deps: Dependencies) {
     generate: async (request: Request, tripId: string): Promise<Response> => {
       try {
         if (hasForeignOrigin(request)) return apiError(403, 'FORBIDDEN', '허용되지 않은 요청입니다.');
-        const access = await authorizeTrip(await deps.userId(request), tripId, deps.findOwner);
+        const ownerId = await deps.userId(request);
+        const access = await authorizeTrip(ownerId, tripId, deps.findOwner);
         if (access !== 200) return accessError(access, ACCESS_ERRORS[access]);
-        const { generator, dispose } = deps.generator();
+        const requestId = request.headers.get(ITINERARY_REQUEST_HEADER);
+        if (requestId !== null && !canonicalUuidOrNull(requestId)) {
+          return apiError(400, 'INVALID_INPUT', '일정 생성 요청 식별자를 확인해 주세요.');
+        }
+        const { generator, dispose } = deps.generator(ownerId!, requestId);
         let outcome: GenerateOutcome;
         try { outcome = await generator.generate(tripId); } finally { dispose(); }
         switch (outcome.status) {

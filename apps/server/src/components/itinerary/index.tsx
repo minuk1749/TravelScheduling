@@ -1,4 +1,6 @@
 'use client';
+import { ITINERARY_REQUEST_HEADER } from '@travel/core/contracts/itinerary';
+import { newItineraryRequestId } from './request-id';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ItineraryResult } from '../../services/itinerary/types';
 import { constraintsFrom, type Constraints, type ResultSnapshot, type ResultView } from '../../results/model';
@@ -34,13 +36,14 @@ function ResultEditor({ initial, tripId, reload }: { initial: ResultView; tripId
   const [result, setResult] = useState<ItineraryResult | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string | null>(null), [message, setMessage] = useState('저장된 설정으로 동선을 생성해 주세요.');
   const inFlight = useRef(false);
+  const requestId = useRef<string | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(constraintsFrom(view.input));
   const errors = useMemo(() => {
     try { parseConstraints(draft, view.input); return []; }
     catch (error) { return error instanceof TripInputError ? Object.values(error.fields) : ['입력 내용을 확인해 주세요.']; }
   }, [draft, view.input]);
   const points = useMemo(() => mapMarkers(view, result), [view, result]);
-  const change = (next: Constraints) => { setDraft(next); setError(''); setMessage('변경 내용을 저장하고 재검증해 주세요. 표시된 결과는 마지막 계산 기준입니다.'); };
+  const change = (next: Constraints) => { requestId.current = null; setDraft(next); setError(''); setMessage('변경 내용을 저장하고 재검증해 주세요. 표시된 결과는 마지막 계산 기준입니다.'); };
   const select = (id: string) => {
     setSelected(id);
     document.getElementById(`edit-${id}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
@@ -60,9 +63,13 @@ function ResultEditor({ initial, tripId, reload }: { initial: ResultView; tripId
         setView({ ...view, ...snapshot }); setDraft(constraintsFrom(snapshot.input));
       }
       setMessage('실제 출발 시각으로 동선을 검증하는 중…');
-      const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/itinerary`, { method: 'POST' });
+      requestId.current ??= newItineraryRequestId();
+      const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/itinerary`, {
+        method: 'POST', headers: { [ITINERARY_REQUEST_HEADER]: requestId.current },
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.fields ? `${data.error} ${Object.values(data.fields).join(' ')}` : data.error ?? '동선을 만들지 못했습니다.');
+      requestId.current = null;
       if (data.inputHash !== expectedHash) throw new Error('다른 곳에서 여행 정보가 바뀌었습니다. 저장된 설정을 다시 불러와 주세요.');
       setResult(data as ItineraryResult); setMessage('저장된 제약으로 재계산했습니다.');
     } catch (error) { setError(error instanceof Error ? error.message : '연결을 확인해 주세요.'); setMessage('입력 내용은 유지됩니다. 다시 시도하거나 저장된 설정을 불러오세요.'); }

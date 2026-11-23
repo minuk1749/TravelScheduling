@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useTripApi, type GeneratedTrip } from '../../api/trips';
+import { useItineraryGeneration } from '../../api/itinerary-generation';
+import type { GeneratedTrip } from '../../api/trips';
 import { useResultMap } from '../../map/provider';
 import { InitialResult } from '../result/place-panel';
 import { OutcomeFlow } from '../result/result-flow';
@@ -11,18 +12,18 @@ type Generation = { status: 'loading' } | { status: 'ready'; result: GeneratedTr
 export function GenerationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const api = useTripApi();
+  const calculation = useItineraryGeneration(id);
   const ResultMap = useResultMap();
   const [generation, setGeneration] = useState<Generation>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const request = new AbortController();
-    void api.generate(id, request.signal).then(
+    void calculation.run(request.signal).then(
       result => { if (!request.signal.aborted) setGeneration({ status: 'ready', result }); },
       error => { if (!request.signal.aborted) setGeneration({ status: 'error', message: errorMessage(error) }); },
     );
     return () => request.abort();
-  }, [api, id, attempt]);
+  }, [calculation, attempt]);
 
   const openTrip = () => router.dismissTo({ pathname: '/trips/[id]', params: { id } });
   const editConditions = () => router.replace({ pathname: '/trips/[id]/settings', params: { id } });

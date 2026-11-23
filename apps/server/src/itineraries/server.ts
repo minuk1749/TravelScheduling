@@ -2,8 +2,7 @@ import { requestAuthenticator } from '../lib/auth/server';
 import { tripOwner } from '../lib/auth/store';
 import { createDatabasePool } from '../lib/db';
 import { placeProvider } from '../places/server';
-import { cityProfileRepository } from '../repositories/city-profiles';
-import { PostgresItineraryRepository } from '../repositories/itineraries';
+import { PostgresItineraryRequests } from '../repositories/itinerary-requests';
 import { ItineraryService } from '../services/itinerary';
 import { createGoogleTravelTimeProvider } from '../travel-time/server';
 import { itineraryHandlers } from './http';
@@ -15,14 +14,13 @@ const db = () => pool ??= createDatabasePool();
 export const handlers = itineraryHandlers({
   userId: request => requestAuthenticator.userId(request),
   findOwner: tripOwner,
-  generator: () => {
+  generator: (ownerId, requestId) => {
     const travel = createGoogleTravelTimeProvider();
-    const generator = new ItineraryService({
-      repository: new PostgresItineraryRepository(db()),
-      profiles: cityProfileRepository(db()),
-      places: placeProvider(),
-      travel,
-    });
-    return { generator, dispose: () => travel.dispose() };
+    const requests = new PostgresItineraryRequests(db());
+    return {
+      generator: { generate: tripId => requests.run(tripId, ownerId, requestId, (repository, profiles) =>
+        new ItineraryService({ repository, profiles, places: placeProvider(), travel }).generate(tripId)) },
+      dispose: () => travel.dispose(),
+    };
   },
 });

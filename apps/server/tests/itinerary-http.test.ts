@@ -86,3 +86,13 @@ test('T12 itinerary API maps incomplete/stale inputs to 409 and provider failure
     assert.deepEqual(calls, { created: 1, disposed: 1 }, 'providers are disposed on every path');
   }
 });
+
+test('T27 rejects malformed or repeated request keys before starting generation', async () => {
+  const { calls, generate } = setup();
+  for (const value of ['', 'invalid', 'e95d32c1-95e9-4fcc-8f2b-6ee106b21f99, e95d32c1-95e9-4fcc-8f2b-6ee106b21f99']) {
+    const response = await generate(post({ 'Idempotency-Key': value }));
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, 'INVALID_INPUT');
+  }
+  assert.equal(calls.created, 0);
+});

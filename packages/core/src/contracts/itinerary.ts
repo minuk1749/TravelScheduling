@@ -2,6 +2,8 @@ import type {
   CapacityResult, MealSlot, MealWindows, RouteEstimate, TaxiPolicy, TimeWindow, TravelMode, Visit,
 } from '../scheduler';
 
+export const ITINERARY_REQUEST_HEADER = 'Idempotency-Key';
+
 /** `id` is `places.id` (scheduler location ID); `googlePlaceId` is only for provider lookups. */
 export type PlaceRef = { id: string; googlePlaceId: string };
 export type LuggageOption = 'VIA_LODGING' | 'DIRECT_TO_AIRPORT';

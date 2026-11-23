@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from 'expo-router/testing-library';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
-import { deferred, json } from './helpers';
+import { generationKeys, deferred, json } from './helpers';
 import { excess, initialView } from './capacity-fixture';
 import { D1, plan, renderResult, resultFixture, trip } from './result-fixture';
 
@@ -31,6 +31,9 @@ test('opening a stale result recalculates on an empty map and recovers from a 50
   expect(f.current()).toEqual(saved);
   expect(f.read).toHaveBeenCalledTimes(1);
   expect(f.generate).toHaveBeenCalledTimes(3);
+  const [initial, recalculated, retried] = generationKeys(f);
+  expect(recalculated).not.toBe(initial);
+  expect(retried).toBe(recalculated);
   expect(f.save).not.toHaveBeenCalled();
 });
 

@@ -1,5 +1,6 @@
 import { fireEvent, screen } from 'expo-router/testing-library';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
+import { generationKeys } from './helpers';
 import { D1, openResult, place, renderResult, resultFixture } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
@@ -26,6 +27,8 @@ test('a broken 200 body on initial generation opens the failure panel and retry 
   await press('다시 계산');
   expect(await screen.findByTestId('place-card-row')).toBeVisible();
   expect(f.generate).toHaveBeenCalledTimes(2);
+  const [initial, retry] = generationKeys(f);
+  expect(retry).toBe(initial);
   expect(f.save).not.toHaveBeenCalled();
 });
 

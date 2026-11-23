@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseConstraints } from '@travel/core/contracts/results/input';
 import { constraintsFrom, type Constraints, type ConstraintWriteOptions, type ResultView } from '@travel/core/contracts/results/model';
 import { ApiFailure } from '../../api/client';
+import { useItineraryGeneration } from '../../api/itinerary-generation';
 import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
 import { buildDays } from '../../result/days';
 import { dayNumberLabel } from '../../result/format';
@@ -81,6 +82,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
   tripId: string; view: ResultView; result: GeneratedTrip; overCapacity(result: GeneratedTrip): void;
 }) {
   const api = useTripApi();
+  const calculation = useItineraryGeneration(tripId);
   const [state, setState] = useState<State>(() => {
     const shown = { view, result };
     return { view, shown, base: result.status === 'OK' ? shown : null, previous: null,
@@ -153,7 +155,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
         draft = null;
       }
       setState(value => ({ ...value, view: current, undo: restore }));
-      const generated = await api.generate(tripId, request.signal);
+      const generated = await calculation.run(request.signal, current.revision);
       if (request.signal.aborted) return;
       verifyRevision(generated, current.revision);
       if (generated.status === 'OVER_CAPACITY') { overCapacity(generated); return; }
