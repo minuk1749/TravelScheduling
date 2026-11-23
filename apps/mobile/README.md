@@ -8,12 +8,14 @@ Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세
 
 | 설정 | 의미 |
 |---|---|
-| `EXPO_PUBLIC_API_URL` | API 서버 origin. 경로 없이 `https://example.com` 형태. 로컬 기기는 컴퓨터의 같은 Wi-Fi IP를 사용하며 `localhost`는 기기 자신을 뜻한다 |
+| `EXPO_PUBLIC_API_URL` | 운영 빌드는 `https://api.example.com`처럼 경로 없는 HTTPS 주소가 필요하다. 개발 빌드에서는 HTTP로 `localhost`, 루프백(`127.0.0.0/8`, `[::1]`), 사설 IPv4(`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)도 지정할 수 있다 |
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | 네이티브 SDK가 서버 검증용 ID 토큰을 요청할 Web OAuth 클라이언트 ID |
 | `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | iOS 앱의 OAuth 클라이언트 ID |
 | `GOOGLE_IOS_URL_SCHEME` | iOS OAuth ID의 역순 URL scheme (`com.googleusercontent.apps.…`). 네이티브 설정 생성 때 Google config plugin을 활성화한다 |
 | `EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY` | 숙소 위치 선택과 결과 지도에 쓰는 iOS 앱 제한 Maps SDK 키 |
 | `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY` | 숙소 위치 선택과 결과 지도에 쓰는 Android 앱 제한 Maps SDK 키 |
+
+개발 주소 예시는 iOS 시뮬레이터의 `http://localhost:3000`, Android 에뮬레이터의 `http://10.0.2.2:3000`, 같은 Wi-Fi에 있는 기기의 `http://192.168.1.10:3000`이다. 마지막 주소에는 개발 컴퓨터의 실제 사설 IP를 넣는다.
 
 서버의 `GOOGLE_MOBILE_CLIENT_IDS`에는 **실제 ID 토큰의 aud**를 허용해야 한다. 이 SDK에서 `webClientId`를 사용하므로 위 Web ID도 목록에 포함한다. T18의 서명·발급자·만료 검증은 그대로다. Android에는 Google Cloud에서 앱 패키지명·서명 인증서 SHA를 등록한다. OAuth client secret은 앱에 넣지 않는다.
 

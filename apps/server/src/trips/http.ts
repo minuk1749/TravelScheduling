@@ -1,3 +1,4 @@
+import { readJsonBody } from '../lib/json-body';
 import { accessError, apiError, privateJson as json, hasForeignOrigin } from '../lib/http';
 import { authorizeTrip } from '../lib/auth/authorization';
 import type { CityProfile } from '../fare';
@@ -24,11 +25,9 @@ export function tripHandlers(deps: Dependencies) {
     create: (request: Request) => handle(request, async userId => {
       if (hasForeignOrigin(request)) return apiError(403, 'FORBIDDEN', '허용되지 않은 요청입니다.');
       if (!request.headers.get('content-type')?.startsWith('application/json')) return apiError(415, 'UNSUPPORTED_MEDIA_TYPE', 'JSON 입력이 필요합니다.');
-      const body = await request.text();
-      if (body.length > 100_000) return apiError(413, 'PAYLOAD_TOO_LARGE', '입력 크기를 줄여 주세요.');
-      let raw: unknown;
-      try { raw = JSON.parse(body); } catch { return apiError(400, 'INVALID_JSON', '올바른 JSON 입력이 필요합니다.'); }
-      const input = parseTripCreation(raw);
+      const body = await readJsonBody(request, 100_000);
+      if ('error' in body) return body.error;
+      const input = parseTripCreation(body.value);
       return json({ id: await deps.create(userId, input) }, 201);
     }),
     profile: (request: Request) => handle(request, async () => {

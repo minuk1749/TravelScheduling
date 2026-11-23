@@ -34,7 +34,7 @@ export function setup(maxEntries = 2) {
   const google = new GoogleTravelTimeProvider('fixture-secret', fetcher);
   const cache = new CachedTravelTimeProvider(google, { ttlMs: 1000, maxEntries }, () => now);
   return {
-    calls, google, cache,
+    fetcher, calls, google, cache,
     reply: (value: unknown, code = 200) => { override = () => value; status = code; },
     respond: (fn: NonNullable<typeof override>) => { override = fn; status = 200; },
     reset: () => { override = undefined; status = 200; },

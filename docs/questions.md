@@ -163,3 +163,13 @@
 | 앱 API 클라이언트를 그대로 쓰지 않는 이유는? | `apps/mobile/src/api`는 Expo·React Native 런타임에 의존한다. 서버 테스트는 같은 경로·본문·재시도 키를 쓰는 작은 요청 도우미(`tests/e2e/support/app-client.ts`)를 둔다. 앱 요청 형식은 앱의 컴포넌트 테스트가 검사한다. |
 
 [결정 기록](decisions/T25-web-removal-and-bearer-journey.md)
+
+## T29 전송 보안과 호출 예산 가정
+
+| 질문 | 채택한 가정 |
+|---|---|
+| 로컬 HTTP를 언제 허용하는가? | React Native 개발 빌드에서 `EXPO_PUBLIC_API_URL`로 지정한 localhost, 루프백, 사설 IPv4 주소를 허용한다. 실기기는 같은 Wi-Fi의 개발 컴퓨터 IP를 지정한다. |
+| 본문의 크기 단위와 제약 저장 한도는 얼마인가? | 수신 바이트를 센다. 로그인·여행·생활 설정은 기존 수치, 제약은 100개 방문과 최대 1,000개 구간 편집을 담을 수 있는 256 KiB를 쓴다. |
+| 외부 이동시간 호출을 어느 단위로 제한하는가? | 같은 서버 런타임에서 동시에 나가는 Google Routes HTTP 요청 전체에 4건을 배정한다. 경로 모양도 같은 API를 쓰므로 포함한다. |
+
+[결정과 측정](decisions/T29-transport-and-routes-budget.md)

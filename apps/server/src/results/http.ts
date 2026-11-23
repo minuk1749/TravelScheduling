@@ -1,3 +1,4 @@
+import { readJsonBody } from '../lib/json-body';
 import { accessError, apiError, privateJson as json, hasForeignOrigin, providerError } from '../lib/http';
 import { authorizeTrip } from '../lib/auth/authorization';
 import { PlaceProviderError } from '../places';
@@ -22,9 +23,9 @@ export function constraintHandlers(deps: Dependencies) {
         const operationId = params.get('operationId');
         return json(await deps.service().load(id, userId!, operationId ?? undefined));
       }
-      let body: unknown;
-      try { body = await request.json(); } catch { return apiError(400, 'INVALID_JSON', '올바른 JSON을 보내 주세요.'); }
-      return json(await deps.service().save(id, userId!, body));
+      const body = await readJsonBody(request, 256 * 1024, '올바른 JSON을 보내 주세요.');
+      if ('error' in body) return body.error;
+      return json(await deps.service().save(id, userId!, body.value));
     } catch (error) {
       if (error instanceof TripInputError) return apiError(400, 'INVALID_INPUT', '입력 내용을 확인해 주세요.', error.fields);
       if (error instanceof ResultTripNotFoundError) return accessError(404, ACCESS_ERRORS[404]);
