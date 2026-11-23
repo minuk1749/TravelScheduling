@@ -94,12 +94,16 @@ jobs:
           out go true
 
   test:
+    concurrency:
+      group: product-checks-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
+      cancel-in-progress: false
     needs: gate
     if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
+      actions: read
     services:
       postgres:
         image: postgres:16
@@ -127,14 +131,21 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
+      - name: Select required checks
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node control/.github/agent/common-ci.mjs >> "$GITHUB_OUTPUT"
       - id: t
         name: Required checks
         working-directory: candidate
+        env:
+          CHECK_MODE: ${{ steps.plan.outputs.mode == '--e2e-only' && '--e2e-only' || '--e2e' }}
         run: |
           set -euo pipefail
           code=0
           env -u GITHUB_OUTPUT -u GITHUB_ENV -u GITHUB_PATH -u GITHUB_STEP_SUMMARY \
-            bash ../control/.github/agent/check-required.sh --e2e > "$RUNNER_TEMP/test.log" 2>&1 || code=$?
+            bash ../control/.github/agent/check-required.sh "$CHECK_MODE" > "$RUNNER_TEMP/test.log" 2>&1 || code=$?
           # The log is candidate output, so prevent it from emitting Actions workflow commands.
           stop_token=$(cat /proc/sys/kernel/random/uuid)
           echo "::stop-commands::$stop_token"

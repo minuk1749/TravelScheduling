@@ -12,12 +12,14 @@ for (const name of ['lint', 'typecheck', 'build', 'test']) {
 JS
 
 npm ci
-npm run lint
-npm run typecheck
-npm run build
-npm test
+if [[ ${1:-} != --e2e-only ]]; then
+  npm run lint
+  npm run typecheck
+  npm run build
+  npm test
+fi
 
-if [[ ${1:-} = --e2e ]] && node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
+if [[ ${1:-} = --e2e || ${1:-} = --e2e-only ]] && node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
   npx playwright install --with-deps chromium
   npm run test:e2e -- --trace off
 fi
