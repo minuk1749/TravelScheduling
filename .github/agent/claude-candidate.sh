@@ -39,7 +39,7 @@ case "$1" in
       -e DATABASE_URL=postgresql://postgres:postgres@postgres:5432/app -e "CANDIDATE_TREE=$tree" \
       -v "$source_dir:/source:ro" -v "$control/.github/agent/check-required.sh:/check-required.sh:ro" \
       -w /candidate node:24-bookworm bash -ec \
-      'git config --global --add safe.directory /candidate && cp -a /source/. . && git init -q && git add -f -A && test "$(git write-tree)" = "$CANDIDATE_TREE" && bash /check-required.sh --e2e'
+      'cp -a --no-preserve=ownership /source/. . && git init -q && git add -f -A && test "$(git write-tree)" = "$CANDIDATE_TREE" && bash /check-required.sh --e2e'
     echo "commit=$commit" >> "$GITHUB_OUTPUT"
     ;;
   publish)
