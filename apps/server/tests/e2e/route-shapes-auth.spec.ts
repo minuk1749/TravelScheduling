@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
-import { encode } from 'next-auth/jwt';
 import { PostgresMobileSessionStore } from '../../src/lib/auth/session-store';
 import { createDatabasePool } from '../../src/lib/db';
 import { migrate } from '../../src/lib/migrations';
@@ -89,15 +88,11 @@ test('expired, unknown and malformed mobile tokens are unauthenticated', async (
   }
 });
 
-test('an owner cookie authenticates only when Authorization is absent', async ({ request }, testInfo) => {
-  const secret = testInfo.config.webServer?.env?.AUTH_SECRET;
-  assert.ok(secret);
-  const name = 'authjs.session-token';
-  const jwt = await encode({ secret, salt: name, token: { userId: owner } });
-  const cookie = `${name}=${jwt}`;
-  const valid = await request.get(path, { headers: { cookie } });
-  expect(valid.status()).toBe(200);
-  const invalid = await request.get(path, { headers: { cookie, ...bearer(expiredToken) } });
-  expect(invalid.status()).toBe(401);
-  expect((await invalid.json()).code).toBe('UNAUTHENTICATED');
+test('T25: without a Bearer session the request is unauthenticated, whatever cookies it carries', async ({ request }) => {
+  const variants: Record<string, string>[] = [{}, { cookie: 'authjs.session-token=legacy; __Secure-authjs.session-token=legacy' }];
+  for (const headers of variants) {
+    const response = await request.get(path, { headers });
+    expect(response.status()).toBe(401);
+    expect((await response.json()).code).toBe('UNAUTHENTICATED');
+  }
 });

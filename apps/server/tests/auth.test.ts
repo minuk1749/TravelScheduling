@@ -3,23 +3,7 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { createDatabasePool } from '../src/lib/db';
 import { migrate } from '../src/lib/migrations';
-import { googleIdentity, validUserId } from '../src/lib/auth/callbacks';
 import { authorizeTrip } from '../src/lib/auth/authorization';
-
-test('verified Google login creates an identity; logout and withdrawal invalidate access', async () => {
-  const users = new Map<string, string>();
-  const store = {
-    async upsertGoogleUser(id: string, email: string) { users.set(id, email); return id; },
-    async userExists(id: string) { return users.has(id); },
-  };
-  const account = { provider: 'google', providerAccountId: 'google-1' };
-  assert.equal(await googleIdentity(account, { email: 'a@example.test', email_verified: false }, store), null);
-  assert.equal(await googleIdentity(account, { email: 'a@example.test', email_verified: true }, store), 'google-1');
-  assert.equal(await validUserId('google-1', store), 'google-1');
-  assert.equal(await validUserId(undefined, store), undefined); // signed-out session
-  users.delete('google-1');
-  assert.equal(await validUserId('google-1', store), undefined); // previously issued session after withdrawal
-});
 
 test('trip access requires its owner', async () => {
   const owner = async () => 'owner';

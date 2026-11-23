@@ -4,19 +4,14 @@ export type ProbeMarker = { title: string; state: 'placed' | 'wish' | 'unplaced'
 
 /**
  * Replaces `google.maps.importLibrary` (what `@googlemaps/js-api-loader` delegates to) with a recording stub.
- * GoogleResultMap and the real result page run unchanged; the stub only records the markers that the adapter
- * actually creates and lets a test click one, which calls the adapter's `select(visitId)` handler.
+ * GoogleResultMap and the real share page run unchanged; the stub only records the markers that the adapter actually creates.
  */
 export async function installMapsDouble(page: Page) {
   await page.addInitScript(() => {
     type Handler = () => void;
     type Marker = { title: string; content: HTMLElement; handlers: Handler[] };
     const live = new Set<Marker>();
-    const probe = { mounts: 0, markers: () => [...live].map(m => ({ title: m.title, className: m.content.className, text: m.content.textContent ?? '' })), click: (title: string) => {
-      const marker = [...live].find(m => m.title === title);
-      if (!marker) throw new Error(`no marker titled ${title}`);
-      marker.handlers.forEach(handler => handler());
-    } };
+    const probe = { mounts: 0, markers: () => [...live].map(m => ({ title: m.title, className: m.content.className, text: m.content.textContent ?? '' })) };
     (window as unknown as { __mapsProbe: typeof probe }).__mapsProbe = probe;
     class FakeMap { constructor(public element: HTMLElement) { probe.mounts++; } fitBounds() {} }
     class FakeBounds { extend() {} }
@@ -46,7 +41,3 @@ export async function mapMarkers(page: Page): Promise<ProbeMarker[]> {
 export async function expectMarkers(page: Page, expected: Record<string, ProbeMarker['state']>) {
   await expect.poll(async () => Object.fromEntries((await mapMarkers(page)).map(m => [m.name, m.state])), { message: 'map markers' }).toEqual(expected);
 }
-
-/** Clicks the marker as a user would: the adapter's click handler reports the visit id, which selects that visit's editor card. */
-export const clickMarker = (page: Page, title: string) =>
-  page.evaluate(value => (window as unknown as { __mapsProbe: { click(title: string): void } }).__mapsProbe.click(value), title);

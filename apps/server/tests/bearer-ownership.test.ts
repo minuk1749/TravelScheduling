@@ -34,14 +34,16 @@ async function sessions() {
   const expired = await issue('g-owner');
   const expiredHash = [...store.rows.keys()].at(-1)!;
   store.rows.set(expiredHash, { userId: OWNER, expiresAt: new Date(Date.now() - 1000).toISOString() });
-  let cookieReads = 0;
-  const authenticator = new SessionRequestAuthenticator(store, async () => { cookieReads++; return OWNER; });
-  return { owner, intruder, revoked, expired, authenticator, cookieReads: () => cookieReads };
+  const authenticator = new SessionRequestAuthenticator(store);
+  return { owner, intruder, revoked, expired, authenticator };
 }
 
-type Call = (userId: (request: Request) => Promise<string | undefined>, authorization: string) => Promise<Response>;
-const req = (path: string, authorization: string, init: RequestInit = {}) =>
-  new Request(`https://api.example.test${path}`, { ...init, headers: { authorization, 'content-type': 'application/json', ...init.headers as Record<string, string> } });
+/** `authorization: null` sends no Authorization header, only the cookies the removed Auth.js web login used to set. */
+type Call = (userId: (request: Request) => Promise<string | undefined>, authorization: string | null) => Promise<Response>;
+const LEGACY_COOKIES = 'authjs.session-token=legacy; __Secure-authjs.session-token=legacy';
+const req = (path: string, authorization: string | null, init: RequestInit = {}) => new Request(`https://api.example.test${path}`, {
+  ...init, headers: { ...authorization === null ? { cookie: LEGACY_COOKIES } : { authorization }, 'content-type': 'application/json', ...init.headers as Record<string, string> },
+});
 
 /** Ownership-checked endpoints: owner passes, another user's valid token is 403. */
 const owned: [string, number, Call][] = [
@@ -92,7 +94,6 @@ test('Bearer owner reaches each ownership-checked API; another user is 403 FORBI
     assert.equal((await call(userId, `Bearer ${s.owner}`)).status, success, `${name} owner`);
     await expectError(await call(userId, `Bearer ${s.intruder}`), 403, 'FORBIDDEN', `${name} other user`);
   }
-  assert.equal(s.cookieReads(), 0);
 });
 
 test('every user API answers 401 UNAUTHENTICATED for malformed, unknown, expired and revoked Bearer tokens', async () => {
@@ -104,5 +105,10 @@ test('every user API answers 401 UNAUTHENTICATED for malformed, unknown, expired
     for (const [kind, header] of Object.entries(bad)) await expectError(await call(userId, header), 401, 'UNAUTHENTICATED', `${name} ${kind}`);
     if (!owned.some(([owned]) => owned === name)) assert.equal((await call(userId, `Bearer ${s.intruder}`)).status, success, name);
   }
-  assert.equal(s.cookieReads(), 0, 'a rejected Bearer header never falls back to the cookie session');
+});
+
+test('T25: without a Bearer header every user API is 401, even with the former Auth.js session cookie', async () => {
+  const s = await sessions();
+  const userId = (request: Request) => s.authenticator.userId(request);
+  for (const [name, , call] of [...owned, ...signedIn]) await expectError(await call(userId, null), 401, 'UNAUTHENTICATED', `${name} cookie only`);
 });

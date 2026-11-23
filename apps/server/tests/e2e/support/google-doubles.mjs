@@ -1,42 +1,15 @@
 // Preloaded into the Next.js server (`node --import`) by playwright.config.ts. It answers the server-side
-// calls that would otherwise reach Google (OAuth/OpenID, Places, Routes) with deterministic local data, so
-// the real Auth.js, route handlers, services and PostgreSQL run unchanged. Test-only: nothing in src/ imports it.
-import { createSign, generateKeyPairSync } from 'node:crypto';
+// calls that would otherwise reach Google (ID token signing keys, Places, Routes) with deterministic local data,
+// so the real session API, route handlers, services and PostgreSQL run unchanged. Test-only: nothing in src/ imports it.
 import { shapeResponse } from '../../fixtures/route-shapes.ts';
+import { publicJwks } from './google-key.ts';
 
 const realFetch = globalThis.fetch;
-const CLIENT_ID = process.env.AUTH_GOOGLE_ID ?? 'e2e-client';
-const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'e2e-key', alg: 'RS256', use: 'sig' };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-const b64 = value => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url');
 
-/** Tokens issued by the fake authorization endpoint: `code` carries the nonce the browser double read from the URL. */
-function idToken(nonce) {
-  const now = Math.floor(Date.now() / 1000);
-  const body = `${b64({ alg: 'RS256', typ: 'JWT', kid: 'e2e-key' })}.${b64({
-    iss: 'https://accounts.google.com', aud: CLIENT_ID, sub: 'e2e-google-user', email: 'e2e-traveler@example.test',
-    email_verified: true, iat: now, exp: now + 3600, ...(nonce ? { nonce } : {}),
-  })}`;
-  return `${body}.${createSign('RSA-SHA256').update(body).sign(privateKey, 'base64url')}`;
-}
-
-async function oauth(url, init) {
-  if (url.pathname === '/.well-known/openid-configuration') {
-    return json({
-      issuer: 'https://accounts.google.com', authorization_endpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-      token_endpoint: 'https://oauth2.googleapis.com/token', jwks_uri: 'https://www.googleapis.com/oauth2/v3/certs',
-      userinfo_endpoint: 'https://openidconnect.googleapis.com/v1/userinfo', response_types_supported: ['code'],
-      subject_types_supported: ['public'], id_token_signing_alg_values_supported: ['RS256'],
-    });
-  }
-  if (url.pathname === '/oauth2/v3/certs') return json({ keys: [jwk] });
-  if (url.pathname === '/token') {
-    const code = new URLSearchParams(String(init?.body)).get('code') ?? '';
-    const nonce = code.startsWith('e2e-code.') ? Buffer.from(code.slice(9), 'base64url').toString() : '';
-    return json({ access_token: 'e2e-access', token_type: 'Bearer', expires_in: 3600, scope: 'openid email profile', id_token: idToken(nonce) });
-  }
-  return json({ error: 'unexpected OAuth request' }, 404);
+/** Google's JWKS endpoint (read by `JoseGoogleIdTokenVerifier`), publishing this run's fake signing key. */
+function signingKeys(url) {
+  return url.pathname === '/oauth2/v3/certs' ? json(publicJwks()) : json({ error: 'unexpected Google request' }, 404);
 }
 
 // Tokyo landmarks (same data as tests/fixtures/itinerary.ts) with weekly opening hours [open, close].
@@ -110,7 +83,7 @@ globalThis.fetch = async (input, init) => {
   const request = input instanceof Request ? input : null;
   const url = new URL(request?.url ?? String(input));
   const options = init ?? (request ? { method: request.method, body: await request.clone().text() } : undefined);
-  if (['accounts.google.com', 'oauth2.googleapis.com', 'www.googleapis.com'].includes(url.hostname)) return oauth(url, options);
+  if (url.hostname === 'www.googleapis.com') return signingKeys(url);
   if (url.hostname === 'places.googleapis.com') return places(url, options);
   if (url.hostname === 'routes.googleapis.com') return routes(url, options);
   return realFetch(input, init);

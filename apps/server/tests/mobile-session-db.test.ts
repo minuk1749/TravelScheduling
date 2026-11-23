@@ -69,7 +69,7 @@ test('Google login → Bearer token → owner trip 200, other trip 403; logout a
     const store = new PostgresMobileSessionStore(() => client);
     const service = new MobileSessionService(new JoseGoogleIdTokenVerifier([IOS_CLIENT], fixtureJwks().keys), store,
       { upsertGoogleUser: (googleId, email) => upsertUser(client, googleId, email) });
-    const authenticator = new SessionRequestAuthenticator(store, async () => assert.fail('Bearer requests must not read cookies'));
+    const authenticator = new SessionRequestAuthenticator(store);
     const access = tripAccessHandler({ userId: request => authenticator.userId(request), findOwner: tripOwner(client) });
 
     const issued = (await service.signIn(await googleIdToken()))!;

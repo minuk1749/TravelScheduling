@@ -1,6 +1,6 @@
 # 여행 동선
 
-한국어 해외여행 동선 앱의 npm workspaces 저장소. 모바일 화면은 T20부터 구현하며 기존 PWA는 T25까지 유지합니다. 현재 Next.js App Router, 온라인 전용 PWA, Google 인증, PostgreSQL 스키마, 요금 계산과 순수 스케줄러가 있습니다. 구현 상태와 후속 작업의 인터페이스는 [아키텍처](docs/architecture.md)를 따릅니다.
+한국어 해외여행 동선 앱의 npm workspaces 저장소. 화면은 React Native(Expo) 모바일 앱이고, Next.js 서버는 앱용 API와 공유 링크용 읽기 전용 웹 페이지(`/share/[token]`)를 제공합니다(기존 PWA 화면은 T25에서 삭제). Google ID 토큰 기반 Bearer 세션, PostgreSQL 스키마, 요금 계산과 순수 스케줄러가 있습니다. 구현 상태와 후속 작업의 인터페이스는 [아키텍처](docs/architecture.md)를 따릅니다.
 
 ## 개발
 
@@ -24,13 +24,14 @@ npm run build
 npm test
 ```
 
-`npm test`의 프로덕션 HTTP 검사는 먼저 `npm run build`가 필요합니다. 테스트는 사용 가능한 임시 포트를 사용하고 서버를 종료합니다. DB가 없거나 `DATABASE_URL`이 없으면 연결 테스트는 실패하며 건너뛰지 않습니다. DB 연결 검사는 읽기 전용이고, 인증·모델 검사는 격리된 임시 스키마에 데이터를 쓰고 정리하므로 테스트 DB 계정에 스키마 생성 권한이 필요합니다.
+`npm run test:e2e`(Playwright, `npx playwright install chromium` 필요)는 서버를 다시 빌드해 `localhost:3210`에서 띄운 뒤 Bearer HTTP 종단 시나리오와 공유 페이지를 검사합니다. Google 호출은 테스트 대역이 답하므로 실제 키가 필요 없습니다. DB가 없거나 `DATABASE_URL`이 없으면 연결 테스트는 실패하며 건너뛰지 않습니다. DB 연결 검사는 읽기 전용이고, 인증·모델 검사는 격리된 임시 스키마에 데이터를 쓰고 정리하므로 테스트 DB 계정에 스키마 생성 권한이 필요합니다.
 
 ## 워크스페이스
 
-- `apps/server` (`@travel/server`): 기존 Next 서버·웹 화면·SQL·HTTP/DB/UI 테스트.
+- `apps/server` (`@travel/server`): Next API 서버·공유 열람 페이지·SQL·HTTP/DB 테스트·Playwright 종단 시나리오.
 - `packages/core` (`@travel/core`): scheduler·fare·공용 DTO·검증·표시 변환. `@travel/core/scheduler`, `@travel/core/contracts/trips/input` 같은 하위 경로로 가져옵니다.
-- `apps/mobile`, `packages/design-tokens`: T20 구현 전 예약 패키지입니다. 빈 성공 스크립트는 없습니다.
+- `apps/mobile` (`@travel/mobile`): Expo 앱. 설정은 [앱 README](apps/mobile/README.md).
+- `packages/design-tokens` (`@travel/design-tokens`): 앱과 공유 페이지가 함께 쓰는 디자인 값·글꼴.
 
 루트 lint·typecheck·build·test·migrate는 모든 워크스페이스에 같은 명령을 위임합니다. `migrate`는 서버만 구현합니다.
 `npm run dev`, `npm run start`, `npm run test:e2e`는 서버에 인자까지 전달합니다.
@@ -38,23 +39,19 @@ core는 TS 원본을 export하므로 Next가 직접 변환하고, core build는 
 공용 소스는 Node·DB·네트워크·화면 프레임워크에 의존하지 않으며 구조 테스트와 ES 표준 라이브러리만 사용하는 타입 검사로 확인합니다.
 새 패키지는 루트에서 `npm install <package> --workspace <name>`으로 추가하고 루트 `package-lock.json`을 함께 갱신합니다.
 
-## PWA와 CI
-
-`apps/server/src/app/manifest.ts`가 manifest를 생성합니다. `apps/server/public/sw.js`는 프로덕션에서 등록되며 오프라인 캐시를 만들지 않습니다. 빌드는 manifest와 PNG 아이콘, 서비스워커 구문을 검사합니다. HTTP 테스트는 실제 `next start`에서 HTML의 manifest 링크, manifest·아이콘·서비스워커 응답과 캐시 헤더를 검사합니다. 서비스워커는 Next.js의 public 자산으로 배포되므로 `apps/server/.next`와 함께 `apps/server/public`을 배포해야 합니다. 서비스워커에는 HTTPS가 필요합니다(localhost 제외).
+## CI
 
 기존 CI와 `agent-review`가 Node 24 / PostgreSQL 16에서 `npm ci`, lint, typecheck, build, test를 실행합니다. DB 테스트는 격리 스키마에서 새 마이그레이션 실행기로 스키마를 준비하고, 실행기 통합 테스트는 `npm run migrate`도 직접 호출합니다. 따라서 보호된 워크플로 변경 없이 CI에서도 같은 실행 경로를 검증합니다.
 
 ## 다음 작업
 
-DB 접근은 `apps/server/src/lib/db.ts`의 명시적 연결 풀 팩터리에서 시작합니다. 호출자는 풀을 재사용하고 종료 시 `pool.end()`를 호출합니다. 현재 홈은 로그인·로그아웃·탈퇴를 제공하며 여행 입력 → 생활 설정 → 지도·타임라인 결과 화면이 연결되어 있습니다. 장소·이동시간 제공자와 동선 생성/제약 저장 API는 포트 뒤에서 동작합니다. 전체 점검과 성능 측정은 [T13A 점검](docs/t13a-audit.md)을 참고하세요. 배포 대상 결정과 실제 브라우저의 홈 화면 설치 확인은 사람이 진행합니다.
-
-PWA 구성 참고: [Next.js 공식 PWA 안내](https://nextjs.org/docs/app/guides/progressive-web-apps).
+DB 접근은 `apps/server/src/lib/db.ts`의 명시적 연결 풀 팩터리에서 시작합니다. 호출자는 풀을 재사용하고 종료 시 `pool.end()`를 호출합니다. 앱은 로그인 → 여행 입력 → 하루 생활 → 필수 선택 → 지도 결과·수정 → 공유·탈퇴를 서버 API로 처리합니다. 장소·이동시간 제공자와 동선 생성/제약 저장 API는 포트 뒤에서 동작합니다. 전체 점검과 성능 측정은 [T13A 점검](docs/t13a-audit.md)을 참고하세요. 배포 대상 결정은 사람이 진행합니다.
 
 ## 인증 설정과 데이터베이스
 
-`npm run migrate`로 PostgreSQL 스키마를 준비한 뒤 `apps/server/.env.local`에 `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 설정합니다. Google OAuth 웹 클라이언트의 승인된 리디렉션 URI에 `http://localhost:3000/api/auth/callback/google`을 등록합니다. 운영 환경에서는 운영 도메인의 HTTPS 콜백을 등록하세요. 비밀 값은 커밋하지 않습니다. Google의 인증된 이메일과 계정 ID만 저장합니다.
+`npm run migrate`로 PostgreSQL 스키마를 준비한 뒤 `apps/server/.env.local`에 `GOOGLE_MOBILE_CLIENT_IDS`(앱 Google 로그인이 발급하는 ID 토큰의 `aud`로 허용할 클라이언트 ID 목록)를 설정합니다. 앱은 `POST /api/session`에 Google ID 토큰을 보내 30일 Bearer 세션 토큰을 받고, 서버는 토큰의 SHA-256 해시만 저장합니다. 웹 OAuth 로그인(Auth.js)과 `AUTH_*` 설정은 T25에서 없앴습니다. 비밀 값은 커밋하지 않습니다. Google의 인증된 이메일과 계정 ID만 저장합니다.
 
-여행 조회는 `/api/trips/[id]`에서 소유자에게만 허용하며 현재 응답은 `{ id }`입니다. 탈퇴는 사용자 행을 삭제하고 외래 키 연쇄 삭제로 여행과 하위 데이터를 제거합니다. 새 사용자 소유 데이터도 사용자 또는 여행의 삭제 연쇄에 연결해야 합니다. 기존 세션은 매 요청에서 사용자 존재를 확인하므로 탈퇴 후 다시 사용할 수 없습니다.
+여행 조회는 `/api/trips/[id]`에서 소유자에게만 허용하며 현재 응답은 `{ id }`입니다. 탈퇴(`DELETE /api/account`)는 사용자 행을 삭제하고 외래 키 연쇄 삭제로 여행·하위 데이터·모든 세션을 제거합니다. 새 사용자 소유 데이터도 사용자 또는 여행의 삭제 연쇄에 연결해야 합니다.
 
 ## 여행 데이터 마이그레이션
 

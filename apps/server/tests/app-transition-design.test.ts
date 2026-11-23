@@ -24,7 +24,7 @@ const exists = async (relative: string) => stat(path.join(root, relative)).then(
 
 test('§13 covers every T16 design topic and links the decision record', async () => {
   const titles = ['13.1 모노레포', '13.2 앱 ↔ 서버 API 계약', '13.3 모바일 세션 토큰', '13.4 구간 경로 모양',
-    '13.5 지도 어댑터', '13.6 앱 테스트 전략', '13.7 디자인 토큰', '13.8 T25에서 지울 웹 전용 코드'];
+    '13.5 지도 어댑터', '13.6 앱 테스트 전략', '13.7 디자인 토큰', '13.8 T25에서 지운 웹 전용 코드'];
   for (const title of titles) await section(title);
   const decisions = (await readdir(path.join(root, 'docs/decisions'))).filter(name => /^T16-.+\.md$/.test(name));
   assert.equal(decisions.length, 1);
@@ -98,20 +98,24 @@ test('test strategy separates CI checks from on-device human checks; tokens have
   assert.ok(await exists('docs/design.md'));
 });
 
-test('T25 removal list points at existing web-only code and accounts for every web screen and component', async () => {
+test('T25 removed every listed web-only path; only the share page and its display components remain', async () => {
   const removal = await section('13.8');
-  const [remove, keep] = removal.split('남기는 것:');
-  assert.ok(keep, 'Removal list must name what stays');
+  const [remove, keep] = removal.split('남긴 것:');
+  assert.ok(keep, 'Removal record must name what stays');
   const paths = (text: string) => [...text.matchAll(/`(apps\/server\/(?:src|public|scripts|tests)\/[^`]+)`/g)].map(match => match[1]);
   const removed = paths(remove);
   const kept = paths(keep);
   assert.ok(removed.length > 10);
-  for (const file of [...removed, ...kept]) assert.ok(await exists(file), `Listed path does not exist: ${file}`);
-  const covered = (file: string) => [...removed, ...kept].some(listed => file === listed || (listed.endsWith('/') && file.startsWith(listed)));
+  for (const file of removed) assert.ok(!await exists(file), `Web-only path still exists: ${file}`);
+  for (const file of kept) assert.ok(await exists(file), `Kept path does not exist: ${file}`);
+  const isKept = (file: string) => kept.some(listed => file === listed || (listed.endsWith('/') && file.startsWith(listed)));
 
   const pages = (await files('apps/server/src/app')).filter(file => file.endsWith('/page.tsx'));
-  for (const page of pages) assert.ok(covered(page), `Web page not classified: ${page}`);
-  assert.ok(kept.includes('apps/server/src/app/share/[token]/page.tsx'), 'Shared page must stay');
+  assert.deepEqual(pages, ['apps/server/src/app/share/[token]/page.tsx'], 'The share page is the only web page');
   const components = (await files('apps/server/src/components')).filter(file => /\.tsx?$/.test(file));
-  for (const component of components) assert.ok(covered(component), `Component not classified: ${component}`);
+  for (const component of components) assert.ok(isKept(component), `Component is not part of the share page: ${component}`);
+  assert.deepEqual(await readdir(path.join(root, 'apps/server/public')).catch(() => []), [], 'No PWA assets remain');
+  const server = JSON.parse(await readFile(path.join(root, 'apps/server/package.json'), 'utf8'));
+  assert.equal(server.dependencies['next-auth'], undefined);
+  assert.doesNotMatch(server.scripts.build, /verify-pwa/);
 });

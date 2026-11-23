@@ -8,18 +8,17 @@ T1–T13/T12B의 현재 연결과 T13A 정리를 기술한다. §7–8은 T7A �
 ## 1. 폴더 구조와 모듈 경계
 
 ```text
-apps/server/                   @travel/server (Next.js, T25까지 기존 웹 화면도 유지)
-  src/app/                     화면·서버 액션·인증/여행/장소/설정/동선/제약/공유 API
-  src/components/, auth.ts     기존 웹 UI·Auth.js 구성
-  src/lib/                     HTTP 정책, DB 풀, 마이그레이션 실행기, 인증
+apps/server/                   @travel/server (Next.js API + 공유 열람 페이지, T25에서 웹 화면 삭제)
+  src/app/                     세션/계정/여행/장소/설정/동선/제약/경로 모양/공유 API, 공유 페이지 `share/[token]`
+  src/components/itinerary/    공유 페이지 표시 컴포넌트(지도·타임라인·진단)
+  src/lib/                     HTTP 정책, DB 풀, 마이그레이션 실행기, Bearer 세션 인증
   src/{places,travel-time}/     제공자 포트·캐시·Google 어댑터·HTTP·조립
   src/{services,repositories}/ 서비스·SQL 저장소
   src/{itineraries,trips,settings,results,sharing}/ HTTP·조립·서버 포트와 core 재내보내기
   src/{scheduler,fare}/         기존 호출 지점용 core 재내보내기만 (계산 구현 없음)
   migrations/                  기존 001–006 SQL (내용·체크섬 유지)
-  public/                      온라인 전용 sw.js·아이콘 (T25까지)
-  scripts/                     migrate.ts, verify-pwa.mjs, benchmark-itinerary.ts
-  tests/                       HTTP·SQL·웹 UI·구조 검사, Playwright
+  scripts/                     migrate.ts, benchmark-itinerary.ts
+  tests/                       HTTP·SQL·공유 페이지·구조 검사, Playwright(Bearer HTTP 종단 시나리오·공유 페이지)
 packages/core/                 @travel/core (플랫폼과 무관한 순수 로직)
   src/scheduler/               시간창·식사 슬롯·방문 배치·수단 선택·수용량
   src/fare/                    도시 프로필 타입·택시 요금 계산
@@ -33,8 +32,8 @@ docs/, scripts/agent/, .github/ 저장소 공통 문서·자동화 (루트 유�
 
 | 경계 | 책임과 허용 의존성 | 경계 밖의 일 |
 |---|---|---|
-| `apps/server/src/app`, `apps/server/src/auth.ts` | 세션 확인, 입력 검증, HTTP/화면 변환, 서버 서비스 호출 | 스케줄링 알고리즘, 브라우저에서 DB/비밀 키 접근 |
-| 인증 코어 | [AuthStore](../apps/server/src/lib/auth/callbacks.ts)와 `authorizeTrip` 콜백에만 의존 | Google/SQL 구현을 콜백에 직접 결합 |
+| `apps/server/src/app` | 세션 확인, 입력 검증, HTTP 변환, 서버 서비스 호출, 공유 열람 페이지 | 스케줄링 알고리즘, 브라우저에서 DB/비밀 키 접근 |
+| 인증 코어 | [포트](../apps/server/src/lib/auth/ports.ts)(`GoogleIdTokenVerifier`·`GoogleUserStore`·`MobileSessionStore`)와 `authorizeTrip`에만 의존 | Google/SQL 구현을 서비스에 직접 결합 |
 | `packages/core/src/scheduler` | 호출자가 제공한 시간창·행렬만 계산. 런타임 의존성은 내부 모듈과 Temporal | DB, fetch, 공급자 호출, 환경 변수, 현재 시각·난수 읽기 |
 | `packages/core/src/fare` | 프로필·거리·주행시간·출발 instant·시간대에서 추정 요금 산출 | 요금표 조사, DB 조회, 환율 조회 |
 | 일정 서비스 (T12) | 저장소/제공자 포트 주입, 좌표·영업시간 조회, 순수 함수 호출 순서, 재검증 | HTTP 객체를 코어에 전달, 고정 제약의 임의 해제, SQL |
@@ -52,15 +51,16 @@ docs/, scripts/agent/, .github/ 저장소 공통 문서·자동화 (루트 유�
 
 ## 2. 데이터 흐름
 
-현재 연결된 실행 흐름은 `홈/서버 액션 → Auth.js → 인증 저장소 → PostgreSQL`,
-`GET /api/trips/[id] → auth → authorizeTrip → tripOwner → { id }`,
-`GET /api/places → auth → PlaceProvider → Google/좌표 캐시`,
-`/trips/new → POST /api/trips → auth → parseTripDraft → tripInputRepository → PostgreSQL`,
-`GET /api/city-profiles → auth → cityProfileRepository`,
-`POST /api/trips/[id]/itinerary → auth → authorizeTrip → ItineraryService → 저장소·장소·이동시간 포트 → 스케줄러·요금 → 저장`이다.
-T11 생활 설정은 `/trips/[id]/settings → GET/PUT /api/trips/[id]/settings → LivingSettingsService → LivingSettingsRepository`로 연결한다. 공용 계산은 기존 calculateDayWindow를 호출한다. 설정 저장 뒤 전체 동선은 T12 생성 API를 다시 호출해 계산하며, 화면 연결은 T13이다.
+현재 연결된 실행 흐름은 `앱 → POST /api/session → Google ID 토큰 검증 → 사용자·세션 저장소 → PostgreSQL`,
+`GET /api/trips/[id] → Bearer 인증 → authorizeTrip → tripOwner → { id }`,
+`GET /api/places → Bearer 인증 → PlaceProvider → Google/좌표 캐시`,
+`앱 여행 입력 → POST /api/trips → Bearer 인증 → parseTripCreation → tripInputRepository → PostgreSQL`,
+`GET /api/city-profiles → Bearer 인증 → cityProfileRepository`,
+`POST /api/trips/[id]/itinerary → Bearer 인증 → authorizeTrip → ItineraryService → 저장소·장소·이동시간 포트 → 스케줄러·요금 → 저장`이다.
+T11 생활 설정은 `앱 하루 생활 화면 → GET/PUT /api/trips/[id]/settings → LivingSettingsService → LivingSettingsRepository`로 연결한다. 공용 계산은 기존 calculateDayWindow를 호출한다. 설정 저장 뒤 전체 동선은 T12 생성 API를 다시 호출해 계산한다.
+T25부터 화면은 모바일 앱(`apps/mobile`)뿐이고 서버의 HTML은 공유 열람 페이지 하나다(§13.8).
 
-아래는 T8–T13의 전체 흐름이다(화면 부분은 T13). 화살표는 데이터 이동이며 호출 주체는 API의 서비스다.
+아래는 T8–T13의 전체 흐름이다(화면 부분은 T25 이후 모바일 앱). 화살표는 데이터 이동이며 호출 주체는 API의 서비스다.
 
 ```mermaid
 flowchart TD
@@ -354,7 +354,7 @@ T12는 캐시 만료/네트워크 실패를 영업 종료나 이동 불가와 �
 
 | 작업 | 코드/문서 차이 또는 결함 | T7A 처리와 후속 담당 | 검증 |
 |---|---|---|---|
-| T1 | README의 정적 홈·T2/T3 예정 설명은 현재 인증/스키마와 다름. DB 테스트가 읽기 전용이라는 설명도 오래됨 | 현재 구조를 이 문서와 README에 정정. 테스트는 격리 스키마를 만들고 지움 | [PWA](../apps/server/tests/pwa.test.ts), [SW](../apps/server/tests/service-worker.test.ts), [DB](../apps/server/tests/db.test.ts) |
+| T1 | README의 정적 홈·T2/T3 예정 설명은 현재 인증/스키마와 다름. DB 테스트가 읽기 전용이라는 설명도 오래됨 | 현재 구조를 이 문서와 README에 정정. 테스트는 격리 스키마를 만들고 지움 | PWA·SW 검사(T25에서 PWA와 함께 삭제), [DB](../apps/server/tests/db.test.ts) |
 | T2 | 다른 사용자 403은 순수 권한 함수 검사. 실제 Google OAuth 브라우저 흐름은 미검증 | 현재 보장 범위를 명시. 실제 로그인·로그아웃은 사람 확인 | [인증](../apps/server/tests/auth.test.ts) |
 | T2/T3 | 탈퇴 SQL 테스트에서 flights/lodgings/trip_places/stops 삭제 검증 누락 | 해당 행을 생성하고 모든 소유 테이블 삭제·공유 places 보존을 검사하도록 보강 | [여행 모델](../apps/server/tests/travel-model.test.ts) |
 | T3 | 스키마/SQL 테스트는 있고 여행 저장소·생성/수정 API는 없음. GET은 `{id}`만 반환 | 후속 저장소 계약 정의, T10/T12 구현. 기존 T2 nullable 여행도 명시적으로 처리 | [SQL 모델](../apps/server/tests/travel-model.test.ts), 문서 계약 타입 검사 |
@@ -387,7 +387,7 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
 
 이 절은 T11/T12에서 후속 연결로 남겼던 결과 화면·전체 재계산·구간 수동 지정의 현재 구현을 보완한다.
 
-- `/trips/[id]/result`와 [결과 컴포넌트](../apps/server/src/components/itinerary/index.tsx)가 지도/타임라인/비교/초과 선택을 연결한다.
+- T13의 웹 `/trips/[id]/result`와 결과 컴포넌트는 T25에서 지웠다. 같은 API를 앱 결과 화면(§13.4.3)이 쓰고, 표시 컴포넌트(지도·타임라인·진단)는 공유 페이지(§11)가 쓴다.
 - [공유 DTO](../apps/server/src/results/model.ts), [검증](../apps/server/src/results/input.ts), [표시 변환](../apps/server/src/results/presentation.ts)은 브라우저/서버 공용이며 DB·네트워크에 의존하지 않는다.
 - [결과 서비스](../apps/server/src/services/itinerary/editing.ts)는 ConstraintRepository와 장소 제공자 포트만 사용한다. [HTTP](../apps/server/src/results/http.ts)가 인증·소유권·동일 출처·오류를 처리하고 server.ts가 구체 구현을 조립한다.
 - [저장소](../apps/server/src/repositories/itinerary-constraints.ts)는 여행 행 잠금 아래 소유권과 전체 입력 해시를 재검사하고 방문/수단 제약을 원자적으로 저장한다.
@@ -396,8 +396,8 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
 - 방문 제약은 기존 trip_places에, 구간 제약은 [006](../apps/server/migrations/006_itinerary_constraints.sql)의 trips.leg_modes에 저장한다. 후자는 날짜·출발/도착 장소 ID·수동 수단 배열이다. 장소 이름/귀속 정보는 실시간 응답에만 포함한다.
 - [일상 구간 적용](../apps/server/src/services/itinerary/constraints.ts)은 기존 짐 속성을 유지하고, 공항 이동은 기존 transfer 선택에 fixedMode를 전달한다. 입력 해시에 수단 제약도 포함된다.
 - PUT 성공 뒤 기존 POST `/api/trips/[id]/itinerary`로 재검증한다. POST 응답에 inputHash를 추가해 다른 입력으로 생성된 결과 표시를 막는다. 생성 실패 시 저장한 제약은 유지된다. 화면 재접속은 입력을 복원하고 버튼으로 재생성한다.
-- 생활 설정 저장 뒤 [전체 검증](../apps/server/src/components/living-settings/itinerary-preview.tsx)도 기존 POST를 호출한다. 입력 중 TIME_WINDOWS 미리보기는 전체 검증과 구분한다.
-- [지도 어댑터](../apps/server/src/components/itinerary/google-map.ts)는 브라우저 전용 Maps 키/지도 ID로 고급 마커를 표시한다. 지도 로딩 실패에도 장소 목록에서 편집할 수 있다.
+- 생활 설정 저장 뒤 전체 검증도 기존 POST를 호출한다(T25부터 앱 하루 생활 화면). 입력 중 TIME_WINDOWS 미리보기는 전체 검증과 구분한다.
+- [지도 어댑터](../apps/server/src/components/itinerary/google-map.ts)는 브라우저 전용 Maps 키/지도 ID로 고급 마커를 표시한다(T25부터 공유 페이지 전용). 지도 로딩 실패에도 타임라인은 표시된다.
 
 이 결정의 이유·대안·검증은 [T13 ADR](decisions/T13-result-ui-and-constraints.md)에 기록한다. T12B의 날짜별 짐 처리 모듈은 변경하지 않는다.
 
@@ -462,7 +462,7 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력, T22 결과 화면(§13.4.3, §13.5), T23 필수 선택, T24 공유·계정(§13.4.4)까지 구현했다. T25는 §13.8의 계획을 따른다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력, T22 결과 화면(§13.4.3, §13.5), T23 필수 선택, T24 공유·계정(§13.4.4)까지 구현했다. T25가 §13.8의 웹 전용 코드와 Auth.js 쿠키 경로를 지우고 종단 시나리오를 Bearer HTTP로 바꿨다([T25 결정](decisions/T25-web-removal-and-bearer-journey.md)).
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
 결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
@@ -474,8 +474,8 @@ npm workspaces(`"workspaces": ["apps/*", "packages/*"]`). 루트 `lint`·`typech
 
 ```text
 apps/
-  server/                  @travel/server. Next.js API·공유 페이지·기존 웹 화면(T25까지)
-    src/app/api/           기존 API, session·account(T18 구현), itinerary/shapes(T19)는 후속
+  server/                  @travel/server. Next.js API·공유 페이지(웹 화면은 T25에서 삭제)
+    src/app/api/           기존 API, session·account(T18), itinerary/shapes(T19)
     src/app/share/         공유 열람 페이지
     src/{lib,places,travel-time,services,repositories,itineraries,trips,settings,results,sharing,sessions}/
                            HTTP·서비스·저장소·제공자·조립, 서버 포트 유지
@@ -498,8 +498,8 @@ packages/
 |---|---|---|---|
 | `packages/design-tokens` | 디자인 값(hex 문자열, pt 숫자, ms, 이징 계수). 플랫폼 변환 없음 | 없음 | 다른 모든 패키지, React, React Native, CSS |
 | `packages/core` | scheduler·fare 순수 계산, 공용 DTO·입력 검증·표시 변환 | `@js-temporal/polyfill` | Node 내장 모듈(`node:*`), `pg`, `fetch`·환경 변수, React, React Native, Next, `apps/*` |
-| `apps/server` | HTTP 계약·인증·소유권, 서비스·저장소·Google 어댑터, 공유 열람 페이지 | core, design-tokens(공유 페이지), `next`, `pg`, `jose`, T25 전까지 `next-auth` | `apps/mobile`, React Native |
-| `apps/mobile` | 화면, API 클라이언트, 세션 보관, 지도 어댑터 | core, design-tokens, `expo`·`react-native`·`react-native-maps`·`expo-secure-store`·네이티브 Google 로그인 | `apps/server`(타입 포함), `pg`, Google 서버 키, 웹 화면 코드(`apps/server/src/components`) |
+| `apps/server` | HTTP 계약·인증·소유권, 서비스·저장소·Google 어댑터, 공유 열람 페이지 | core, design-tokens(공유 페이지), `next`, `pg`, `jose` (`next-auth`는 T25에서 제거) | `apps/mobile`, React Native |
+| `apps/mobile` | 화면, API 클라이언트, 세션 보관, 지도 어댑터 | core, design-tokens, `expo`·`react-native`·`react-native-maps`·`expo-secure-store`·네이티브 Google 로그인 | `apps/server`(타입 포함), `pg`, Google 서버 키, 공유 페이지 컴포넌트(`apps/server/src/components`) |
 
 T17에서 옮긴 공용 코드(아래 서버 경로는 호환용 재내보내기와 서버 포트를 유지):
 
@@ -536,7 +536,7 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 |---|---|---|---|
 | `POST /api/session` (T18 신규) | `{ idToken }` | 201 `{ token, expiresAt }` | 400 `INVALID_INPUT`, 401 `INVALID_GOOGLE_TOKEN`, 413, 415, 503 `PROVIDER_UNAVAILABLE`(JWKS), 500 |
 | `DELETE /api/session` (T18 신규) | Bearer | 204 (이미 없는 토큰도 204) | 401 `UNAUTHENTICATED`(헤더 없음·형식 오류), 500 |
-| `DELETE /api/account` (T18 신규, 서버 액션 `withdraw` 대체) | Bearer | 204 | 401, 500 |
+| `DELETE /api/account` (T18 신규, T25에서 웹 서버 액션 `withdraw` 삭제) | Bearer | 204 | 401, 500 |
 | `GET /api/city-profiles` | `?cityCode=` | `{ profile: CityProfile \| null, recommendedPolicy }` | 400, 401, 500 |
 | `GET /api/places` | `?query=&regionCode=` | `{ places: PlaceSummary[], attribution }` | 400, 401, 502/503 `PROVIDER_*`, 500 |
 | `GET /api/places/[id]` (`id`=Google 장소 ID) | `?timeZone=&date=…` 또는 `?fields=location` | `{ place: PlaceDetails \| PlaceLocation, attribution }` | 400, 401, 404, 502/503, 500 |
@@ -551,7 +551,8 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
 | `POST /api/trips/[id]/share` | — | `{ path: "/share/{token}" }`. 앱은 설정한 서버 주소와 합쳐 OS 공유 시트로 보냄 | 401, 403, 404, 405, 500 |
 | `GET /api/share/[token]` (비로그인) | — | `SharedItinerary` | 404, 405, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
-| `GET /api/auth/[...nextauth]`, `POST /api/auth/[...nextauth]` | 웹 OAuth(Auth.js) | — | 앱은 쓰지 않음. T25에서 삭제 |
+
+웹 OAuth 라우트 `GET/POST /api/auth/[...nextauth]`(Auth.js)는 T25에서 삭제했다. 지금은 404다.
 
 오류 본문은 지금의 `{ error: string, fields? }`에 기계용 `code`를 더한다. 기존 필드와 상태 코드는 바꾸지 않는다.
 `fields`는 지금 두 형태가 있고 둘 다 유지한다.
@@ -588,7 +589,7 @@ export const documentedApiErrors: [
 
 | 항목 | 설계 |
 |---|---|
-| 발급 | 앱이 네이티브 Google 로그인으로 ID 토큰을 받아 `POST /api/session`. 서버는 Google JWKS(`https://www.googleapis.com/oauth2/v3/certs`)로 RS256 서명, `iss`(`accounts.google.com` 또는 `https://accounts.google.com`), `aud`(설정값 `GOOGLE_MOBILE_CLIENT_IDS`: iOS·Android 클라이언트 ID 목록), `exp`(허용 오차 60초), `email_verified === true`를 검사한다. 통과하면 기존 `googleIdentity` → `upsertGoogleUser`로 사용자 ID를 얻는다 |
+| 발급 | 앱이 네이티브 Google 로그인으로 ID 토큰을 받아 `POST /api/session`. 서버는 Google JWKS(`https://www.googleapis.com/oauth2/v3/certs`)로 RS256 서명, `iss`(`accounts.google.com` 또는 `https://accounts.google.com`), `aud`(설정값 `GOOGLE_MOBILE_CLIENT_IDS`: iOS·Android 클라이언트 ID 목록), `exp`(허용 오차 60초), `email_verified === true`를 검사한다. 통과하면 `upsertGoogleUser`(`GoogleUserStore` 포트, SQL은 `lib/auth/store.ts`)로 사용자 ID를 얻는다 |
 | 토큰 형식 | 난수 32바이트의 base64url 43자. 의미 없는 불투명 값(JWT 아님). 원문은 발급 응답에만 있다 |
 | 저장 형식 | 마이그레이션 007 `mobile_sessions(id uuid PK, user_id uuid NOT NULL REFERENCES users ON DELETE CASCADE, token_hash text NOT NULL UNIQUE, expires_at timestamptz NOT NULL, created_at, updated_at)`, `user_id` 인덱스. `token_hash`는 SHA-256 hex(공유 토큰과 같은 방식). ADR 0004의 행 시각·트리거·FK 인덱스 규칙을 따른다 |
 | 만료 | 발급 후 30일 고정, 사용해도 연장하지 않음. 만료되면 401 → 앱이 다시 Google 로그인. 발급 때 같은 사용자의 만료 행을 지운다 |
@@ -596,8 +597,8 @@ export const documentedApiErrors: [
 | 폐기 | 로그아웃 `DELETE /api/session`이 해당 해시 행 삭제. 앱은 응답과 관계없이 보안 저장소의 토큰을 지운다 |
 | 탈퇴 | `DELETE /api/account` → 기존 `deleteUser` → FK cascade로 여행 데이터와 **모든** 세션 삭제 |
 | 앱 저장 | `expo-secure-store`(iOS Keychain, Android Keystore)에 `{ token, expiresAt }`. AsyncStorage·로그에 쓰지 않음. 401을 받으면 지우고 로그인 화면으로 |
-| 소유권 연결 | `trips`, `places`, `itineraries`, `route-shapes`, `settings`, `results`, `sharing`의 `server.ts`가 공통 `requestAuthenticator.userId(request)`를 주입한다. `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 인증을 거친다. 소유자 전용 라우트에서는 `authorizeTrip`이 접근 권한(401/403/404)을 검사하고 저장소가 `owner_id`로 조회 범위를 제한한다. T25에서 Auth.js 라우트와 웹 화면(`apps/server/src/app/page.tsx`·`apps/server/src/app/actions.ts`)의 `apps/server/src/auth.ts` 참조를 제거한다 |
-| 전환 기간 (T18–T25) | `Authorization` 헤더가 있으면 Bearer만 검사하고 실패면 401(쿠키로 넘어가지 않음). 헤더가 없으면 Auth.js 쿠키 세션. T25가 쿠키 경로와 Auth.js를 지운다 |
+| 소유권 연결 | `trips`, `places`, `itineraries`, `route-shapes`, `settings`, `results`, `sharing`의 `server.ts`가 공통 `requestAuthenticator.userId(request)`를 주입한다. `apps/server/src/app/api/trips/[id]/route.ts`(`GET /api/trips/[id]`)도 같은 인증을 거친다. 소유자 전용 라우트에서는 `authorizeTrip`이 접근 권한(401/403/404)을 검사하고 저장소가 `owner_id`로 조회 범위를 제한한다. T25에서 Auth.js 라우트와 `apps/server/src/auth.ts`, 이를 쓰던 웹 화면을 지웠다 |
+| 전환 기간 (T18–T25, 종료) | T18–T24에는 `Authorization` 헤더가 없을 때 Auth.js 쿠키 세션을 받았다. T25부터는 Bearer 세션만 인증한다. 헤더가 없거나(쿠키만 있어도) 형식 오류·없음·만료·폐기면 401 `UNAUTHENTICATED`다 |
 | 공유 토큰 | 별개. 공유 토큰은 읽기 전용 GET만 허용하고 세션으로 승격되지 않는다(T14) |
 
 **T20 앱 구현:** `apps/mobile/src/auth/session-manager.ts`가 복원·로그인·로그아웃·만료를 관리한다.
@@ -616,21 +617,22 @@ SDK가 `webClientId`를 사용하므로 서버의 허용 aud(`GOOGLE_MOBILE_CLIE
 
 | 파일 | 책임 |
 |---|---|
-| `ports.ts` | 포트 타입만: `RequestAuthenticator`, `GoogleIdTokenVerifier`, `MobileSessionStore`, `IssuedSession` (런타임 코드 없음) |
+| `ports.ts` | 포트 타입만: `RequestAuthenticator`, `GoogleIdTokenVerifier`, `GoogleUserStore`, `MobileSessionStore`, `IssuedSession` (런타임 코드 없음) |
+| `store.ts` | 사용자 SQL: `upsertGoogleUser`, `deleteUser`(탈퇴), `tripOwner`(소유권 조회) |
 | `google-id-token.ts` | `JoseGoogleIdTokenVerifier`(`jose`의 원격 JWKS, RS256·`iss`·`aud`·`exp` 60초 오차·`email_verified`). 토큰 문제는 `null`(401), 키를 못 읽으면 `GoogleKeysUnavailableError`(503). 허용 `aud`가 비어 있으면 모든 토큰을 거부 |
 | `mobile-sessions.ts` | `MobileSessionService`(ID 토큰 → `upsertGoogleUser` → 불투명 토큰 발급, 로그아웃) |
-| `request-authenticator.ts` | `readBearer`(헤더 없음/형식 오류/토큰), `SessionRequestAuthenticator`(헤더가 있으면 Bearer만, 없으면 선택적 쿠키 함수) |
+| `request-authenticator.ts` | `readBearer`(헤더 없음/형식 오류/토큰), `SessionRequestAuthenticator`(유효한 Bearer 세션만 인증. T25에서 쿠키 함수 제거) |
 | `session-store.ts` | `PostgresMobileSessionStore`(마이그레이션 `007_mobile_sessions.sql`) |
-| `server.ts` | 조립: `requestAuthenticator`(Bearer + Auth.js 쿠키, 6개 모듈과 `GET /api/trips/[id]`), `bearerAuthenticator`(Bearer만, `/api/account`) |
+| `server.ts` | 조립: `requestAuthenticator`(Bearer만, 7개 모듈·`GET /api/trips/[id]`·`/api/account`). T25에서 쿠키를 받던 판과 Bearer 전용 판이 같아져 `bearerAuthenticator`를 합쳤다 |
 | `../opaque-token.ts` | 43자 난수 토큰 생성·형식 검사·SHA-256 해시. 공유 링크(T14)와 같은 규칙 하나 |
 
 HTTP는 `apps/server/src/sessions/http.ts`(`sessionHandlers`: POST·DELETE `/api/session`, `accountHandlers`: DELETE `/api/account`)와
 조립 `sessions/server.ts`에 있다. 허용 `aud`는 환경 변수 `GOOGLE_MOBILE_CLIENT_IDS`(쉼표 구분)다.
-`/api/account`는 쿠키 세션을 받지 않는다. 웹 탈퇴는 T25까지 기존 서버 액션 `withdraw`를 쓴다.
+어떤 API도 쿠키 세션을 받지 않는다(T25). 웹 탈퇴 서버 액션 `withdraw`는 T25에서 지웠고 탈퇴는 `/api/account`뿐이다.
 
 ```typescript
 // T18: 인증 포트(lib/auth/ports.ts). 구현과 문서가 같은 export를 사용한다.
-export type { RequestAuthenticator, GoogleIdTokenVerifier, GoogleIdentity, MobileSessionStore, IssuedSession } from '../apps/server/src/lib/auth/ports';
+export type { RequestAuthenticator, GoogleIdTokenVerifier, GoogleIdentity, GoogleUserStore, MobileSessionStore, IssuedSession } from '../apps/server/src/lib/auth/ports';
 import type {
   RequestAuthenticator as Authenticator, GoogleIdTokenVerifier as Verifier, MobileSessionStore as SessionStore,
 } from '../apps/server/src/lib/auth/ports';
@@ -646,7 +648,7 @@ export const documentedAuthPorts = {
 T18 검증: 가짜 RS256 키와 JWKS 픽스처(`apps/server/tests/helpers/google-id-tokens.ts`, 실제 원격 JWKS 로더에 가짜 fetch)로 서명·발급자·대상·만료 실패를 각각 401로 확인하고,
 기존 403 소유권 테스트를 모두 Bearer 경로로도 실행한다(요구사항 §5 주의, `apps/server/tests/bearer-ownership.test.ts`).
 직접 인증 라우트 `GET /api/trips/[id]`도 같은 검사를 받는다: 유효 Bearer + 본인 여행 200, 잘못된 토큰(형식 오류·없음·만료·폐기) 401, 다른 소유자 여행 403.
-또 `apps/server/src/app/api/` 아래 라우트가 Auth.js 라우트 외에는 `apps/server/src/auth.ts`를 import하지 않는지 구조 테스트로 확인한다.
+T25부터는 `apps/server/src/app/api/` 아래에 Auth.js 라우트가 없고 어떤 라우트도 Auth.js를 import하지 않는지, 쿠키만 있는 요청이 모든 사용자 API에서 401인지 구조·HTTP 테스트로 확인한다(`app-transition-contract.test.ts`, `bearer-ownership.test.ts`).
 
 ### 13.4 구간 경로 모양 전달
 
@@ -771,7 +773,11 @@ export const documentedResultMap: [
 | 앱 빌드 | `expo export --platform ios`·`--platform android` JS 번들 생성, `tsc --noEmit`, ESLint. T26에서 `expo config` 검사 | 네이티브 빌드·설치(Xcode, APK), 7일 재설치 |
 | 로그인·지도 SDK | 네이티브 모듈은 목으로 대체해 흐름만 검사 | 실제 Google 로그인(iOS·Android), Google 지도 표시, OS 공유 시트, Keychain/Keystore 보관 |
 
-기존 Playwright 화면 시나리오(`npm run test:e2e`)는 T25까지 웹 화면을 검사하고, T25가 Bearer HTTP 종단 시나리오로 바꾼다.
+`npm run test:e2e`(Playwright)는 T25부터 웹 화면 대신 [Bearer HTTP 종단 시나리오](../apps/server/tests/e2e/journey.spec.ts)를 실행한다.
+실제 `next start` 서버·세션 API·라우트·서비스·PostgreSQL을 그대로 쓰고 Google만 바꾼다: 서버 프로세스에 미리 불러온 [Google 대역](../apps/server/tests/e2e/support/google-doubles.mjs)이
+ID 토큰 서명 키(JWKS)·Places·Routes `fetch`에 결정적으로 답하고, [실행별 가짜 서명 키](../apps/server/tests/e2e/support/google-key.ts)로 만든 ID 토큰을 테스트가 `POST /api/session`에 보낸다.
+[앱 요청 도우미](../apps/server/tests/e2e/support/app-client.ts)는 `apps/mobile/src/api`와 같은 경로·본문·`Idempotency-Key`로 흐름 1–10을 호출한다.
+공유 열람 페이지는 같은 시나리오에서 브라우저(375px, 지도 스텁)로 확인하고, `sharing.spec.ts`·`route-shapes-auth.spec.ts`가 공유 페이지와 경로 모양 인증을 따로 검사한다.
 
 ### 13.7 디자인 토큰 위치
 
@@ -788,26 +794,27 @@ T20 구현 완료: `colors`, `legColors`, `typography`, `spacing`, `radius`, `si
 `useReducedMotion`은 OS 설정 변경을 구독하며 켜져 있으면 이동을 없앤다. 루트 `build`는 iOS·Android export와 토큰 JS/선언 파일을 생성한다.
 서버와 Expo의 React 패치가 달라 Metro/Jest 앱 해석기는 모든 네이티브 의존성의 React를 앱 사본으로 맞춘다.
 
-### 13.8 T25에서 지울 웹 전용 코드
+### 13.8 T25에서 지운 웹 전용 코드
 
-T25 전까지는 앱 화면을 옮길 때 참고하는 기준 구현으로 남긴다. 앱 코드는 이 파일들을 import하지 않는다.
-경로는 T17 이동 후 기준이다. 삭제 전까지 기존 웹 동작과 테스트를 유지한다.
+T25가 아래 웹 전용 코드를 지웠다(T16 목록, 경로는 T17 이동 후 기준). 서버의 HTML은 공유 열람 페이지 하나이고, 나머지 화면은 모바일 앱이다.
+구조 테스트(`app-transition-design.test.ts`)가 지운 경로가 없고 마지막 문단에 남긴 경로가 있는지, 웹 페이지가 공유 페이지 하나뿐인지 검사한다.
 
-- 웹 화면·로그인: `apps/server/src/app/page.tsx`, `apps/server/src/app/actions.ts`, `apps/server/src/app/manifest.ts`, `apps/server/src/app/trips/new/page.tsx`,
+- 웹 화면·로그인: `apps/server/src/app/page.tsx`, `apps/server/src/app/actions.ts`(로그인·로그아웃·탈퇴 서버 액션), `apps/server/src/app/manifest.ts`, `apps/server/src/app/trips/new/page.tsx`,
   `apps/server/src/app/trips/[id]/settings/page.tsx`, `apps/server/src/app/trips/[id]/result/page.tsx`, `apps/server/src/app/api/auth/[...nextauth]/route.ts`, `apps/server/src/auth.ts`
+- Auth.js 전용 인증 코드: `apps/server/src/lib/auth/callbacks.ts`(`googleIdentity`·`validUserId`는 Auth.js 콜백만 썼다. 모바일 로그인이 쓰던 `AuthStore` 타입은 `ports.ts`의 `GoogleUserStore`로 옮겼다), `store.ts`의 `userExists`,
+  `lib/auth/server.ts`의 쿠키 함수와 `bearerAuthenticator`(Bearer 전용 `requestAuthenticator`로 합침)
 - 웹 컴포넌트: `apps/server/src/components/trip-input-form.tsx`, `apps/server/src/components/place-picker.tsx`, `apps/server/src/components/city-profile-card.tsx`,
   `apps/server/src/components/living-settings/`, `apps/server/src/components/itinerary/index.tsx`, `apps/server/src/components/itinerary/visit-editor.tsx`,
   `apps/server/src/components/itinerary/share-controls.tsx`, `apps/server/src/components/itinerary/generation.ts`, `apps/server/src/components/itinerary/request-id.ts`, `apps/server/src/components/service-worker.tsx`
-- 기존 결과 화면 스타일: `apps/server/src/app/trips/[id]/result/result.css`
-- PWA: `apps/server/public/sw.js`, `apps/server/public/icon-192.png`, `apps/server/public/icon-512.png`, `apps/server/scripts/verify-pwa.mjs`(와 `build` 스크립트의 호출),
-  `apps/server/next.config.ts`의 `/sw.js` 헤더, `apps/server/src/app/layout.tsx`의 manifest·서비스워커 등록 부분(레이아웃 자체는 공유 페이지용으로 남김)
+- 기존 결과 화면 스타일: `apps/server/src/app/trips/[id]/result/result.css`. 루트 `globals.css`는 공유 페이지가 쓰는 기본 규칙만 남겼다.
+- PWA: `apps/server/public/sw.js`, `apps/server/public/icon-192.png`, `apps/server/public/icon-512.png`, `apps/server/scripts/verify-pwa.mjs`와 `build` 스크립트의 호출,
+  `next.config.ts`의 `/sw.js` 헤더, 루트 레이아웃의 서비스워커 등록과 테마 색
 - 테스트: `apps/server/tests/pwa.test.ts`, `apps/server/tests/service-worker.test.ts`, `apps/server/tests/trip-input-ui.test.ts`, `apps/server/tests/living-settings-ui.test.ts`,
-  `apps/server/tests/result-ui.test.ts`(공유 화면이 쓰는 표시 검사는 `apps/server/tests/sharing-ui.test.ts`에 남김), `apps/server/tests/helpers/itinerary-replay.ts`, `apps/server/tests/e2e/trip-input.spec.ts`,
-  `apps/server/tests/e2e/living-settings.spec.ts`, `apps/server/tests/e2e/result.spec.ts`, `apps/server/tests/helpers/e2e-places.ts`,
-  `apps/server/tests/e2e/journey.spec.ts`(Bearer HTTP 종단 시나리오로 교체)
+  `apps/server/tests/result-ui.test.ts`, `apps/server/tests/helpers/itinerary-replay.ts`, `apps/server/tests/e2e/trip-input.spec.ts`,
+  `apps/server/tests/e2e/living-settings.spec.ts`, `apps/server/tests/e2e/result.spec.ts`, `apps/server/tests/helpers/e2e-places.ts`. 웹 화면 종단 시나리오는 같은 파일 이름의 Bearer HTTP 시나리오로 바꿨다(§13.6).
 - 의존성: `next-auth`. `@googlemaps/js-api-loader`·`@types/google.maps`는 공유 페이지 지도가 쓰므로 남긴다.
 
-남기는 것: 공유 열람 페이지 `apps/server/src/app/share/[token]/page.tsx`와 표시 컴포넌트 `apps/server/src/components/itinerary/shared.tsx`, `apps/server/src/components/itinerary/map.tsx`,
+남긴 것: 공유 열람 페이지 `apps/server/src/app/share/[token]/page.tsx`와 표시 컴포넌트 `apps/server/src/components/itinerary/shared.tsx`, `apps/server/src/components/itinerary/map.tsx`,
 `apps/server/src/components/itinerary/google-map.ts`, `apps/server/src/components/itinerary/timeline.tsx`, `apps/server/src/components/itinerary/diagnostics.tsx`,
-공유 경로의 `apps/server/src/app/share/[token]/layout.tsx`와 `apps/server/src/app/share/[token]/share.css`, 웹 OAuth를 뺀 모든 API 라우트,
-Google 신원 확인 `apps/server/src/lib/auth/callbacks.ts`와 사용자 SQL `apps/server/src/lib/auth/store.ts`(T18 모바일 로그인이 재사용).
+공유 경로의 `apps/server/src/app/share/[token]/layout.tsx`와 `apps/server/src/app/share/[token]/share.css`, 루트 `apps/server/src/app/layout.tsx`·`apps/server/src/app/globals.css`, 웹 OAuth를 뺀 모든 API 라우트,
+사용자 SQL `apps/server/src/lib/auth/store.ts`(모바일 로그인·탈퇴·소유권 조회), 공유 화면 검사 `apps/server/tests/sharing-ui.test.ts`, 종단 시나리오 `apps/server/tests/e2e/journey.spec.ts`.

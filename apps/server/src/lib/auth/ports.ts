@@ -4,6 +4,8 @@
 export interface RequestAuthenticator { userId(request: Request): Promise<string | undefined> }
 
 export type GoogleIdentity = { googleId: string; email: string };
+/** Application user rows keyed by the verified Google account; returns the user ID (SQL: `store.ts`). */
+export interface GoogleUserStore { upsertGoogleUser(googleId: string, email: string): Promise<string> }
 /** `null`: the token itself is unacceptable (401). Throws when Google's keys cannot be read (503). */
 export interface GoogleIdTokenVerifier { verify(idToken: string): Promise<GoogleIdentity | null> }
 
