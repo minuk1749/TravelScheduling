@@ -72,7 +72,7 @@ test('reopening a date-only conflict lets the traveler review and remove one sav
   expect(sheet().getByText('대중교통 23분 · ¥360')).toBeVisible();
 });
 
-test('day candidates exclude directly matched legs and never come from a visit-specific or undated warning', () => {
+test('an exact leg is excluded from broad review, and another date uses only its own visit timing warning', () => {
   const result = lodgingConflict();
   result.capacity.issues.push({ date: D2, reason: 'UNREACHABLE', from: reverse.from, to: reverse.to },
     { date: D2, reason: 'MEAL_UNAVAILABLE', slot: 'LUNCH' });
@@ -82,7 +82,10 @@ test('day candidates exclude directly matched legs and never come from a visit-s
   const mixed = conflictingModeFixes(saved, D2, causes);
   expect(mixed.matched.map(row => row.fix)).toEqual([reverse]);
   expect(mixed.review.map(row => row.fix)).toEqual([slow]);
-  expect(conflictingModeFixes(saved, D1, causes)).toEqual({ matched: [], review: [] });
+  const firstDay = conflictingModeFixes(saved, D1, causes);
+  expect(firstDay.matched).toEqual([]);
+  expect(firstDay.connected).toEqual([]);
+  expect(firstDay.review.map(row => row.fix)).toEqual([priorDate]);
 });
 
 test.each(['meal', 'flight'])('a %s timing issue offers the fixes saved on its reported date for review', issue => {

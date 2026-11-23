@@ -57,25 +57,29 @@ export function ConflictActions({ status, onEdit, onReleaseMode, onRevert, onEdi
   onEdit(card: CardModel): void; onReleaseMode(leg: LegEdit): void; onRevert(): void; onEditConditions(): void;
 }) {
   const target = status.target;
-  const { matched, review } = status.modeFixes;
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const { matched, connected, review } = status.modeFixes;
+  const [reviewOpen, setReviewOpen] = useState<'connected' | 'review' | null>(null);
+  const choices = reviewOpen ? status.modeFixes[reviewOpen] : [];
   const releaseButton = ({ fix, label }: ConflictModeFix) =>
     <Button key={JSON.stringify([fix.date, fix.from, fix.to])} label={label}
-      onPress={() => { setReviewOpen(false); onReleaseMode(fix); }} />;
+      onPress={() => { setReviewOpen(null); onReleaseMode(fix); }} />;
   return <View style={styles.block}>
     {status.messages.map(message => <Text key={message} style={[text.tiny, { color: colors.red.text }]}>⚠ {message}</Text>)}
     <Text style={styles.secondary}>고정된 장소는 자동으로 옮기지 않아요</Text>
     <View style={styles.row}>
       {matched.map(releaseButton)}
-      {review.length > 0 && <Button label={matched.length ? '같은 날짜의 다른 이동수단 고정 검토' : '이 날짜의 이동수단 고정 검토'}
-        onPress={() => setReviewOpen(true)} />}
+      {connected.length > 0 && <Button label="충돌 방문과 연결된 이동수단 고정 검토" onPress={() => setReviewOpen('connected')} />}
+      {review.length > 0 && <Button label={matched.length || connected.length || target ? '같은 날짜의 다른 이동수단 고정 검토' : '이 날짜의 이동수단 고정 검토'}
+        onPress={() => setReviewOpen('review')} />}
       {target ? <Button label={`${target.name} 고정 수정`} onPress={() => onEdit(target)} />
         : <Button label="여행 조건 수정" onPress={onEditConditions} />}
       {status.canUndo && <Button label="변경 취소" primary onPress={onRevert} />}
     </View>
-    {reviewOpen && review.length > 0 && <FormSheet title={`${dateTitle(review[0].fix.date)} 이동수단 고정`}
-      close={() => setReviewOpen(false)} footer={<Button label="취소" onPress={() => setReviewOpen(false)} />}>
-      {review.map(releaseButton)}
+    {choices.length > 0 && <FormSheet title={`${dateTitle(choices[0].fix.date)} 이동수단 고정`}
+      close={() => setReviewOpen(null)} footer={<Button label="취소" onPress={() => setReviewOpen(null)} />}>
+      {target && <Text style={styles.secondary}>{reviewOpen === 'connected' ? '충돌 방문을 오가는 구간이에요.' : '이 날짜에 저장한 다른 구간이에요.'}
+        {' '}해제할 고정을 선택하면 방문 조건을 유지하고 다시 계산해요.</Text>}
+      {choices.map(releaseButton)}
     </FormSheet>}
   </View>;
 }

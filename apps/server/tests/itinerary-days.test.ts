@@ -11,6 +11,30 @@ import { localDateTime, localTime, schedule, service } from './helpers/itinerary
 const [arrivalFlight, departureFlight] = sampleTrip().flights;
 const itemsOf = (day: { stops: readonly { start: string; end: string }[]; legs: readonly { start: string; end: string }[] }) => [...day.stops, ...day.legs];
 
+// The mobile conflict screen must also work without a previous itinerary or an explicitly rejected leg.
+test('a saved walk on either side of a visit or via the airport can surface as only the booked visit missing its window', async () => {
+  const itinerary = service().service;
+  for (const [date, fixedTime, from, to, returnTime] of [
+    ['2026-12-02', '09:30', 'hotel', 'sensoji', '21:00'],
+    ['2026-12-02', '16:30', 'sensoji', 'hotel', '17:30'],
+    ['2026-12-01', '12:00', 'airport', 'hotel', '21:00'],
+    ['2026-12-03', '13:00', 'hotel', 'airport', '21:00'],
+  ] as const) {
+    const input = sampleTrip([{ key: 'sensoji', minutes: 30, fixedDate: date, fixedTime }], {
+      mealSlots: [], daySettings: [{ date, departureTime: '09:00', returnTime, mealSlots: [] }],
+    });
+    const result = await itinerary.compute({ ...input, legModes: [{ date, from: placeId(from), to: placeId(to), mode: 'WALK' }] });
+    assert.equal(result.status, 'CONFLICT');
+    assert.deepEqual(result.capacity.unplaced, [{ visitId: 'visit-sensoji', reason: 'TIME_WINDOW', fixed: true }]);
+    assert.deepEqual([...result.capacity.issues, ...result.transferIssues, ...result.flightConflicts], []);
+    const released = await itinerary.compute(input);
+    assert.equal(released.status, 'OK');
+    const stop = schedule(released).days.flatMap(day => day.stops).find(row => row.kind === 'VISIT' && row.visitId === 'visit-sensoji');
+    assert.ok(stop);
+    assert.equal(localDateTime(stop.start), `${date}T${fixedTime}`);
+  }
+});
+
 test('T12 direct-to-airport ends the last day at the airport with luggage legs; no lodging transfer', async () => {
   const result = await service().service.compute(sampleTrip(okVisits, { luggageOption: 'DIRECT_TO_AIRPORT' }));
   assert.equal(result.status, 'OK');

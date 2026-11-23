@@ -9,6 +9,8 @@ export type ConflictCause = {
   visitId: string | null;
   date: string | null;
   message: string;
+  /** Place of a date-fixed visit rejected for time. The scheduler does not identify a failing leg. */
+  timeWindowPlaceId?: string;
   /** The leg drawn as a red curve on the map. */
   leg: { date: string; from: string; to: string } | null;
 };
@@ -54,9 +56,11 @@ export function conflictCauses(view: ResultView, result: ItineraryResult | null)
   const visits = new Map(view.input.visits.map(visit => [visit.id, visit]));
   const unplaced = result.capacity.unplaced.filter(visit => visit.reason !== 'WISH')
     .sort((a, b) => Number(b.fixed) - Number(a.fixed));
-  const causes: ConflictCause[] = unplaced.map(visit => ({
-    visitId: visit.visitId, date: visits.get(visit.visitId)?.fixedDate ?? null, message: REASONS[visit.reason], leg: null,
-  }));
+  const causes: ConflictCause[] = unplaced.map(rejection => {
+    const visit = visits.get(rejection.visitId);
+    return { visitId: rejection.visitId, date: visit?.fixedDate ?? null, message: REASONS[rejection.reason], leg: null,
+      ...(rejection.reason === 'TIME_WINDOW' && rejection.fixed && visit?.fixedDate ? { timeWindowPlaceId: visit.place.id } : {}) };
+  });
   for (const issue of result.capacity.issues) {
     if (issue.reason === 'UNREACHABLE') {
       causes.push({ visitId: null, date: issue.date, message: `${route(issue.date, issue.from, issue.to)} · ${REASONS.UNREACHABLE}`,
@@ -80,19 +84,21 @@ export function conflictCauses(view: ResultView, result: ItineraryResult | null)
 }
 
 export type ConflictModeFix = { fix: LegEdit; label: string };
-export type ConflictModeFixes = { matched: ConflictModeFix[]; review: ConflictModeFix[] };
+export type ConflictModeFixes = { matched: ConflictModeFix[]; connected: ConflictModeFix[]; review: ConflictModeFix[] };
 
-/** Exact leg issues identify a fix. An issue reported only for the day warrants reviewing its other fixes. */
+/** A reported leg is exact. Visit timing can depend on either adjacent leg or on travel elsewhere that day. */
 export function conflictingModeFixes(view: ResultView, date: string, causes: readonly ConflictCause[]): ConflictModeFixes {
   const dayCauses = causes.filter(cause => cause.date === date);
   const route = conflictRouteLabels(view);
   const hasDayIssue = dayCauses.some(cause => cause.visitId === null && cause.leg === null);
-  const result: ConflictModeFixes = { matched: [], review: [] };
+  const timedPlaces = new Set(dayCauses.flatMap(cause => cause.timeWindowPlaceId ? [cause.timeWindowPlaceId] : []));
+  const result: ConflictModeFixes = { matched: [], connected: [], review: [] };
   for (const fix of view.input.legModes ?? []) {
     if (fix.date !== date) continue;
     const matched = dayCauses.some(cause => cause.leg && sameModeConstraint(cause.leg, fix));
-    if (!matched && !hasDayIssue) continue;
-    const group = matched ? result.matched : result.review;
+    if (!matched && !hasDayIssue && !timedPlaces.size) continue;
+    const connected = timedPlaces.has(fix.from) || timedPlaces.has(fix.to);
+    const group = matched ? result.matched : connected ? result.connected : result.review;
     group.push({ fix, label: `${route(date, fix.from, fix.to)} · ${MODES[fix.mode]} 고정 해제하고 다시 계산` });
   }
   return result;
