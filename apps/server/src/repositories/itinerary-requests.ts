@@ -9,12 +9,27 @@ type Receipt = { id: string; input_hash: string; request_result: ItineraryResult
 
 /** The session lock spans provider I/O. The trip row lock is only held by the final save. */
 export class PostgresItineraryRequests {
+  private readonly pending = new Map<string, Promise<GenerateOutcome>>();
+
   constructor(private readonly pool: Pool) {}
 
   async run(tripId: string, ownerId: string, requestId: string | null, generate: Generate): Promise<GenerateOutcome> {
     if (requestId === null) {
       return generate(new PostgresItineraryRepository(this.pool), cityProfileRepository(this.pool));
     }
+    const key = `${tripId}:${ownerId}:${requestId}`;
+    const pending = this.pending.get(key);
+    if (pending) return pending;
+    const operation = this.runLocked(tripId, ownerId, requestId, generate);
+    this.pending.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      this.pending.delete(key);
+    }
+  }
+
+  private async runLocked(tripId: string, ownerId: string, requestId: string, generate: Generate): Promise<GenerateOutcome> {
     const client = await this.pool.connect();
     const lock = [`itinerary:${tripId}:${requestId}`];
     let reusable = false;

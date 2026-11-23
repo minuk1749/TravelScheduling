@@ -19,7 +19,7 @@ export function GenerationScreen() {
   useEffect(() => {
     const request = new AbortController();
     void calculation.run(request.signal).then(
-      result => { if (!request.signal.aborted) setGeneration({ status: 'ready', result }); },
+      ({ result }) => { if (!request.signal.aborted) setGeneration({ status: 'ready', result }); },
       error => { if (!request.signal.aborted) setGeneration({ status: 'error', message: errorMessage(error) }); },
     );
     return () => request.abort();

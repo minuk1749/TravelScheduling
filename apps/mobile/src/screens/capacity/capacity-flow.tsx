@@ -5,7 +5,7 @@ import { constraintsFrom, type ResultView, type VisitEdit } from '@travel/core/c
 import { placeName } from '@travel/core/presentation';
 import { ApiFailure } from '../../api/client';
 import { useItineraryGeneration } from '../../api/itinerary-generation';
-import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
+import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen, form } from '../../components/input/form-layout';
 import { colors, text } from '../../theme';
@@ -30,8 +30,7 @@ export function CapacityFlow({ tripId, initial, back, editConditions, viewResult
   const calculation = useItineraryGeneration(tripId);
   const load = useCallback(async (signal: AbortSignal): Promise<Selection> => {
     const view = await api.savedInput(tripId, signal);
-    const result = view.revision === initial.inputHash ? initial : await calculation.run(signal, view.revision);
-    verifyRevision(result, view.revision);
+    const result = view.revision === initial.inputHash ? initial : await calculation.runVerified(signal, view.revision);
     return { view, result };
   }, [api, calculation, initial, tripId]);
   const { state, retry } = useTripResource(load);
@@ -102,9 +101,8 @@ function SelectionEditor({ tripId, initial, back, editConditions, reload, viewRe
         setView({ ...view, ...saved });
         setDraft(constraintsFrom(saved.input));
       }
-      const checked = await calculation.run(request.signal, revision);
+      const checked = await calculation.runVerified(request.signal, revision);
       if (request.signal.aborted) return;
-      verifyRevision(checked, revision);
       if (checked.status === 'OVER_CAPACITY') setMaximum(checked.capacity.recommendation?.requiredCount);
       setResult(checked);
     } catch (failure) {

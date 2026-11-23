@@ -57,10 +57,10 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
         else setLoad({ status: 'calculate', view: saved, error: '계산 중 여행 정보가 바뀌었어요. 다시 계산해 주세요.' });
         return;
       }
-      const result = await calculation.run(request.signal, load.view.revision);
+      const { result, retried } = await calculation.run(request.signal, load.view.revision);
       if (request.signal.aborted) return;
-      // A concurrent edit may already be reflected in the result. Read the matching input before opening it.
-      if (result.inputHash === load.view.revision) open(load.view, result);
+      // A replay can match our old view even after a remote edit. Re-read before opening it.
+      if (!retried && result.inputHash === load.view.revision) open(load.view, result);
       else setLoad({ status: 'read', result, source: 'calculation' });
     };
     void run().catch(error => {

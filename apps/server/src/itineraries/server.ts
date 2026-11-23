@@ -7,8 +7,8 @@ import { ItineraryService } from '../services/itinerary';
 import { createGoogleTravelTimeProvider } from '../travel-time/server';
 import { itineraryHandlers } from './http';
 
-let pool: ReturnType<typeof createDatabasePool> | undefined;
-const db = () => pool ??= createDatabasePool();
+let requests: PostgresItineraryRequests | undefined;
+const itineraryRequests = () => requests ??= new PostgresItineraryRequests(createDatabasePool());
 
 /** Composition root. Nothing connects at import; providers are built per authorized request. */
 export const handlers = itineraryHandlers({
@@ -16,9 +16,8 @@ export const handlers = itineraryHandlers({
   findOwner: tripOwner,
   generator: (ownerId, requestId) => {
     const travel = createGoogleTravelTimeProvider();
-    const requests = new PostgresItineraryRequests(db());
     return {
-      generator: { generate: tripId => requests.run(tripId, ownerId, requestId, (repository, profiles) =>
+      generator: { generate: tripId => itineraryRequests().run(tripId, ownerId, requestId, (repository, profiles) =>
         new ItineraryService({ repository, profiles, places: placeProvider(), travel }).generate(tripId)) },
       dispose: () => travel.dispose(),
     };

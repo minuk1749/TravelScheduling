@@ -231,7 +231,7 @@ Google ID를 함께 갖는 `PlaceRef`이며 ownerId는 담지 않는다(소유�
 입력 해시를 다시 계산하고, 다르면 아무것도 쓰지 않고 `STALE`을 반환한다. T11 [생활 설정 저장소](../apps/server/src/repositories/living-settings.ts)도
 같은 `trips` 행을 `FOR UPDATE`로 잠그므로 설정 수정과 일정 저장이 직렬화된다. 상세는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md).
 T27에서 요청 키가 있는 POST는 [생성 요청 저장소](../apps/server/src/repositories/itinerary-requests.ts)를 거친다.
-동일 여행·키를 PostgreSQL 세션 잠금으로 직렬화하고 소유권을 확인한 저장 응답을 복구한다. 최초 생성의 요청 키와 전체 결과는 일정과 함께 커밋한다.
+각 요청의 소유권 검사 후 같은 서버에서는 소유자·여행·키가 같은 진행 중 요청을 공유한다. 서버 간에는 동일 여행·키를 PostgreSQL 세션 잠금으로 직렬화하고 소유권을 확인한 저장 응답을 복구한다. 최초 생성의 요청 키와 전체 결과는 일정과 함께 커밋한다.
 새 키를 보내거나 헤더를 생략하면 새 결과를 생성한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
 
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.

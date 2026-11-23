@@ -7,6 +7,7 @@ import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
 import { RootNavigator } from '../src/navigation/root-navigator';
 import { generationKeys, deferred, fixture, json, session } from './helpers';
+import { initialView } from './capacity-fixture';
 
 const snapshot: SettingsSnapshot = {
   revision: 'current', timeZone: 'Asia/Tokyo', startDate: '2026-12-01', endDate: '2026-12-03',
@@ -55,6 +56,7 @@ function settingsFixture() {
       if (!options.method) return json(settingsView(snapshot));
     }
     if (pathname === `${path}/itinerary` && options.method === 'POST') return generate();
+    if (pathname === `${path}/constraints` && !options.method) return json({ ...initialView, revision: resultBase.inputHash });
     return json({ code: 'NOT_FOUND', error: '요청을 찾을 수 없어요.' }, 404);
   });
   return { ...f, put, generate };

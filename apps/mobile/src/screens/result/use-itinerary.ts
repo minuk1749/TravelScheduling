@@ -4,7 +4,7 @@ import { parseConstraints } from '@travel/core/contracts/results/input';
 import { constraintsFrom, type Constraints, type ConstraintWriteOptions, type ResultView } from '@travel/core/contracts/results/model';
 import { ApiFailure } from '../../api/client';
 import { useItineraryGeneration } from '../../api/itinerary-generation';
-import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
+import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { buildDays } from '../../result/days';
 import { dayNumberLabel } from '../../result/format';
 import { movedSummary, reservationSummary, sameConstraints, type Change } from '../../result/edits';
@@ -155,9 +155,8 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
         draft = null;
       }
       setState(value => ({ ...value, view: current, undo: restore }));
-      const generated = await calculation.run(request.signal, current.revision);
+      const generated = await calculation.runVerified(request.signal, current.revision);
       if (request.signal.aborted) return;
-      verifyRevision(generated, current.revision);
       if (generated.status === 'OVER_CAPACITY') { overCapacity(generated); return; }
       const edit = appliedChange.kind === 'RETRY' ? restore?.change : appliedChange;
       const visit = edit?.kind === 'VISIT' || edit?.kind === 'WISH' ? edit.visitId : null;

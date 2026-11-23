@@ -17,17 +17,16 @@ async function ownedTrip(client: PoolClient) {
   return { owner, id: await insertTrip(client, owner, sampleDraft()) };
 }
 
-function poolFor(schema: string) {
-  // Independent one-connection servers; the lock holder must finish without borrowing another connection.
+function poolFor(schema: string, max = 1) {
   return new Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}`,
-    application_name: schema, max: 1, connectionTimeoutMillis: 3000 });
+    application_name: schema, max, connectionTimeoutMillis: 3000 });
 }
 
-function endpoint(client: PoolClient, pool: Pool, places = new FixturePlaces(), travel = new FixtureTravel()) {
+function endpoint(authDb: PoolClient | Pool, pool: Pool, places = new FixturePlaces(), travel = new FixtureTravel()) {
   const requests = new PostgresItineraryRequests(pool);
   const handlers = itineraryHandlers({
     userId: async request => request.headers.get('x-test-user') ?? undefined,
-    findOwner: async id => (await client.query('SELECT owner_id FROM trips WHERE id = $1', [id])).rows[0]?.owner_id ?? null,
+    findOwner: async id => (await authDb.query('SELECT owner_id FROM trips WHERE id = $1', [id])).rows[0]?.owner_id ?? null,
     generator: (ownerId, requestId) => ({
       generator: { generate: tripId => requests.run(tripId, ownerId, requestId, (repository, profiles) =>
         new ItineraryService({ repository, profiles, places, travel }).generate(tripId)) },
@@ -58,27 +57,30 @@ async function waitForConcurrentRetry(client: PoolClient, schema: string) {
   assert.fail('The second server did not reach the pending request while the provider was paused');
 }
 
+class PausedTravel extends FixtureTravel {
+  readonly entered = Promise.withResolvers<void>();
+  readonly resume = Promise.withResolvers<void>();
+  override async matrix(input: Parameters<FixtureTravel['matrix']>[0]) {
+    this.entered.resolve();
+    await this.resume.promise;
+    return super.matrix(input);
+  }
+}
+
 test('T27 a slow provider, concurrent retry and lost response recover exactly one committed generation', async () => {
   await withDatabase(async (client, schema) => {
     await migrate(client);
     const { id, owner } = await ownedTrip(client);
     const firstPool = poolFor(schema), retryPool = poolFor(schema);
-    const entered = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
-    class SlowTravel extends FixtureTravel {
-      override async matrix(input: Parameters<FixtureTravel['matrix']>[0]) {
-        entered.resolve();
-        await resume.promise;
-        return super.matrix(input);
-      }
-    }
-    const first = endpoint(client, firstPool, new FixturePlaces(), new SlowTravel());
+    const travel = new PausedTravel();
+    const first = endpoint(client, firstPool, new FixturePlaces(), travel);
     const retry = endpoint(client, retryPool);
     const key = randomUUID();
     try {
       const original = first.post(id, owner, key);
-      await Promise.race([entered.promise, original.then(() => assert.fail('the provider was never reached'))]);
+      await Promise.race([travel.entered.promise, original.then(() => assert.fail('the provider was never reached'))]);
       const concurrent = retry.post(id, owner, key);
-      try { await waitForConcurrentRetry(client, schema); } finally { resume.resolve(); }
+      try { await waitForConcurrentRetry(client, schema); } finally { travel.resume.resolve(); }
       const lost = await original;
       assert.equal(lost.status, 200);
       await lost.body!.cancel(); // COMMIT succeeded but the caller never read the response.
@@ -108,8 +110,38 @@ test('T27 a slow provider, concurrent retry and lost response recover exactly on
       assert.notEqual(unrelated.itineraryId, recovered.itineraryId);
       assert.notEqual(unrelated.inputHash, recovered.inputHash);
     } finally {
-      resume.resolve();
+      travel.resume.resolve();
       await Promise.all([firstPool.end(), retryPool.end()]);
+    }
+  });
+});
+
+test('T27 same-server retries leave a pool connection for another trip while generation is paused', async () => {
+  await withDatabase(async (client, schema) => {
+    await migrate(client);
+    const slow = await ownedTrip(client), other = await ownedTrip(client);
+    const key = randomUUID(), pool = poolFor(schema, 2), authDb = poolFor(schema);
+    const travel = new PausedTravel();
+    const api = endpoint(authDb, pool, new FixturePlaces(), travel);
+    const pending: Promise<Response>[] = [];
+    try {
+      const saved = await successful(await endpoint(client, pool).post(other.id, other.owner, key));
+      pending.push(api.post(slow.id, slow.owner, key));
+      await Promise.race([travel.entered.promise, pending[0].then(() => assert.fail('the provider was never reached'))]);
+      for (let i = 0; i < 4; i++) pending.push(api.post(slow.id, slow.owner, key));
+      assert.equal((await api.post(slow.id, other.owner, key)).status, 403);
+      const calls = api.calls();
+      assert.deepEqual(await successful(await api.post(other.id, other.owner, key)), saved);
+      assert.deepEqual(api.calls(), calls);
+
+      travel.resume.resolve();
+      const [first, ...retries] = await Promise.all(pending.map(async response => successful(await response)));
+      for (const retry of retries) assert.deepEqual(retry, first);
+      assert.equal((await client.query('SELECT id FROM itineraries WHERE trip_id = $1', [slow.id])).rowCount, 1);
+    } finally {
+      travel.resume.resolve();
+      await Promise.allSettled(pending);
+      await Promise.all([pool.end(), authDb.end()]);
     }
   });
 });

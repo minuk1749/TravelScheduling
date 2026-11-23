@@ -71,7 +71,7 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
   async function recalculate(request: AbortController) {
     setOperation({ status: 'calculating' });
     try {
-      const result = await calculation.run(request.signal);
+      const result = await calculation.runVerified(request.signal);
       if (!request.signal.aborted) setOperation({ status: 'calculated', result });
     } catch (failure) {
       if (!request.signal.aborted) setOperation({ status: 'calculation-error', message: errorMessage(failure) });
