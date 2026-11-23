@@ -10,7 +10,8 @@ import {
   type MapFocus, type Selection,
 } from '../../map/selection';
 import { conflictCauses, conflictingModeFixes } from '../../result/conflicts';
-import { buildDays, unplacedWishes, withConflictCauses, type DayModel, type LegModel } from '../../result/days';
+import { buildDays, withConflictCauses, type DayModel, type LegModel } from '../../result/days';
+import { unplacedWishes } from '../../result/wishes';
 import { withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
 import { colors } from '../../theme';

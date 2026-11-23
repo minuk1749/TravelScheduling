@@ -1,7 +1,8 @@
 import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
 import { legEmphasis, pendingLegKeys } from '../src/map/selection';
 import { mapScene } from '../src/map/scene';
-import { buildDays, unplacedWishes } from '../src/result/days';
+import { buildDays } from '../src/result/days';
+import { unplacedWishes } from '../src/result/wishes';
 import { timeRange } from '../src/result/format';
 import { json } from './helpers';
 import { D1, D3, legId, openResult, place, plan, resultFixture, REVISION, routes, trip, view } from './result-fixture';

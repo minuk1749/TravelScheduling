@@ -7,7 +7,8 @@ import {
   stepSelection, swipeTarget,
 } from '../src/map/selection';
 import { conflictCauses } from '../src/result/conflicts';
-import { buildDays, placedVisitIds, tripDates, unplacedWishes } from '../src/result/days';
+import { buildDays, tripDates } from '../src/result/days';
+import { placedVisitIds, unplacedWishes } from '../src/result/wishes';
 import { asWish, movedSummary, onDate, withLegMode, withVisit } from '../src/result/edits';
 import { dateTitle, durationLabel, fixedLabel, freeTime, legLabel, moneyLabel, swapLabel } from '../src/result/format';
 import { colors } from '../src/theme';
