@@ -55,8 +55,8 @@ class TripApi {
   settings(id: string, signal: AbortSignal) {
     return this.api.request<SettingsView>(`${trip(id)}/settings`, { signal });
   }
-  saveSettings(id: string, revision: string, settings: LivingSettings) {
-    return this.api.request<SettingsView>(`${trip(id)}/settings`, json('PUT', { revision, settings }));
+  saveSettings(id: string, revision: string, settings: LivingSettings, signal?: AbortSignal) {
+    return this.api.request<SettingsView>(`${trip(id)}/settings`, { ...json('PUT', { revision, settings }), signal });
   }
   generate(id: string, signal?: AbortSignal) {
     return this.api.request<GeneratedTrip>(`${trip(id)}/itinerary`, { method: 'POST', signal, validate: validGeneratedTrip });

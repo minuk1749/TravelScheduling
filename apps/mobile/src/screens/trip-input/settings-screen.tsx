@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Keyboard, Text, View } from 'react-native';
 import type { ItineraryResult } from '@travel/core/contracts/itinerary';
@@ -17,7 +17,7 @@ import { errorMessage, fieldErrors } from './presentation';
 import { useTripResource } from './use-trip-resource';
 
 type Operation = { status: 'idle' | 'saving' | 'calculating' }
-  | { status: 'calculated'; result: GeneratedTrip }
+  | { status: 'calculated' | 'viewing'; result: GeneratedTrip }
   | { status: 'calculation-error'; message: string };
 
 export function SettingsScreen() {
@@ -25,8 +25,9 @@ export function SettingsScreen() {
   const router = useRouter();
   const api = useTripApi();
   const { state, retry } = useTripResource(useCallback(signal => api.settings(id, signal), [api, id]));
-  if (state.status === 'ready') return <SettingsEditor tripId={id} initial={state.data} back={() => router.back()} reload={retry} />;
-  return <FormScreen title="하루 생활" back={() => router.back()}>
+  const openTrip = () => router.dismissTo({ pathname: '/trips/[id]', params: { id } });
+  if (state.status === 'ready') return <SettingsEditor tripId={id} initial={state.data} back={openTrip} reload={retry} />;
+  return <FormScreen title="하루 생활" back={openTrip}>
     {state.status === 'loading' ? <Text style={text.body}>생활 설정을 불러오는 중</Text>
       : <><FormError message={state.error} /><SmallButton label="다시 불러오기" onPress={retry} /></>}
   </FormScreen>;
@@ -40,7 +41,8 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
   const [focus, setFocus] = useState<FocusRequest>();
   const [error, setError] = useState('');
   const [operation, setOperation] = useState<Operation>({ status: 'idle' });
-  const inFlight = useRef(false);
+  const inFlight = useRef<AbortController | null>(null);
+  useEffect(() => () => inFlight.current?.abort(), []);
   const busy = operation.status === 'saving' || operation.status === 'calculating';
   const saved = operation.status !== 'idle' && operation.status !== 'saving';
   const pendingLabel = operation.status === 'saving' ? '저장 중' : '전체 동선 재계산 중';
@@ -57,38 +59,46 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
   }
   const visibleErrors = Object.fromEntries(Object.entries(errors).filter(([key]) => error || evaluation.errors[key]));
 
-  async function recalculate() {
+  function startRequest() {
+    if (inFlight.current) return null;
+    const request = new AbortController();
+    inFlight.current = request;
+    return request;
+  }
+
+  async function recalculate(request: AbortController) {
     setOperation({ status: 'calculating' });
     try {
-      const result = await api.generate(tripId);
-      setOperation({ status: 'calculated', result });
+      const result = await api.generate(tripId, request.signal);
+      if (!request.signal.aborted) setOperation({ status: 'calculated', result });
     } catch (failure) {
-      setOperation({ status: 'calculation-error', message: errorMessage(failure) });
+      if (!request.signal.aborted) setOperation({ status: 'calculation-error', message: errorMessage(failure) });
     } finally {
-      inFlight.current = false;
+      inFlight.current = null;
     }
   }
 
   function retryCalculation() {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    void recalculate();
+    const request = startRequest();
+    if (request) void recalculate(request);
   }
 
   async function save() {
-    if (inFlight.current) return;
-    inFlight.current = true;
+    const request = startRequest();
+    if (!request) return;
     setOperation({ status: 'saving' });
     setError('');
     try {
       const settings = parseSettings(draft, snapshot);
       Keyboard.dismiss();
-      const result = await api.saveSettings(tripId, snapshot.revision, settings);
+      const result = await api.saveSettings(tripId, snapshot.revision, settings, request.signal);
+      if (request.signal.aborted) return;
       setSnapshot(result.snapshot);
       setDraft(result.snapshot.settings);
       setErrors({});
     } catch (failure) {
-      inFlight.current = false;
+      inFlight.current = null;
+      if (request.signal.aborted) return;
       setOperation({ status: 'idle' });
       const fields = fieldErrors(failure);
       const first = Object.keys(fields)[0];
@@ -97,19 +107,22 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
       setError(first ? fields[first] : errorMessage(failure));
       return;
     }
-    await recalculate();
+    await recalculate(request);
   }
-  if (operation.status === 'calculated' && operation.result.status === 'OVER_CAPACITY') {
-    return <OutcomeFlow tripId={tripId} initial={operation.result} back={reload} editConditions={reload} />;
+  if (operation.status === 'viewing' || (operation.status === 'calculated' && operation.result.status === 'OVER_CAPACITY')) {
+    return <OutcomeFlow tripId={tripId} initial={operation.result}
+      back={operation.result.status === 'OVER_CAPACITY' ? reload : back} editConditions={reload} />;
   }
-  return <FormScreen title="하루 생활" subtitle={snapshot.timeZone} back={busy ? () => {} : back} footer={<>
+  return <FormScreen title="하루 생활" subtitle={snapshot.timeZone} back={back} backDisabled={busy} footer={<>
     {saved && <Text accessibilityLiveRegion="polite" style={text.body}>✓ 생활 설정을 저장했어요</Text>}
     <FormError message={error} />
     {operation.status === 'calculated' && <RecalculationSummary status={operation.result.status} />}
     {operation.status === 'calculation-error' ? <>
       <FormError message={`전체 동선을 재계산하지 못했어요. ${operation.message}`} />
       <ActionButton label="전체 동선 다시 계산" onPress={retryCalculation} />
-    </> : <ActionButton busy={busy} label={busy ? pendingLabel : '설정 저장'} onPress={() => { void save(); }} />}
+    </> : operation.status === 'calculated' ? <ActionButton label="동선 보기"
+      onPress={() => setOperation({ status: 'viewing', result: operation.result })} />
+      : <ActionButton busy={busy} label={busy ? pendingLabel : '설정 저장'} onPress={() => { void save(); }} />}
   </>}>
     {operation.status === 'calculated' && operation.result.status !== 'OK' && <RecalculationIssues result={operation.result} />}
     <View style={form.stack} pointerEvents={busy ? 'none' : 'auto'}>
