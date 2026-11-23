@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from 'expo-router/testing-library';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
-import { deferred, json } from './helpers';
+import { generationKeys, deferred, json } from './helpers';
 import { excess, initialView } from './capacity-fixture';
 import { D1, plan, renderResult, resultFixture, trip } from './result-fixture';
 
@@ -30,7 +30,12 @@ test('opening a stale result recalculates on an empty map and recovers from a 50
   expect(await screen.findByTestId('place-card-row')).toBeVisible();
   expect(f.current()).toEqual(saved);
   expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.readRevision).toHaveBeenCalledTimes(1);
+  expect(f.readRevision.mock.invocationCallOrder[0]).toBeGreaterThan(f.generate.mock.invocationCallOrder[2]);
   expect(f.generate).toHaveBeenCalledTimes(3);
+  const [initial, recalculated, retried] = generationKeys(f);
+  expect(recalculated).not.toBe(initial);
+  expect(retried).toBe(recalculated);
   expect(f.save).not.toHaveBeenCalled();
 });
 
@@ -111,12 +116,15 @@ test('leaving during the opening recalculation aborts it and ignores a late succ
   expect(f.shapes).not.toHaveBeenCalled();
 });
 
-test('an over-capacity recalculation opens required-place selection without another calculation', async () => {
+test('an over-capacity recalculation opens selection with the input and places already read', async () => {
   const f = resultFixture(initialView);
+  f.read.mockReturnValueOnce(json(initialView)).mockImplementation(() => failure('장소 조회 실패'));
   f.generate.mockResolvedValueOnce(outdated()).mockResolvedValueOnce(json(excess));
   await renderResult(f);
   expect(await screen.findByText('시간이 부족해요')).toBeVisible();
   expect(screen.getByRole('header', { name: '필수 장소 선택' })).toBeVisible();
+  expect(screen.getByRole('checkbox', { name: '도쿄 미술관 필수', checked: true })).toBeVisible();
+  expect(f.read).toHaveBeenCalledTimes(1);
   expect(f.generate).toHaveBeenCalledTimes(2);
   expect(f.save).not.toHaveBeenCalled();
   expect(f.shapes).not.toHaveBeenCalled();

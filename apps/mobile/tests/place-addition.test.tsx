@@ -1,5 +1,5 @@
 import { act, fireEvent, screen, within } from 'expo-router/testing-library';
-import { deferred, json } from './helpers';
+import { generationKeys, deferred, json } from './helpers';
 import { fillTrip, press, renderTripApp, search, tripFixture, write } from './trip-input-fixture';
 
 jest.mock('react-native-maps', () => ({
@@ -133,4 +133,12 @@ test('retrying itinerary generation reuses the saved trip after a provider failu
   expect(screen.getByText('배치된 장소 없음')).toBeVisible();
   const writes = f.transport.mock.calls.filter(([, options]) => options?.method === 'POST').map(([url]) => new URL(String(url)).pathname);
   expect(writes).toEqual(['/api/trips', '/api/trips/new-trip/itinerary', '/api/trips/new-trip/itinerary']);
+  const [initial, retry] = generationKeys(f);
+  expect(retry).toBe(initial);
+  await press('뒤로');
+  await fireEvent.press(await screen.findByRole('button', { name: '동선 만들기' }));
+  expect(await screen.findByRole('header', { name: '도쿄' })).toBeVisible();
+  const keys = generationKeys(f);
+  expect(keys).toHaveLength(3);
+  expect(keys[2]).not.toBe(initial);
 });

@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { parseConstraints } from '@travel/core/contracts/results/input';
 import { constraintsFrom, type Constraints, type ConstraintWriteOptions, type ResultView } from '@travel/core/contracts/results/model';
 import { ApiFailure } from '../../api/client';
-import { useTripApi, verifyRevision, type GeneratedTrip } from '../../api/trips';
+import { useItineraryGeneration } from '../../api/itinerary-generation';
+import { isStaleInput, useTripApi, type GeneratedTrip } from '../../api/trips';
 import { buildDays } from '../../result/days';
 import { dayNumberLabel } from '../../result/format';
 import { movedSummary, reservationSummary, sameConstraints, type Change } from '../../result/edits';
@@ -40,7 +41,6 @@ const SWITCHED = { TAXI: '택시로', TRANSIT: '대중교통으로', WALK: '도�
 
 // The constraints endpoint returns these statuses only when access, validation or revision checks reject the write.
 const REJECTED_SAVE_STATUSES = new Set([400, 401, 403, 404, 409]);
-const isStale = (failure: unknown) => failure instanceof ApiFailure && failure.code === 'STALE_INPUT';
 const changedElsewhere = () => new ApiFailure(409, 'STALE_INPUT', '다른 기기에서 여행 정보가 바뀌었어요. 다시 계산한 뒤 변경을 적용해 주세요.');
 
 const hasReceipt = (view: ResultView, operationId: string) =>
@@ -78,9 +78,10 @@ function notice(id: number, change: Change, next: Calculation, previous: State, 
  * input and only recalculates on retry. OVER_CAPACITY leaves for the T23 selection flow.
  */
 export function useItinerary({ tripId, view, result, overCapacity }: {
-  tripId: string; view: ResultView; result: GeneratedTrip; overCapacity(result: GeneratedTrip): void;
+  tripId: string; view: ResultView; result: GeneratedTrip; overCapacity(view: ResultView, result: GeneratedTrip): void;
 }) {
   const api = useTripApi();
+  const calculation = useItineraryGeneration(tripId);
   const [state, setState] = useState<State>(() => {
     const shown = { view, result };
     return { view, shown, base: result.status === 'OK' ? shown : null, previous: null,
@@ -153,10 +154,9 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
         draft = null;
       }
       setState(value => ({ ...value, view: current, undo: restore }));
-      const generated = await api.generate(tripId, request.signal);
+      const generated = await calculation.runVerified(request.signal, current.revision);
       if (request.signal.aborted) return;
-      verifyRevision(generated, current.revision);
-      if (generated.status === 'OVER_CAPACITY') { overCapacity(generated); return; }
+      if (generated.status === 'OVER_CAPACITY') { overCapacity(current, generated); return; }
       const edit = appliedChange.kind === 'RETRY' ? restore?.change : appliedChange;
       const visit = edit?.kind === 'VISIT' || edit?.kind === 'WISH' ? edit.visitId : null;
       setState(value => {
@@ -171,7 +171,7 @@ export function useItinerary({ tripId, view, result, overCapacity }: {
       const fields = Object.values(fieldErrors(failure));
       // A rejected first PUT cannot own a matching remote change. Replays may still have an unacknowledged first PUT.
       const rejected = !!draft && !failed && failure instanceof ApiFailure && REJECTED_SAVE_STATUSES.has(failure.status);
-      const discardEdit = rejected || isStale(failure);
+      const discardEdit = rejected || isStaleInput(failure);
       setState(value => ({ ...value, undo: discardEdit ? null : restore, phase: { kind: 'failed', change,
         reload: reload || discardEdit || !!draft, draft: discardEdit ? null : draft,
         message: fields.length ? fields.join(' ') : errorMessage(failure) } }));

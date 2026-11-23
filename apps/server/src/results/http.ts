@@ -6,7 +6,7 @@ import { TripInputError } from '../trips/input';
 
 type Dependencies = {
   userId(request: Request): Promise<string | undefined>; findOwner(id: string): Promise<string | null>;
-  service(): Pick<ResultEditService, 'load' | 'save'>;
+  service(): Pick<ResultEditService, 'load' | 'loadRevision' | 'save'>;
 };
 const ACCESS_ERRORS = { 401: '로그인 후 다시 시도해 주세요.', 403: '접근할 수 없습니다.', 404: '여행을 찾을 수 없습니다.' } as const;
 export function constraintHandlers(deps: Dependencies) {
@@ -17,7 +17,9 @@ export function constraintHandlers(deps: Dependencies) {
       const access = await authorizeTrip(userId, id, deps.findOwner);
       if (access !== 200) return accessError(access, ACCESS_ERRORS[access]);
       if (!write) {
-        const operationId = new URL(request.url).searchParams.get('operationId');
+        const params = new URL(request.url).searchParams;
+        if (params.get('fields') === 'revision') return json(await deps.service().loadRevision(id, userId!));
+        const operationId = params.get('operationId');
         return json(await deps.service().load(id, userId!, operationId ?? undefined));
       }
       let body: unknown;

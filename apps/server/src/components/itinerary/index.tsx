@@ -10,17 +10,15 @@ import { VisitEditor } from './visit-editor';
 import { Diagnostics } from './diagnostics';
 import { Efficiency, Timeline } from './timeline';
 import { ShareControls } from './share-controls';
+import { loadResultView, useItineraryGeneration } from './generation';
 
 export function ItineraryResults({ tripId }: { tripId: string }) {
   const [view, setView] = useState<ResultView | null>(null), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(`/api/trips/${encodeURIComponent(tripId)}/constraints`, { cache: 'no-store', signal: controller.signal })
-      .then(async response => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? '여행을 불러오지 못했습니다.');
-        if (!controller.signal.aborted) setView(data as ResultView);
-      }).catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : '연결을 확인해 주세요.'); });
+    void loadResultView(tripId, controller.signal)
+      .then(data => { if (!controller.signal.aborted) setView(data); })
+      .catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : '연결을 확인해 주세요.'); });
     return () => controller.abort();
   }, [tripId, attempt]);
   const reload = () => { setView(null); setError(''); setAttempt(n => n + 1); };
@@ -34,13 +32,14 @@ function ResultEditor({ initial, tripId, reload }: { initial: ResultView; tripId
   const [result, setResult] = useState<ItineraryResult | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string | null>(null), [message, setMessage] = useState('저장된 설정으로 동선을 생성해 주세요.');
   const inFlight = useRef(false);
+  const generation = useItineraryGeneration(tripId);
   const dirty = JSON.stringify(draft) !== JSON.stringify(constraintsFrom(view.input));
   const errors = useMemo(() => {
     try { parseConstraints(draft, view.input); return []; }
     catch (error) { return error instanceof TripInputError ? Object.values(error.fields) : ['입력 내용을 확인해 주세요.']; }
   }, [draft, view.input]);
   const points = useMemo(() => mapMarkers(view, result), [view, result]);
-  const change = (next: Constraints) => { setDraft(next); setError(''); setMessage('변경 내용을 저장하고 재검증해 주세요. 표시된 결과는 마지막 계산 기준입니다.'); };
+  const change = (next: Constraints) => { generation.reset(); setDraft(next); setError(''); setMessage('변경 내용을 저장하고 재검증해 주세요. 표시된 결과는 마지막 계산 기준입니다.'); };
   const select = (id: string) => {
     setSelected(id);
     document.getElementById(`edit-${id}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
@@ -60,11 +59,8 @@ function ResultEditor({ initial, tripId, reload }: { initial: ResultView; tripId
         setView({ ...view, ...snapshot }); setDraft(constraintsFrom(snapshot.input));
       }
       setMessage('실제 출발 시각으로 동선을 검증하는 중…');
-      const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/itinerary`, { method: 'POST' });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.fields ? `${data.error} ${Object.values(data.fields).join(' ')}` : data.error ?? '동선을 만들지 못했습니다.');
-      if (data.inputHash !== expectedHash) throw new Error('다른 곳에서 여행 정보가 바뀌었습니다. 저장된 설정을 다시 불러와 주세요.');
-      setResult(data as ItineraryResult); setMessage('저장된 제약으로 재계산했습니다.');
+      const result = await generation.generate({ expectedRevision: expectedHash });
+      setResult(result); setMessage('저장된 제약으로 재계산했습니다.');
     } catch (error) { setError(error instanceof Error ? error.message : '연결을 확인해 주세요.'); setMessage('입력 내용은 유지됩니다. 다시 시도하거나 저장된 설정을 불러오세요.'); }
     finally { inFlight.current = false; setBusy(false); }
   }

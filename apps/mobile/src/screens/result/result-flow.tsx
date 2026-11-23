@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Text } from 'react-native';
 import type { ResultView } from '@travel/core/contracts/results/model';
+import { useItineraryGeneration } from '../../api/itinerary-generation';
 import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen } from '../../components/input/form-layout';
@@ -14,12 +15,12 @@ import { useItinerary } from './use-itinerary';
 
 type FlowProps = { tripId: string; back(): void; editConditions(): void };
 type Load =
-  | { status: 'read'; result: GeneratedTrip; source: 'initial' | 'calculation'; error?: string }
+  | { status: 'read'; result: GeneratedTrip; source: 'initial' | 'calculation'; cachedView?: ResultView; error?: string }
   | { status: 'calculate'; view: ResultView; error?: string }
   | { status: 'ready'; view: ResultView; result: GeneratedTrip };
 
 function ResultEditor({ tripId, view, result, back, editConditions, overCapacity }: FlowProps & {
-  view: ResultView; result: GeneratedTrip; overCapacity(result: GeneratedTrip): void;
+  view: ResultView; result: GeneratedTrip; overCapacity(view: ResultView, result: GeneratedTrip): void;
 }) {
   const itinerary = useItinerary({ tripId, view, result, overCapacity });
   const map = useResultMap();
@@ -31,9 +32,10 @@ function ResultEditor({ tripId, view, result, back, editConditions, overCapacity
  * input (GET constraints), otherwise recalculates once. Over-capacity results go to selection.
  */
 export function ResultFlow({ tripId, initial, view, back, editConditions, overCapacity }: FlowProps & {
-  initial: GeneratedTrip; view?: ResultView; overCapacity(result: GeneratedTrip): void;
+  initial: GeneratedTrip; view?: ResultView; overCapacity(view: ResultView, result: GeneratedTrip): void;
 }) {
   const api = useTripApi();
+  const calculation = useItineraryGeneration(tripId);
   const map = useResultMap();
   const [load, setLoad] = useState<Load>(() => view
     ? { status: 'ready', view, result: initial }
@@ -43,29 +45,31 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
     if (load.status === 'ready' || load.error !== undefined) return;
     const request = new AbortController();
     function open(saved: ResultView, result: GeneratedTrip) {
-      if (result.status === 'OVER_CAPACITY') overCapacity(result);
+      if (result.status === 'OVER_CAPACITY') overCapacity(saved, result);
       else setLoad({ status: 'ready', view: saved, result });
     }
     const run = async () => {
       if (load.status === 'read') {
-        const saved = await api.savedInput(tripId, request.signal);
+        // A matching in-memory view already has the places needed to display a replay.
+        const saved = load.cachedView ?? await api.savedInput(tripId, request.signal);
+        const { revision } = load.cachedView ? await api.savedRevision(tripId, request.signal) : saved;
         if (request.signal.aborted) return;
-        if (saved.revision === load.result.inputHash) open(saved, load.result);
+        if (revision === load.result.inputHash) open(saved, load.result);
         else if (load.source === 'initial') setLoad({ status: 'calculate', view: saved });
         else setLoad({ status: 'calculate', view: saved, error: '계산 중 여행 정보가 바뀌었어요. 다시 계산해 주세요.' });
         return;
       }
-      const result = await api.generate(tripId, request.signal);
+      const { result, retried } = await calculation.run(request.signal, load.view.revision);
       if (request.signal.aborted) return;
-      // A concurrent edit may already be reflected in the result. Read the matching input before opening it.
-      if (result.inputHash === load.view.revision) open(load.view, result);
-      else setLoad({ status: 'read', result, source: 'calculation' });
+      const cachedView = result.inputHash === load.view.revision ? load.view : undefined;
+      if (!retried && cachedView) open(cachedView, result);
+      else setLoad({ status: 'read', result, source: 'calculation', cachedView });
     };
     void run().catch(error => {
       if (!request.signal.aborted) setLoad({ ...load, error: errorMessage(error) });
     });
     return () => request.abort();
-  }, [api, tripId, load, overCapacity]);
+  }, [api, calculation, tripId, load, overCapacity]);
 
   if (load.status === 'ready') return <ResultEditor tripId={tripId} view={load.view} result={load.result}
     back={back} editConditions={editConditions} overCapacity={overCapacity} />;
@@ -82,16 +86,15 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
   </FormScreen>;
 }
 
-type Phase = { key: number } & ({ kind: 'capacity'; result: GeneratedTrip } | { kind: 'result'; result: GeneratedTrip; view?: ResultView });
+type Phase = { key: number; result: GeneratedTrip; view?: ResultView };
 
 /** After a calculation: the result screen (OK/CONFLICT) or required-place selection (OVER_CAPACITY), in memory. */
 export function OutcomeFlow({ tripId, initial, back, editConditions }: FlowProps & { initial: GeneratedTrip }) {
-  const [phase, setPhase] = useState<Phase>(() => ({ key: 0, kind: initial.status === 'OVER_CAPACITY' ? 'capacity' : 'result', result: initial }));
-  const showCapacity = useCallback((result: GeneratedTrip) => setPhase(value => ({ key: value.key + 1, kind: 'capacity', result })), []);
-  const showResult = useCallback((view: ResultView, result: GeneratedTrip) =>
-    setPhase(value => ({ key: value.key + 1, kind: 'result', result, view })), []);
-  if (phase.kind === 'capacity') return <CapacityFlow key={phase.key} tripId={tripId} initial={phase.result}
-    back={back} editConditions={editConditions} viewResult={showResult} />;
+  const [phase, setPhase] = useState<Phase>({ key: 0, result: initial });
+  const open = useCallback((view: ResultView, result: GeneratedTrip) =>
+    setPhase(value => ({ key: value.key + 1, result, view })), []);
+  if (phase.result.status === 'OVER_CAPACITY') return <CapacityFlow key={phase.key} tripId={tripId} initial={phase.result}
+    view={phase.view} back={back} editConditions={editConditions} viewResult={open} />;
   return <ResultFlow key={phase.key} tripId={tripId} initial={phase.result} view={phase.view}
-    back={back} editConditions={editConditions} overCapacity={showCapacity} />;
+    back={back} editConditions={editConditions} overCapacity={open} />;
 }

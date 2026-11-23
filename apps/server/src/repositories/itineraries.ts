@@ -12,10 +12,15 @@ import { loadTripInputs } from './trip-snapshot';
  * the trip) and the input hash is recomputed under the lock: changed inputs return STALE and
  * nothing is written. Use a dedicated client without an open transaction.
  */
-export async function saveItinerary(client: PoolClient, tripId: string, expectedHash: string, result: ItineraryResult): Promise<SaveOutcome> {
+export async function saveItinerary(
+  client: PoolClient, tripId: string, expectedHash: string, result: ItineraryResult,
+  request?: { ownerId: string; requestId: string },
+): Promise<SaveOutcome> {
   await client.query('BEGIN');
   try {
-    const locked = await client.query('SELECT 1 FROM trips WHERE id = $1 FOR UPDATE', [tripId]);
+    const locked = await client.query(
+      'SELECT 1 FROM trips WHERE id = $1 AND ($2::uuid IS NULL OR owner_id = $2) FOR UPDATE', [tripId, request?.ownerId],
+    );
     const current = locked.rowCount ? await loadTripInputs(client, tripId) : null;
     if (current?.status !== 'READY' || current.inputHash !== expectedHash) {
       await client.query('ROLLBACK');
@@ -24,11 +29,12 @@ export async function saveItinerary(client: PoolClient, tripId: string, expected
     const itineraryId = randomUUID();
     const { capacity } = result;
     const schedule = result.status === 'CONFLICT' ? null : capacity.recommendation?.schedule ?? null;
-    await client.query(`INSERT INTO itineraries (id, trip_id, input_hash, status, unplaced, efficiency_summary, details)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)`, [
+    await client.query(`INSERT INTO itineraries (id, trip_id, input_hash, status, unplaced, efficiency_summary, details, request_id, request_result)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [
       itineraryId, tripId, expectedHash, result.status, JSON.stringify(capacity.unplaced),
       result.efficiency && JSON.stringify(result.efficiency),
       JSON.stringify(encodeItineraryDetails(result, schedule)),
+      request?.requestId, request ? JSON.stringify(result) : null,
     ]);
     if (schedule) await insertSchedule(client, itineraryId, schedule, result, new Map(current.input.visits.map(visit => [visit.id, visit.place.id])));
     await client.query('COMMIT');

@@ -4,6 +4,7 @@ import React from 'react';
 import { installDom } from './helpers/dom';
 import { sampleTrip, okVisits, FixturePlaces } from './fixtures/itinerary';
 import { service } from './helpers/itinerary-service';
+import { itineraryReplay } from './helpers/itinerary-replay';
 import { applyEdits } from './helpers/result';
 import { inputHash } from '../src/repositories/trip-snapshot';
 import { parseConstraints } from '../src/results/input';
@@ -22,8 +23,10 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
     }
   };
   let input = sampleTrip(okVisits.map(v => ({ ...v, minutes: 300 }))), failSave = true, failGeneration = false, generations = 0;
+  const generationKeys: string[] = [];
   const editor = new ResultEditService({ loadInputs: async () => ({ status: 'READY', input, inputHash: inputHash(input) }), save: async () => assert.fail('unused') }, new FixturePlaces());
   globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/constraints?fields=revision')) return Response.json(await editor.loadRevision(input.id, 'owner'));
     if (String(url).endsWith('/constraints')) {
       if (options?.method === 'PUT') {
         if (failSave) { failSave = false; return Response.json({ error: '저장 오류' }, { status: 503 }); }
@@ -33,6 +36,9 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
       }
       return Response.json(await editor.load(input.id, 'owner'));
     }
+    const key = new Headers(options?.headers).get('Idempotency-Key');
+    assert.ok(key);
+    generationKeys.push(key);
     generations++;
     if (failGeneration) { failGeneration = false; return Response.json({ error: '경로 조회 실패' }, { status: 503 }); }
     return Response.json({ ...await service().service.compute(input), inputHash: inputHash(input) });
@@ -64,6 +70,8 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
     assert.equal((view.getByLabelText(`${name} 시각`) as HTMLInputElement).value, '15:00');
     assert.equal(input.visits.find(v => v.id === 'visit-teamlab')?.fixedDate, '2026-12-02');
     run(); await view.findByText('저장된 제약으로 재계산했습니다.');
+    assert.equal(generationKeys[3], generationKeys[2]);
+    assert.equal(new Set(generationKeys).size, 3);
     fireEvent.click(view.getByRole('button', { name: '저장된 설정 다시 불러오기' }));
     await waitFor(() => assert.equal((view.getByLabelText(`${name} 시각`) as HTMLInputElement).value, '15:00'));
     // A closed-hour pin is a conflict; the UI must not display a plausible timeline as success.
@@ -77,3 +85,42 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
     await dom.restore();
   }
 });
+
+for (const changed of [false, true]) {
+  test(`T27 result editor checks a lost response during a Places outage (reservation changed: ${changed})`, async () => {
+    const dom = installDom('http://localhost/trips/trip/result');
+    const previousFetch = globalThis.fetch;
+    const api = itineraryReplay();
+    globalThis.fetch = api.fetch;
+    const { render, fireEvent, cleanup } = await import('@testing-library/react');
+    const { ItineraryResults } = await import('../src/components/itinerary');
+    try {
+      const view = render(React.createElement(ItineraryResults, { tripId: 'trip' }));
+      const generate = await view.findByRole('button', { name: '저장하고 동선 재검증' });
+      fireEvent.click(generate);
+      await view.findByText('응답 본문 유실');
+      api.setPlacesAvailable(false);
+      if (changed) api.changeReservation();
+      fireEvent.click(generate);
+      assert.deepEqual(api.keys, [api.keys[0], api.keys[0]]);
+      if (!changed) {
+        await view.findByRole('region', { name: '날짜별 타임라인' });
+        assert.deepEqual(api.counts(), { placeReads: 1, saved: 1 });
+        return;
+      }
+      await view.findByText(/다른 곳에서 여행 정보가 바뀌었습니다/);
+      assert.deepEqual(api.counts(), { placeReads: 1, saved: 1 });
+      assert.equal(view.queryByRole('region', { name: '날짜별 타임라인' }), null);
+      assert.equal(view.queryByText('저장된 제약으로 재계산했습니다.'), null);
+
+      api.setPlacesAvailable(true);
+      fireEvent.click(view.getByRole('button', { name: '저장된 설정 다시 불러오기' }));
+      fireEvent.click(await view.findByRole('button', { name: '저장하고 동선 재검증' }));
+      await view.findByRole('region', { name: '날짜별 타임라인' });
+      assert.notEqual(api.keys[2], api.keys[0]);
+    } finally {
+      cleanup(); globalThis.fetch = previousFetch;
+      await dom.restore();
+    }
+  });
+}

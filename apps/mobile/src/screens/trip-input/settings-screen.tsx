@@ -6,6 +6,7 @@ import { calculateSettings } from '@travel/core/contracts/settings/calculate';
 import { parseSettings } from '@travel/core/contracts/settings/input';
 import type { SettingsView } from '@travel/core/contracts/settings/model';
 import { REASONS } from '@travel/core/presentation';
+import { useItineraryGeneration } from '../../api/itinerary-generation';
 import { useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { SmallButton, type Errors, type FocusRequest } from '../../components/input/fields';
@@ -34,6 +35,7 @@ export function SettingsScreen() {
 }
 
 function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; initial: SettingsView; back(): void; reload(): void }) {
+  const calculation = useItineraryGeneration(tripId);
   const api = useTripApi();
   const [snapshot, setSnapshot] = useState(initial.snapshot);
   const [draft, setDraft] = useState(snapshot.settings);
@@ -69,7 +71,7 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
   async function recalculate(request: AbortController) {
     setOperation({ status: 'calculating' });
     try {
-      const result = await api.generate(tripId, request.signal);
+      const result = await calculation.runVerified(request.signal);
       if (!request.signal.aborted) setOperation({ status: 'calculated', result });
     } catch (failure) {
       if (!request.signal.aborted) setOperation({ status: 'calculation-error', message: errorMessage(failure) });
@@ -107,6 +109,7 @@ function SettingsEditor({ tripId, initial, back, reload }: { tripId: string; ini
       setError(first ? fields[first] : errorMessage(failure));
       return;
     }
+    calculation.reset();
     await recalculate(request);
   }
   if (operation.status === 'viewing' || (operation.status === 'calculated' && operation.result.status === 'OVER_CAPACITY')) {

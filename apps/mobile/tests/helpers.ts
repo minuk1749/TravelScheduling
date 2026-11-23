@@ -32,3 +32,11 @@ export function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done; });
   return { promise, resolve };
 }
+
+export function generationKeys({ transport }: Pick<ReturnType<typeof fixture>, 'transport'>): string[] {
+  return transport.mock.calls.filter(([url]) => String(url).endsWith('/itinerary')).map(([, options]) => {
+    const key = new Headers(options?.headers).get('Idempotency-Key');
+    expect(key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    return key!;
+  });
+}

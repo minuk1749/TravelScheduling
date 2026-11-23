@@ -145,6 +145,7 @@ export function resultFixture(initial: ResultView = view, { legacy = false } = {
   });
   const read = jest.fn((operationId?: string | null) => json({ ...current,
     receipt: operationId && operationId === latestOperation ? { operationId, revision: current.revision } : undefined }));
+  const readRevision = jest.fn(() => json({ revision: current.revision }));
 
   const shapes = jest.fn<Promise<Response>, [URL]>().mockImplementation(async () => json({
     inputHash: current.revision, itineraryId: ITINERARY_A,
@@ -156,10 +157,11 @@ export function resultFixture(initial: ResultView = view, { legacy = false } = {
     const url = new URL(String(input));
     if (url.pathname === '/api/trips/trip/itinerary' && options.method === 'POST') return generate();
     if (url.pathname === '/api/trips/trip/itinerary/shapes') return shapes(url);
+    if (url.pathname === '/api/trips/trip/constraints' && !options.method && url.searchParams.get('fields') === 'revision') return readRevision();
     if (url.pathname === '/api/trips/trip/constraints') return options.method === 'PUT' ? save(options) : read(url.searchParams.get('operationId'));
     return json({ code: 'NOT_FOUND', error: '요청을 찾을 수 없어요.' }, 404);
   });
-  return { ...f, generate, save, read, shapes, current: () => current };
+  return { ...f, generate, save, read, readRevision, shapes, current: () => current };
 }
 
 export async function renderResult(f: ReturnType<typeof resultFixture>, map: ResultMap = FakeResultMap) {

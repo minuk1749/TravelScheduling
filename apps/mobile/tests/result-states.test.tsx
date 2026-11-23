@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
 import { colors } from '../src/theme';
-import { deferred, json } from './helpers';
+import { generationKeys, deferred, json } from './helpers';
 import { conflictTrip, D1, legId, openResult, place, resultFixture, routes, trip, view } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
@@ -86,6 +86,9 @@ test('3-9: a failed recalculation keeps the saved change, can show the previous 
   expect(await screen.findByText('다시 계산했어요')).toBeVisible();
   expect(f.save).toHaveBeenCalledTimes(1);
   expect(f.generate).toHaveBeenCalledTimes(4);
+  const [initial, edit, firstRetry, secondRetry] = generationKeys(f);
+  expect(edit).not.toBe(initial);
+  expect([firstRetry, secondRetry]).toEqual([edit, edit]);
   expect(screen.getByTestId('map-state')).toHaveTextContent(/^clear/);
   expect(screen.queryByText('이전 계산 결과 · 갱신 실패')).toBeNull();
 });

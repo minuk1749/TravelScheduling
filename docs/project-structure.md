@@ -25,7 +25,7 @@ CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순
 | `apps/server/src/app/` | 화면, 서버 액션, API 라우트(`api/auth`, `api/places`, `api/trips`, `api/trips/[id]/itinerary`). 세션 확인·입력 검증·응답 변환 | 서비스, 각 모듈의 `server.ts`, `auth` | 스케줄링 알고리즘 직접 구현, 브라우저에서 DB·비밀 키 접근 |
 | `apps/server/src/services/itinerary/` | **동선 생성 서비스(T12).** 날짜별 앵커·짐 구간(`day-plan.ts`), 시간창·자정을 넘는 공항 이동 반영·행렬(`days.ts`), 공항 이동 조회(`transfers.ts`), 장소 조회(`places.ts`), 단위·요금 변환과 구간 조회(`routes.ts`), 실제 출발 시각 재조회 루프(`verification.ts`), 비교·효율 요약(`efficiency.ts`), 포트·결과 타입(`types.ts`) | `scheduler`, `fare`, `places`·`travel-time`의 포트 타입 | SQL, HTTP 객체, 구체 Google 어댑터, 환경 변수 |
 | `apps/server/src/itineraries/` | 동선 생성 HTTP 처리(`http.ts`: 인증·소유권·오류 변환)와 구체 구현 조립(`server.ts`) | 서비스, 저장소, 각 모듈 `server.ts` | 스케줄링 계산 |
-| `apps/server/src/repositories/` | 여행 생성·소유 목록(`trip-inputs.ts`), 날짜별 설정 쓰기(`day-settings.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 일정 저장(`itineraries.ts`)과 details 형식(`itinerary-details.ts`), 생활 설정/제약 읽기·원자적 수정 | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
+| `apps/server/src/repositories/` | 여행 생성·소유 목록(`trip-inputs.ts`), 날짜별 설정 쓰기(`day-settings.ts`), 도시 프로필, 입력 스냅샷·해시(`trip-snapshot.ts`), 생성 요청 잠금·복구(`itinerary-requests.ts`), 일정 저장(`itineraries.ts`)과 details 형식(`itinerary-details.ts`), 생활 설정/제약 읽기·원자적 수정 | `pg`, 서비스 타입 | 스케줄러 실행, 외부 API |
 | `apps/server/src/auth.ts`, `apps/server/src/lib/auth/` | 웹 Google 로그인(Auth.js, T25까지), 여행 소유권 확인(`authorizeTrip`), 인증 SQL(`store.ts`). **T18:** 포트(`ports.ts`), Google ID 토큰 검증(`google-id-token.ts`), 모바일 세션 발급·폐기(`mobile-sessions.ts`), Bearer/쿠키 요청 인증(`request-authenticator.ts`), 세션 SQL(`session-store.ts`), 조립(`server.ts`: `requestAuthenticator`·`bearerAuthenticator`) | `lib/db`, `lib/opaque-token`, `jose` | 화면, 도메인 서비스 |
 | `apps/server/src/sessions/` | T18 `POST`·`DELETE /api/session`, `DELETE /api/account` HTTP(`http.ts`)와 조립(`server.ts`) | `lib/auth`, `lib/http` | SQL 직접 작성 |
 | `apps/server/src/lib/http.ts` | 공통 private/no-store JSON 응답, 오류 본문(`apiError`·`accessError`·`providerError`: `{ code, error, fields? }`), Origin 비교, 설정·공유 쓰기용 교차 사이트 검사(`isCrossSiteRequest`) | 표준 Request/Response, core `contracts/errors` 타입 | DB·인증·도메인 오류 정책 |
@@ -45,7 +45,7 @@ CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순
 | `packages/core/src/presentation/` | 표시 변환·한국어 라벨 | core DTO, Temporal | 화면 프레임워크·I/O |
 | `apps/server/src/scheduler/`, `fare/`와 기존 공용 모듈 경로 | `@travel/core` 재내보내기, 기존 호출 지점 유지 | core의 공개 하위 경로 | 계산·검증 복사본 |
 | `apps/mobile/app/`, `src/screens/`, `src/components/`, `src/navigation/` | T20 expo-router 보호 라우트, 로그인·첫 화면·로그아웃, T21 여행 생성·하루 생활·장소 입력(`screens/trip-input/`), T22 결과 화면·시트·재계산 흐름(`screens/result/`), 공통 버튼·상태·전환 | 앱 auth·theme·core 검증, `map/`·`result/`, React Native·Expo | 서버 import, 화면에서 토큰 영속 저장, 지도 SDK 직접 import(어댑터 계약만) |
-| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`), T22 경로 모양 요청·`verifyRevision` | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
+| `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`), T22 경로 모양 요청·`verifyRevision`, T27 생성·재시도(`itinerary-generation.ts`) | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
 | `apps/mobile/src/map/` | T22 결과 지도 계약(`types.ts`), 순수 계산(`geometry.ts` polyline·구간 색·도심 밖·곡선, `selection.ts` 카드 선택·이전/다음·강조 구간, `scene.ts` 마커·구간 명세), 어댑터 주입(`provider.tsx`)·Google 구현(`google-result-map.tsx`)·화면 밖 공항 이름을 가장자리별로 묶는 `airport-edge-indicators.tsx`·표시 중인 컨트롤과 안내의 실측 경계를 반영하는 `edge-layout.ts`·지도 키 확인(`config.ts`) | design-tokens, `result/` 모델 타입, `react-native-maps`(Google 어댑터만) | 화면 import, 서버 코드, 순수 파일의 React Native |
 | `apps/mobile/src/result/` | T22 결과 순수 모델: 날짜별 카드·구간·전체 일정 줄(`days.ts`), 배치 여부와 편집할 희망 장소(`wishes.ts`), 충돌 원인(`conflicts.ts`), 제약 수정(`edits.ts`), 문구(`format.ts`) | core 계약·표시, `map/geometry`, Temporal | React Native, I/O |
 | `apps/mobile/src/theme/`, `assets/fonts/` | 디자인 값의 RN 스타일 변환, Pretendard 400/600, 동작 줄이기 | design-tokens, React Native·expo-font | 화면별 색·수치 복제 |
@@ -169,4 +169,9 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 ## T23 모바일 필수 장소 선택
 
 - 여행 생성 화면과 하루 생활 재계산이 `OVER_CAPACITY`를 받으면 `apps/mobile/src/screens/capacity/`의 선택 화면을 연다. 저장된 장소와 최초 계산을 같은 입력 해시로 맞춘다.
-- 재검증은 `src/api/trips.ts`의 제약 조회·저장과 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 T22 결과 화면으로 연다. [T23 결정](decisions/T23-mobile-capacity-selection.md)
+- 결과 화면에서 필수 장소 선택으로 넘어갈 때는 계산 결과와 해시가 일치하는 `ResultView`를 함께 전달한다. 선택 화면에서 처음 읽은 입력으로 재계산할 때도 응답 유실에 대비해 장소 정보를 유지한다. 재시도는 같은 키로 결과를 복구하고 현재 revision을 확인한다. 입력 변경이 확인되면 다음 조회에서 입력과 장소를 다시 읽는다.
+- 재검증은 `src/api/trips.ts`의 제약 조회·저장과 `src/api/itinerary-generation.ts`의 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 T22 결과 화면으로 연다. [T23 결정](decisions/T23-mobile-capacity-selection.md)
+
+## T27 일정 생성 재시도
+
+앱의 최초 생성·설정 저장·결과 편집·필수 장소 재검증과 웹의 생성 화면이 POST에 `Idempotency-Key`를 보낸다. 앱과 웹은 재시도 응답을 표시하기 전에 현재 저장 입력의 revision을 확인한다. 웹 결과 화면과 생활 설정 미리보기는 `components/itinerary/generation.ts`에서 요청 키를 관리한다. 앱과 웹의 편집 화면은 복구 시 `GET /constraints?fields=revision`을 호출한다. `ResultEditService.loadRevision`은 소유권을 확인한 DB 스냅샷의 입력 해시만 반환한다. 서버의 `itineraries/http.ts`가 매 요청의 소유권과 키를 검사하고, 서버 인스턴스가 공유하는 `repositories/itinerary-requests.ts`가 같은 소유자·여행·키의 동시 요청을 한 실행으로 합친다. 그 실행이 DB 잠금을 얻어 기존 결과를 조회하거나 T12 서비스를 실행한다. 마이그레이션 009가 저장 행과 요청 키를 연결한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)

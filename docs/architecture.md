@@ -230,6 +230,10 @@ Google ID를 함께 갖는 `PlaceRef`이며 ownerId는 담지 않는다(소유�
 [일정 저장](../apps/server/src/repositories/itineraries.ts)은 `trips` 행을 `FOR UPDATE`로 잠근 뒤 같은 트랜잭션에서
 입력 해시를 다시 계산하고, 다르면 아무것도 쓰지 않고 `STALE`을 반환한다. T11 [생활 설정 저장소](../apps/server/src/repositories/living-settings.ts)도
 같은 `trips` 행을 `FOR UPDATE`로 잠그므로 설정 수정과 일정 저장이 직렬화된다. 상세는 [ADR 0008 동선 생성](decisions/0008-itinerary-generation.md).
+T27에서 요청 키가 있는 POST는 [생성 요청 저장소](../apps/server/src/repositories/itinerary-requests.ts)를 거친다.
+각 요청의 소유권 검사 후 같은 서버에서는 소유자·여행·키가 같은 진행 중 요청을 공유한다. 서버 간에는 동일 여행·키를 PostgreSQL 세션 잠금으로 직렬화하고 소유권을 확인한 저장 응답을 복구한다. 최초 생성의 요청 키와 전체 결과는 일정과 함께 커밋한다.
+앱과 웹이 복구한 결과를 이미 읽어 둔 입력과 함께 표시할 때는 `GET /api/trips/[id]/constraints?fields=revision`으로 현재 입력 해시를 확인한다. 서버는 소유자 조건으로 읽은 DB 스냅샷에서 해시를 계산하며 장소 상세 조회를 생략한다. 새 키를 보내거나 헤더를 생략하면 새 결과를 생성한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
+
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.
 
 T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisions/0006-trip-input-creation.md)에 기록한다.
@@ -539,9 +543,9 @@ T20에서 실제 lint·typecheck·build·test를 추가하면 루트 명령이 �
 | `GET /api/trips/[id]` | — | `{ id }` (T18: `trips/http.ts`의 `tripAccessHandler` + `RequestAuthenticator`, `private, no-store`, §13.3) | 401, 403, 404, 500 |
 | `GET /api/trips/[id]/settings` | — | `SettingsView` (`{ snapshot, calculation }`) | 401, 403, 404, 409 `INCOMPLETE_TRIP`(초 단위 시각 등 저장 형식 불일치), 500 |
 | `PUT /api/trips/[id]/settings` | `{ revision, settings: LivingSettings }` | `SettingsView` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT`, 413, 415, 500 |
-| `POST /api/trips/[id]/itinerary` | — | `{ itineraryId, inputHash, ...ItineraryResult }` (소유자 생성 응답의 `availableByDate`는 항공·공항 이동을 반영한 날짜별 활동 가능 시각 범위이며 닫힌 날짜는 `null`. `status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
+| `POST /api/trips/[id]/itinerary` | 선택 헤더 `Idempotency-Key` (소문자 하이픈 UUID 하나) | `{ itineraryId, inputHash, ...ItineraryResult }` (소유자 생성 응답의 `availableByDate`는 항공·공항 이동을 반영한 날짜별 활동 가능 시각 범위이며 닫힌 날짜는 `null`. `status` `OK`/`OVER_CAPACITY`/`CONFLICT`는 200 본문) | 400, 401, 403, 404, 409 `INCOMPLETE_TRIP` + `fields`(목록 또는 필드별 메시지, 아래) / `STALE_INPUT`, 502/503, 500 |
 | `GET /api/trips/[id]/itinerary/shapes` | `inputHash` 필수, `itineraryId` 선택 (쿼리) | `{ inputHash, itineraryId, legs: LegShape[] }` (§13.4) | 400, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 502/503, 500 |
-| `GET /api/trips/[id]/constraints` | — | `ResultView` (`{ input, revision, places }`) | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
+| `GET /api/trips/[id]/constraints` | 선택 쿼리 `fields=revision` | 기본 응답은 `ResultView`. `fields=revision`은 소유자의 현재 DB 입력에서 계산한 `{ revision }`만 반환 | 401, 403, 404, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
 | `PUT /api/trips/[id]/constraints` | `{ revision, constraints: { visits, legModes } }` | `{ input, revision }` | 400 + `fields`, 401, 403, 404, 409 `STALE_INPUT` / `RESULT_UNAVAILABLE`, 500 |
 | `POST /api/trips/[id]/share` | — | `{ path: "/share/{token}" }`. 앱은 설정한 서버 주소와 합쳐 OS 공유 시트로 보냄 | 401, 403, 404, 405, 500 |
 | `GET /api/share/[token]` (비로그인) | — | `SharedItinerary` | 404, 405, 409 `RESULT_UNAVAILABLE`, 502/503, 500 |
@@ -785,11 +789,11 @@ T25 전까지는 앱 화면을 옮길 때 참고하는 기준 구현으로 남�
   `apps/server/src/app/trips/[id]/settings/page.tsx`, `apps/server/src/app/trips/[id]/result/page.tsx`, `apps/server/src/app/api/auth/[...nextauth]/route.ts`, `apps/server/src/auth.ts`
 - 웹 컴포넌트: `apps/server/src/components/trip-input-form.tsx`, `apps/server/src/components/place-picker.tsx`, `apps/server/src/components/city-profile-card.tsx`,
   `apps/server/src/components/living-settings/`, `apps/server/src/components/itinerary/index.tsx`, `apps/server/src/components/itinerary/visit-editor.tsx`,
-  `apps/server/src/components/itinerary/share-controls.tsx`, `apps/server/src/components/service-worker.tsx`
+  `apps/server/src/components/itinerary/share-controls.tsx`, `apps/server/src/components/itinerary/generation.ts`, `apps/server/src/components/itinerary/request-id.ts`, `apps/server/src/components/service-worker.tsx`
 - PWA: `apps/server/public/sw.js`, `apps/server/public/icon-192.png`, `apps/server/public/icon-512.png`, `apps/server/scripts/verify-pwa.mjs`(와 `build` 스크립트의 호출),
   `apps/server/next.config.ts`의 `/sw.js` 헤더, `apps/server/src/app/layout.tsx`의 manifest·서비스워커 등록 부분(레이아웃 자체는 공유 페이지용으로 남김)
 - 테스트: `apps/server/tests/pwa.test.ts`, `apps/server/tests/service-worker.test.ts`, `apps/server/tests/trip-input-ui.test.ts`, `apps/server/tests/living-settings-ui.test.ts`,
-  `apps/server/tests/result-ui.test.ts`(공유 화면이 쓰는 표시 검사는 `apps/server/tests/sharing-ui.test.ts`에 남김), `apps/server/tests/e2e/trip-input.spec.ts`,
+  `apps/server/tests/result-ui.test.ts`(공유 화면이 쓰는 표시 검사는 `apps/server/tests/sharing-ui.test.ts`에 남김), `apps/server/tests/helpers/itinerary-replay.ts`, `apps/server/tests/e2e/trip-input.spec.ts`,
   `apps/server/tests/e2e/living-settings.spec.ts`, `apps/server/tests/e2e/result.spec.ts`, `apps/server/tests/helpers/e2e-places.ts`,
   `apps/server/tests/e2e/journey.spec.ts`(Bearer HTTP 종단 시나리오로 교체)
 - 의존성: `next-auth`. `@googlemaps/js-api-loader`·`@types/google.maps`는 공유 페이지 지도가 쓰므로 남긴다.
