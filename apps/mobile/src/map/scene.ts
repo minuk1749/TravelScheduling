@@ -15,26 +15,32 @@ export type SceneInput = {
   card: CardModel | null;
   focus: MapFocus;
   pending: ReadonlySet<string>;
-  placed: ReadonlySet<string>;
+  wishes: ResultView['input']['visits'];
+  selectedWishId?: string;
   causes: readonly ConflictCause[];
 };
 
 export const lodgingMarkerId = (placeId: string) => `lodging:${placeId}`;
 export const airportMarkerId = (placeId: string) => `airport:${placeId}`;
 
-function placesMarkers({ view, conflictView, day, placed }: SceneInput, coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
+function placesMarkers({ view, conflictView, day, wishes, selectedWishId }: SceneInput, coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
   const markers: MapMarkerSpec[] = [];
+  const remainingWishes = new Map(wishes.map(visit => [visit.id, visit]));
   for (const card of day?.cards ?? []) {
+    // Show the historical stop until the traveler explicitly opens the current wish at this place.
+    if (remainingWishes.has(card.visitId) && (!card.start || card.visitId === selectedWishId)) continue;
     const unplaced = card.start ? undefined : conflictView?.places[card.placeId]?.coordinates;
     const coordinate = unplaced ?? coordinates.get(card.placeId);
     const label = conflictView && card.start ? placeName(view, card.placeId) : card.name;
-    if (coordinate) markers.push({ id: card.visitId, coordinate, kind: 'PLACED', order: card.number, label });
+    if (coordinate) {
+      markers.push({ id: card.visitId, coordinate, kind: 'PLACED', order: card.number, label });
+      remainingWishes.delete(card.visitId);
+    }
   }
   const editable = conflictView ?? view;
-  for (const visit of editable.input.visits) {
+  for (const visit of remainingWishes.values()) {
     const coordinate = conflictView?.places[visit.place.id]?.coordinates ?? coordinates.get(visit.place.id);
-    if (visit.priority === 'WISH' && !placed.has(visit.id) && coordinate
-      && !markers.some(marker => marker.id === visit.id)) {
+    if (coordinate) {
       markers.push({ id: visit.id, coordinate, kind: 'WISH', order: null, label: placeName(editable, visit.place.id) });
     }
   }
@@ -99,6 +105,7 @@ export function mapScene(input: SceneInput) {
   const coordinates = input.day?.coordinates ?? placeDetailCoordinates(input.view);
   const markers = [...endpointMarkers(input, conflictLegs, coordinates), ...placesMarkers(input, coordinates)];
   const routes = [...legRoutes(input), ...conflictRoutes(coordinates, conflictLegs, input.conflictView)];
-  const focusIds = markers.filter(marker => marker.kind === 'PLACED' || marker.kind === 'LODGING').map(marker => marker.id);
+  const focusIds = markers.filter(marker => marker.kind === 'PLACED' || marker.kind === 'LODGING' || marker.id === input.selectedWishId)
+    .map(marker => marker.id);
   return { markers, routes, focusIds: focusIds.length ? focusIds : markers.map(marker => marker.id) };
 }

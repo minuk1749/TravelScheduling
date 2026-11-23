@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
 import { constraintsFrom, type Constraints } from '@travel/core/contracts/results/model';
 import { json } from './helpers';
-import { conflictTrip, D2, D3, openResult, plan, resultFixture, trip, view } from './result-fixture';
+import { conflictTrip, D1, D2, D3, openResult, place, plan, resultFixture, trip, view } from './result-fixture';
 
 const press = (name: string) => fireEvent.press(screen.getByRole('button', { name }));
 const sheet = () => within(screen.getByTestId('form-sheet'));
@@ -39,19 +39,30 @@ test('the wish picker and map select, cancel, reopen, and apply the same visit',
   expect(marker('cafe')).toHaveProp('accessibilityState', expect.objectContaining({ selected: true }));
 });
 
+function wishConflict(revision: string) {
+  const result = conflictTrip(revision);
+  result.capacity.unplaced = [{ visitId: 'cafe', reason: 'TIME_WINDOW', fixed: true }];
+  result.capacity.issues = [];
+  return result;
+}
+
 async function addBookedWishOnDayThree(originalDate: string) {
   const visits = view.input.visits.map(visit => visit.id === 'cafe'
     ? { ...visit, fixedDate: originalDate, fixedTime: '10:20', fixedOrder: 0 } : visit);
   const f = resultFixture({ ...view, input: { ...view.input, visits } });
   const original = constraintsFrom(f.current().input);
   const calculated: Constraints[] = [];
-  f.generate.mockResolvedValueOnce(json(conflictTrip(f.current().revision))).mockImplementation(async () => {
+  f.generate.mockResolvedValueOnce(json(wishConflict(f.current().revision))).mockImplementation(async () => {
     calculated.push(constraintsFrom(f.current().input));
     return json(trip(f.current().revision, plan({ cafeOnDay3: true })));
   });
 
   await openResult(f);
-  expect(screen.getByText('⚠ 고정 조건 충돌 2건')).toBeVisible();
+  expect(screen.getByText('⚠ 고정 조건 충돌 1건')).toBeVisible();
+  expect(screen.getByRole('button', { name: '희망 장소 추가, 1곳 중 선택' })).toBeEnabled();
+  await press('아사쿠사 카페 고정 수정');
+  expect(sheet().getByLabelText('고정 시각')).toHaveDisplayValue('10:20');
+  await fireEvent.press(sheet().getByRole('button', { name: '취소' }));
   expect(marker('cafe')).toHaveTextContent('WISH -');
   await press('지도 아사쿠사 카페');
   await fireEvent.press(sheet().getByRole('button', { name: '3일차 12.5' }));
@@ -77,11 +88,53 @@ test('moving a booked wish after an initial conflict preserves the booked time a
 
   f.generate.mockImplementationOnce(async () => {
     calculated.push(constraintsFrom(f.current().input));
-    return json(conflictTrip(f.current().revision));
+    return json(wishConflict(f.current().revision));
   });
   await press('되돌리기');
-  expect(await screen.findByText('⚠ 고정 조건 충돌 2건')).toBeVisible();
+  expect(await screen.findByText('⚠ 고정 조건 충돌 1건')).toBeVisible();
   expect(f.save).toHaveBeenCalledTimes(2);
   expect(JSON.parse(String(f.save.mock.calls[1][0].body)).constraints).toEqual(original);
   expect(calculated).toEqual([moved, original]);
+});
+
+test.each([D1, D3])('a rejected wish on %s keeps the historical numbered stop and can be moved from the current wish list', async date => {
+  const cafe = place('cafe'), original = view.places[cafe]!;
+  const renamed = { ...original, name: '카페 새 출입구', coordinates: { latitude: 35.715, longitude: 139.797 } };
+  const booked = (fixedDate: string) => view.input.visits.map(visit => visit.id === 'cafe'
+    ? { ...visit, fixedDate, fixedTime: '10:20', fixedOrder: 0 } : visit);
+  const f = resultFixture({ ...view, input: { ...view.input, visits: booked(D3) } });
+  f.generate.mockResolvedValueOnce(json(trip(view.revision, plan({ cafeOnDay3: true }))));
+  await openResult(f);
+  f.save.mockResolvedValueOnce(json({ code: 'STALE_INPUT', error: '다른 기기에서 입력이 바뀌었어요.' }, 409));
+  await press('택시 14분 약 ¥2,300로 바꾸기');
+  await screen.findByText('⚠ 동선을 계산하지 못했어요');
+  const latest = { ...view, revision: 'f'.repeat(64), places: { ...view.places, [cafe]: renamed },
+    input: { ...view.input, visits: booked(date) } };
+  f.read.mockReturnValueOnce(json(latest));
+  f.generate.mockResolvedValueOnce(json(wishConflict(latest.revision)));
+  await press('다시 계산');
+  await screen.findByRole('button', { name: renamed.name + ' 고정 수정' });
+  if (date === D1) {
+    expect(screen.getByRole('button', { name: '지도 ' + renamed.name })).toHaveTextContent('WISH -');
+    expect(screen.getByTestId('coordinate-cafe')).toHaveTextContent(JSON.stringify(renamed.coordinates));
+    await press('지도 ' + renamed.name);
+    expect(sheet().getByText('★ ' + renamed.name)).toBeVisible();
+    await fireEvent.press(sheet().getByRole('button', { name: '취소' }));
+    await press('3일 12.5');
+  }
+  expect(screen.getByRole('button', { name: '지도 ' + original.name })).toHaveTextContent('PLACED 1');
+  expect(screen.getByTestId('coordinate-cafe')).toHaveTextContent(JSON.stringify(original.coordinates));
+  await press('지도 ' + original.name);
+  expect(screen.queryByTestId('form-sheet')).toBeNull();
+  await press('희망 장소 추가, 1곳 중 선택');
+  expect(sheet().getByRole('button', { name: '★ ' + renamed.name, selected: true })).toBeVisible();
+  expect(marker('cafe')).toHaveTextContent('WISH -');
+  expect(marker('cafe')).toHaveProp('accessibilityState', { selected: true });
+  expect(screen.getByTestId('map-state', { includeHiddenElements: true })).toHaveTextContent(/focus:.*\bcafe\b/);
+  expect(screen.getByTestId('coordinate-cafe', { includeHiddenElements: true })).toHaveTextContent(JSON.stringify(renamed.coordinates));
+  await fireEvent.press(sheet().getByRole('button', { name: '2일차 12.4' }));
+  expect(sheet().getByRole('button', { name: '2일차에 추가하고 다시 계산' })).toBeEnabled();
+  await fireEvent.press(sheet().getByRole('button', { name: '취소' }));
+  expect(marker('cafe')).toHaveTextContent('PLACED 1');
+  expect(screen.getByTestId('coordinate-cafe')).toHaveTextContent(JSON.stringify(original.coordinates));
 });

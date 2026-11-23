@@ -143,9 +143,11 @@ test('a conflict-only wish card falls back to the same visible card and marker i
   await press('지도 도쿄 국립박물관');
   expect(screen.getByRole('button', { name: '지도 도쿄 국립박물관', selected: true })).toBeVisible();
   await press('지도 아사쿠사 카페');
-  expect(screen.queryByTestId('form-sheet')).toBeNull();
+  expect(sheet().getByText('★ 아사쿠사 카페')).toBeVisible();
+  await fireEvent.press(sheet().getByRole('button', { name: '취소' }));
+  await press('아사쿠사 카페, 배치되지 않음');
   expect(screen.getByRole('button', { name: '아사쿠사 카페, 배치되지 않음', selected: true })).toBeVisible();
-  expect(screen.getByRole('button', { name: '지도 아사쿠사 카페', selected: true })).toHaveTextContent('PLACED -');
+  expect(screen.getByRole('button', { name: '지도 아사쿠사 카페', selected: true })).toHaveTextContent('WISH -');
   await press('아사쿠사 카페 고정 수정');
   await fireEvent(sheet().getByLabelText('순서 고정'), 'valueChange', true);
   f.generate.mockRejectedValueOnce(new Error('offline'));

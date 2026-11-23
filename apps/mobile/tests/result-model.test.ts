@@ -7,7 +7,7 @@ import {
   stepSelection, swipeTarget,
 } from '../src/map/selection';
 import { conflictCauses } from '../src/result/conflicts';
-import { buildDays, placedVisitIds, tripDates } from '../src/result/days';
+import { buildDays, placedVisitIds, tripDates, unplacedWishes } from '../src/result/days';
 import { asWish, movedSummary, onDate, withLegMode, withVisit } from '../src/result/edits';
 import { dateTitle, durationLabel, fixedLabel, freeTime, legLabel, moneyLabel, swapLabel } from '../src/result/format';
 import { colors } from '../src/theme';
@@ -110,7 +110,7 @@ test('highlighted legs: arriving leg (3-1), both legs of the edited place (3-3),
 });
 
 test('map scene: placed, wish, lodging and airport markers, line style by mode/outside, red conflict leg', () => {
-  const base = { view, card: first.cards[0], placed: placedVisitIds(days), causes: [], pending: new Set<string>() };
+  const base = { view, card: first.cards[0], wishes: unplacedWishes(view, days), causes: [], pending: new Set<string>() };
   const scene = mapScene({ ...base, day: first, focus: 'BROWSE' });
   expect(scene.markers.map(marker => [marker.id, marker.kind, marker.order])).toEqual([
     ['lodging:place-hotel', 'LODGING', null], ['airport:place-airport', 'AIRPORT', null],
@@ -134,9 +134,26 @@ test('map scene: placed, wish, lodging and airport markers, line style by mode/o
   expect(mapScene({ ...base, day: second, focus: 'CONFLICT', causes }).routes.every(route => route.emphasis === 'DIM')).toBe(true);
 });
 
+test('unplaced wishes, required conflict cards and lodging keep their marker roles by visit ID', () => {
+  const lodging = view.input.lodgings[0].place;
+  const visits = view.input.visits.map(visit => visit.id === 'cafe' ? { ...visit, place: lodging, fixedDate: D1 } : visit);
+  const current = { ...view, input: { ...view.input, visits } };
+  const result = conflictTrip(current.revision);
+  result.capacity.unplaced = ['museum', 'cafe'].map(visitId => ({ visitId, fixed: true, reason: 'TIME_WINDOW' }));
+  result.capacity.issues = [];
+  const causes = conflictCauses(current, result);
+  const days = buildDays(current, null, null, causes);
+  const scene = mapScene({ view: current, conflictView: current, day: days[0], card: null, focus: 'CONFLICT', causes,
+    pending: new Set(), wishes: unplacedWishes(current, days, result) });
+  expect(scene.markers.map(({ id, kind, order }) => [id, kind, order])).toEqual([
+    ['lodging:' + lodging.id, 'LODGING', null], ['museum', 'PLACED', null], ['cafe', 'WISH', null],
+  ]);
+  expect(scene.markers[0].coordinate).toEqual(scene.markers[2].coordinate);
+});
+
 test('a conflict endpoint shares the existing airport marker and disappears from previous-result and ordinary days without a flight', () => {
   const cause = { visitId: null, date: D1, message: '공항 이동 불가', leg: { date: D1, from: place('airport'), to: place('hotel') } };
-  const base = { view, card: null, placed: placedVisitIds(days), causes: [cause], pending: new Set<string>() };
+  const base = { view, card: null, wishes: unplacedWishes(view, days), causes: [cause], pending: new Set<string>() };
   const scheduled = mapScene({ ...base, day: first, focus: 'CONFLICT' });
   expect(scheduled.markers.filter(marker => marker.kind === 'AIRPORT')).toHaveLength(1);
   expect(scheduled.routes.filter(route => route.emphasis === 'CONFLICT')).toHaveLength(1);

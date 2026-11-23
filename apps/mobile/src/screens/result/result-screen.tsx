@@ -10,7 +10,7 @@ import {
   type MapFocus, type Selection,
 } from '../../map/selection';
 import { conflictCauses, conflictingModeFixes } from '../../result/conflicts';
-import { buildDays, placedVisitIds, withConflictCauses, type DayModel, type LegModel } from '../../result/days';
+import { buildDays, unplacedWishes, withConflictCauses, type DayModel, type LegModel } from '../../result/days';
 import { withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
 import { colors } from '../../theme';
@@ -97,13 +97,13 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     return () => clearTimeout(timer);
   }, [notice, dismissNotice]);
 
-  const placed = placedVisitIds(days);
-  const wishes = view.input.visits.filter(visit => visit.priority === 'WISH' && !placed.has(visit.id))
-    .map((visit, index) => ({ visitId: visit.id, name: view.places[visit.place.id]?.name ??
-      `희망 장소 ${index + 1} · ${kindLabels[visit.kind]} · ${visit.minutes}분` }));
+  const wishVisits = unplacedWishes(view, days, failed ? undefined : shown);
+  const wishes = wishVisits.map((visit, index) => ({ visitId: visit.id,
+    name: view.places[visit.place.id]?.name ?? `희망 장소 ${index + 1} · ${kindLabels[visit.kind]} · ${visit.minutes}분` }));
+  const selectedWishId = sheet?.kind === 'WISH' ? sheet.visitId : undefined;
   const focus: MapFocus = calculating ? 'CALCULATING' : failed ? 'PREVIOUS' : editSelection ? 'EDIT' : conflict ? 'CONFLICT' : 'BROWSE';
-  const scene = mapScene({ view: scheduleView, conflictView: conflict && !failed ? view : undefined, day, card, focus, placed, causes,
-    pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
+  const scene = mapScene({ view: scheduleView, conflictView: conflict && !failed ? view : undefined, day, card, focus, causes,
+    wishes: wishVisits, selectedWishId, pending: calculating ? pendingLegKeys(days, phase.change) : NOTHING });
   const constraints = constraintsFrom(view.input);
   const editOf = (visitId: string) => constraints.visits.find(visit => visit.id === visitId)!;
   const currency = displayed?.efficiency?.currency ?? null;
@@ -139,7 +139,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
 
   return <View testID="result-screen" style={styles.screen} onLayout={onLayout}>
     <ResultMap markers={scene.markers} routes={scene.routes} focusDate={day.date} focusIds={scene.focusIds}
-      selectedId={sheet?.kind === 'WISH' ? sheet.visitId : card?.visitId ?? null} topInset={topInset} bottomInset={panelHeight}
+      selectedId={selectedWishId ?? card?.visitId ?? null} topInset={topInset} bottomInset={panelHeight}
       overlay={overlay} dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
     <SafeAreaView testID="result-top-controls" edges={['top', 'left', 'right']} pointerEvents="box-none" style={styles.top}
       onLayout={event => setTopInset(event.nativeEvent.layout.height)}>
