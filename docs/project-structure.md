@@ -184,6 +184,11 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 `services/itinerary/places.ts`는 고정하지 않은 희망 장소(WISH, 날짜·순서 미고정)만 쓰는 장소의 상세 정보가 없으면 그 방문을 스케줄러 입력에서 빼고 계속한다. 필수·고정 방문과 공항·숙소는 기존 `ItineraryInputError`를 유지하고 제공자 장애는 전파한다. 영업시간은 정상·휴업(`[]`)·미상(`undefined`)을 구별하며, 배치된 방문 중 미상인 방문 ID는 `ItineraryResult.openingHoursUnknown`으로 응답하고(새 결과는 빈 배열 포함, 필드 부재는 T28 이전 결과) `itineraries.details`에 저장한다. 앱은 `result/days.ts`의 `CardModel.hoursUnknown`으로 카드·전체 일정에 안내를 보이며 이동시간 검증 실패(`verification`)와 구별한다. [T28 결정](decisions/T28-optional-wish-and-unknown-hours.md)
 
+## T26 기기 설치 설정
+
+- `apps/mobile/app.config.ts`의 `createConfig(env)`가 앱 이름·아이콘·스플래시·iOS 번들 ID/Android 패키지명(`APP_BUNDLE_ID`, 기본 `com.travelscheduling.app`)·플러그인을 만든다. 이미지는 `apps/mobile/assets/`(`scripts/generate-icons.mjs`로 생성), `ios/`·`android/`는 `expo prebuild` 산출물이라 커밋하지 않는다.
+- `apps/mobile/tests/app-config.test.ts`가 설정 값과 `expo config` 실행을 검사한다. 설치 절차(로컬 Wi-Fi·배포 서버, iOS 7일 재설치, Android APK): [기기 설치 안내](mobile-install.md), [T26 결정](decisions/T26-device-install-config.md).
+
 ## T24 모바일 공유와 계정
 
 - 결과 화면 상단의 공유 버튼은 `screens/result/share-sheet.tsx`를 연다. 발급·재발급은 `api/sharing.ts`의 Bearer POST `/api/trips/[id]/share`를 사용한다. 서버 주소와 검증된 `/share/{token}`을 합쳐 OS 공유 시트로 보낸다.

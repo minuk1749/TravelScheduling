@@ -1,0 +1,117 @@
+# 모바일 앱 기기 설치 안내 (개발·본인 사용)
+
+본인 iPhone·Android 기기에 앱을 직접 설치하는 절차다. 앱스토어·Play 스토어 배포는 이 문서 범위 밖이다. 서버를 HTTPS로 배포하는 일은 T26D(사람)가 맡는다. 환경 설정 표는 [앱 README](../apps/mobile/README.md)에 있다.
+
+CI는 아래 설정이 올바른지(`expo config`, 아이콘 파일·크기, 번들 ID 형식)를 `apps/mobile/tests/app-config.test.ts`로 검사한다. **실제 기기 설치·Google 로그인·지도 동작은 사람이 확인한다.**
+
+## 1. 앱 설정 한눈에 보기
+
+| 항목 | 값 | 바꾸는 곳 |
+|---|---|---|
+| 앱 이름 | `여행 동선` | `apps/mobile/app.config.ts`의 `name` |
+| 아이콘·적응형 아이콘·스플래시 | `apps/mobile/assets/*.png` (스카이 블루 `#2A64A8` 배경, 흰 핀) | `node apps/mobile/scripts/generate-icons.mjs apps/mobile/assets`로 다시 만들거나 같은 크기(1024×1024) PNG로 교체 |
+| iOS 번들 ID · Android 패키지명 | 기본 `com.travelscheduling.app` | 환경 변수 `APP_BUNDLE_ID` (두 플랫폼이 같은 값을 쓴다) |
+| 서버 주소 | `EXPO_PUBLIC_API_URL` | `apps/mobile/.env.local` |
+| Google·지도 키 | [앱 README](../apps/mobile/README.md#설정과-실행)의 표 | `apps/mobile/.env.local` |
+
+`apps/mobile/.env.example`을 `apps/mobile/.env.local`로 복사해 채운다. `EXPO_PUBLIC_*` 값은 **빌드할 때 앱 번들에 들어가므로** 값을 바꾸면 다시 빌드한다. 비밀 키(OAuth client secret, 서버 API 키)는 앱에 넣지 않는다.
+
+**`APP_BUNDLE_ID`를 본인 값으로 바꾼다.** 무료 Apple ID는 다른 개발자가 이미 쓰는 번들 ID로 서명할 수 없다. `io.github.내아이디.travel`처럼 영문·숫자·밑줄을 점으로 이은 두 단계 이상의 값이어야 하며, 형식이 틀리면 `expo config`가 오류로 알려 준다. 값을 바꾸면 Google Cloud의 iOS OAuth 클라이언트(번들 ID)와 Android OAuth 클라이언트(패키지명)도 같은 값으로 맞춘다.
+
+확인:
+
+```sh
+cd apps/mobile
+npx expo config --type public        # 이름·번들 ID·아이콘 경로가 의도대로인지 확인
+```
+
+## 2. 서버 연결 방식 고르기
+
+앱은 `EXPO_PUBLIC_API_URL` 하나로만 서버에 붙는다. 주소 규칙은 `apps/mobile/src/api/origin.ts`가 강제한다.
+
+| | A. 로컬 서버 + 같은 Wi-Fi | B. 배포 서버 |
+|---|---|---|
+| 주소 | `http://<컴퓨터 사설 IP>:3000` | `https://api.example.com` (경로 없음) |
+| 허용되는 빌드 | **개발 빌드(Debug)만.** 릴리스 빌드는 HTTP 주소를 거부한다 | 개발·릴리스 모두 |
+| 용도 | 개발·기기에서 빠른 확인 | 여행 중 실사용, APK/Release 설치 |
+
+### A. 로컬 서버에 같은 Wi-Fi로 붙기
+
+1. 컴퓨터와 기기를 **같은 Wi-Fi**에 연결한다(게스트 Wi-Fi·VPN은 기기 간 통신을 막는 경우가 많다).
+2. 컴퓨터의 사설 IP를 확인한다. macOS는 `ipconfig getifaddr en0`, Windows는 `ipconfig`, Linux는 `hostname -I`. 예: `192.168.1.10`. 앱은 `localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`만 HTTP로 받는다.
+3. 서버를 모든 인터페이스에서 받도록 띄운다. 저장소 루트에서 PostgreSQL 설정과 `npm run migrate`를 마친 뒤:
+
+   ```sh
+   npm run dev -- -H 0.0.0.0
+   ```
+
+   서버 `apps/server/.env.local`의 `GOOGLE_MOBILE_CLIENT_IDS`에는 앱 로그인 ID 토큰의 `aud`인 **Web OAuth 클라이언트 ID**를 넣는다.
+4. 같은 Wi-Fi의 기기 브라우저에서 `http://192.168.1.10:3000/api/trips`를 열어 `401` JSON이 오면 서버에 닿는 것이다. 열리지 않으면 컴퓨터 방화벽이 3000번 포트를 막고 있는지 본다.
+5. `apps/mobile/.env.local`에 `EXPO_PUBLIC_API_URL=http://192.168.1.10:3000`을 쓰고 개발 빌드를 만든다(§3, §4의 Debug 빌드). 에뮬레이터·시뮬레이터는 iOS `http://localhost:3000`, Android `http://10.0.2.2:3000`이다.
+
+iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP를 허용하고, Android 개발(Debug) 빌드는 기본으로 HTTP를 허용한다. 그 밖의 주소는 HTTPS여야 한다.
+
+### B. 배포 서버에 붙기
+
+1. 서버를 HTTPS로 배포한다(T26D). 서버 환경 변수(`DATABASE_URL`, `GOOGLE_MOBILE_CLIENT_IDS`, `GOOGLE_PLACES_API_KEY`, `GOOGLE_ROUTES_API_KEY`)와 전송 보안 요구는 [T29 결정](decisions/T29-transport-and-routes-budget.md)을 따른다.
+2. `apps/mobile/.env.local`에 `EXPO_PUBLIC_API_URL=https://api.example.com`(본인 주소, 경로·쿼리 없음)을 쓴다.
+3. 서버 주소를 바꾸면 앱을 **다시 빌드해 설치**한다. 서버 배포 위치가 바뀌어도 마찬가지다.
+
+## 3. iOS 직접 설치 (무료 Apple ID + Xcode)
+
+준비: macOS, Xcode(App Store), Xcode에 로그인한 Apple ID(Settings ▸ Accounts), USB로 연결한 iPhone(설정 ▸ 개인정보 보호 및 보안 ▸ 개발자 모드 켜기).
+
+Google 로그인 모듈이 네이티브이므로 **Expo Go로는 로그인할 수 없다.** 개발 빌드를 만든다.
+
+```sh
+cd apps/mobile
+export APP_BUNDLE_ID=io.github.내아이디.travel   # 또는 .env.local에 기록
+npx expo prebuild --platform ios                 # ios/ 폴더 생성 (저장소에는 올라가지 않는다)
+npx expo run:ios --device                        # Debug 빌드: Metro가 JS를 제공한다. 주소는 A(로컬)
+npx expo run:ios --device --configuration Release # Release 빌드: JS를 앱에 포함한다. 주소는 B(HTTPS)
+```
+
+1. 처음 `prebuild`가 끝나면 `ios/*.xcworkspace`를 Xcode로 열고 target ▸ Signing & Capabilities에서 **Automatically manage signing**을 켜고 Team을 본인 Apple ID(Personal Team)로 고른다. 번들 ID는 `APP_BUNDLE_ID`와 같아야 한다.
+2. 설치 뒤 기기에서 설정 ▸ 일반 ▸ VPN 및 기기 관리 ▸ 개발자 앱에서 본인 Apple ID를 **신뢰**한다.
+3. **7일마다 다시 설치한다.** 무료 Apple ID로 서명한 앱은 7일 뒤 실행되지 않는다. 같은 `ios/`에서 `npx expo run:ios --device --configuration Release`를 다시 실행하면 데이터를 지우지 않고 덮어쓴다. 번들 ID를 바꾸면 다른 앱으로 설치되고 로그인 세션도 새로 시작한다. 무료 계정은 동시에 설치할 수 있는 앱 수와 번들 ID 등록 수에 제한이 있다.
+4. `app.config.ts`나 `APP_BUNDLE_ID`, 지도·로그인 키, 아이콘을 바꾸면 `npx expo prebuild --platform ios --clean`으로 `ios/`를 다시 만든 뒤 빌드한다.
+
+## 4. Android APK 만들기
+
+준비: JDK 17, Android SDK(Android Studio로 설치하고 `ANDROID_HOME` 설정), 개발자 옵션의 USB 디버깅을 켠 기기.
+
+```sh
+cd apps/mobile
+export APP_BUNDLE_ID=io.github.내아이디.travel
+npx expo prebuild --platform android             # android/ 폴더 생성 (저장소에는 올라가지 않는다)
+npx expo run:android --device                    # Debug 빌드를 연결한 기기에 설치. 주소는 A(로컬)
+cd android && ./gradlew assembleRelease          # Release APK 생성. 주소는 B(HTTPS)
+```
+
+- 산출물: `apps/mobile/android/app/build/outputs/apk/release/app-release.apk`. 기기에 연결해 `adb install -r app-release.apk`로 설치하거나 APK 파일을 기기로 옮겨 연다(출처를 알 수 없는 앱 설치 허용 필요).
+- Expo 기본 템플릿은 Release에도 디버그 서명을 쓴다. 본인 기기에 직접 설치하는 용도로는 충분하다. 다른 사람에게 배포하거나 스토어에 올리려면 별도 서명 키가 필요하다.
+- **Google 로그인(Android)**: Google Cloud의 Android OAuth 클라이언트에 패키지명(`APP_BUNDLE_ID`)과 **서명 인증서 SHA-1**을 등록한다. SHA-1은 `cd android && ./gradlew signingReport`로 확인한다. Debug와 Release가 같은 디버그 키를 쓰면 SHA-1이 같다.
+- 지도 키는 Maps SDK for iOS·Android 키를 각각 앱(번들 ID/패키지명 + SHA-1)으로 제한한다.
+- 설정을 바꿨다면 `npx expo prebuild --platform android --clean` 뒤 다시 빌드한다.
+
+## 5. 설치 뒤 직접 확인할 것 (사람)
+
+CI가 대신 검증하지 못하는 항목이다.
+
+- [ ] 홈 화면 아이콘과 앱 이름(`여행 동선`), 시작 화면 색
+- [ ] Google 로그인 → `내 여행` 첫 화면 (서버 `aud` 설정 포함)
+- [ ] 선택한 서버 주소(A 또는 B)로 여행 생성 → 동선 결과 → 지도 표시
+- [ ] 결과 지도의 현재 위치 권한 요청
+- [ ] iOS: 7일 뒤 재설치 절차
+- [ ] 로그아웃·탈퇴, 공유 링크 발급
+
+## 문제 해결
+
+| 증상 | 원인과 조치 |
+|---|---|
+| 앱이 "서버 주소 설정을 확인해 주세요."를 표시 | 주소가 HTTPS가 아니거나(릴리스 빌드), 경로·쿼리가 있거나, 사설 IP 범위를 벗어났다. `EXPO_PUBLIC_API_URL`을 고쳐 다시 빌드 |
+| 기기에서 서버에 접속되지 않음 | 같은 Wi-Fi인지, 서버를 `-H 0.0.0.0`으로 띄웠는지, 컴퓨터 방화벽 포트 3000, 컴퓨터 IP가 바뀌지 않았는지 |
+| iOS "Failed to register bundle identifier" | 번들 ID가 다른 개발자와 겹친다. `APP_BUNDLE_ID`를 본인 값으로 바꾸고 `prebuild --clean` |
+| iOS 앱이 열리자마자 종료됨 | 7일이 지났거나 개발자 앱이 신뢰되지 않았다. 재설치·신뢰 설정 |
+| Google 로그인이 `DEVELOPER_ERROR`(Android) | 패키지명과 SHA-1이 OAuth 클라이언트와 다르다 |
+| 서버가 로그인을 거부(401) | 서버 `GOOGLE_MOBILE_CLIENT_IDS`에 Web OAuth 클라이언트 ID가 없다 |

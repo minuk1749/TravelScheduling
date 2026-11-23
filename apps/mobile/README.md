@@ -8,6 +8,7 @@ Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세
 
 | 설정 | 의미 |
 |---|---|
+| `APP_BUNDLE_ID` | iOS 번들 ID와 Android 패키지명(기본 `com.travelscheduling.app`). 무료 Apple ID로 설치하려면 본인 값으로 바꾼다 |
 | `EXPO_PUBLIC_API_URL` | 운영 빌드는 `https://api.example.com`처럼 경로 없는 HTTPS 주소가 필요하다. 개발 빌드에서는 HTTP로 `localhost`, 루프백(`127.0.0.0/8`, `[::1]`), 사설 IPv4(`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)도 지정할 수 있다 |
 | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | 네이티브 SDK가 서버 검증용 ID 토큰을 요청할 Web OAuth 클라이언트 ID |
 | `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | iOS 앱의 OAuth 클라이언트 ID |
@@ -19,7 +20,7 @@ Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세
 
 서버의 `GOOGLE_MOBILE_CLIENT_IDS`에는 **실제 ID 토큰의 aud**를 허용해야 한다. 이 SDK에서 `webClientId`를 사용하므로 위 Web ID도 목록에 포함한다. T18의 서명·발급자·만료 검증은 그대로다. Android에는 Google Cloud에서 앱 패키지명·서명 인증서 SHA를 등록한다. OAuth client secret은 앱에 넣지 않는다.
 
-루트에서 `npm run dev --workspace @travel/mobile`로 Metro를 실행한다. 네이티브 Google 모듈 때문에 Expo Go가 아닌 개발 빌드가 필요하다. 자격증명 없는 CI에서는 로그인 SDK를 목으로 대체하고 JS 번들까지만 생성한다. 번들 ID·APK/Xcode 설치 안내는 T26 범위다. 실제 기기에서는 배포용 HTTPS 서버를 사용한다.
+루트에서 `npm run dev --workspace @travel/mobile`로 Metro를 실행한다. 네이티브 Google 모듈 때문에 Expo Go가 아닌 개발 빌드가 필요하다. 자격증명 없는 CI에서는 로그인 SDK를 목으로 대체하고 JS 번들까지만 생성한다. 실제 기기 설치(iOS Xcode·Android APK)와 로컬/배포 서버 연결 방법은 [기기 설치 안내](../../docs/mobile-install.md)를 따른다. 릴리스 빌드는 배포용 HTTPS 서버만 쓴다. 앱 이름·아이콘·번들 ID는 `app.config.ts`(`createConfig`)와 `assets/`에 있고, `tests/app-config.test.ts`가 `expo config`로 검사한다. `expo prebuild`가 만드는 `ios/`·`android/`는 저장소에 올리지 않는다.
 
 두 Maps SDK 키는 각 앱과 플랫폼으로 제한한다. 지도 키가 없는 환경에서는 장소 검색과 주소 입력을 사용할 수 있고, 결과 화면은 지도 자리에 "지도를 표시할 수 없어요"를 두고 장소 패널은 그대로 쓴다. 결과 지도의 현재 위치 버튼은 위치 권한(iOS 사용 설명, Android 실행 중 요청)을 쓰며 위치를 저장·전송하지 않는다. 지도 SDK 설정을 바꾸면 개발 빌드를 다시 만든다. [Expo 지도 설정](https://docs.expo.dev/versions/latest/sdk/map-view/)
 
