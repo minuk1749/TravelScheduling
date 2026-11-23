@@ -32,7 +32,9 @@ async function changeReservationElsewhere(f: Fixture, visitId: string) {
 }
 
 function expectReplay(f: Fixture) {
-  const [initial, calculation, recovered] = generationKeys(f);
+  const keys = generationKeys(f);
+  expect(keys).toHaveLength(3);
+  const [initial, calculation, recovered] = keys;
   expect(calculation).not.toBe(initial);
   expect(recovered).toBe(calculation);
   expect(f.readRevision).toHaveBeenCalledTimes(1);
@@ -82,6 +84,58 @@ test.each([false, true])('the editor checks a recovered result during a Places o
   expect(f.read).toHaveBeenCalledTimes(1);
   expect(f.save).toHaveBeenCalledTimes(1);
   expectReplay(f);
+});
+
+test('a recovered over-capacity edit opens the named candidates during a Places outage', async () => {
+  const f = resultFixture(initialView);
+  f.generate.mockResolvedValueOnce(json({ ...success, inputHash: initialView.revision }));
+  await openResult(f);
+  const committed = loseGenerationResponse(f, () => ({ ...excess, inputHash: f.current().revision }));
+  await press('지도 카페');
+  await press('1일차에 추가하고 다시 계산');
+  await screen.findByText(lost);
+  f.read.mockImplementation(() => json({ code: 'PROVIDER_UNAVAILABLE', error: '장소 조회 실패' }, 503));
+
+  await press('다시 계산');
+  const cafe = await screen.findByRole('checkbox', { name: '카페 필수', checked: false });
+  expect(cafe).toBeVisible();
+  expect(cafe).toHaveProp('accessibilityHint', expect.stringContaining(`날짜 고정 · ${initialView.input.startDate}`));
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.save).toHaveBeenCalledTimes(1);
+  expect(committed.size).toBe(1);
+  expectReplay(f);
+});
+
+test.each([false, true])('capacity opening reuses the view after a lost recalculation (reservation changed: %s)', async changed => {
+  const f = resultFixture(initialView);
+  f.generate.mockResolvedValueOnce(json({ ...excess, inputHash: 'outdated' }));
+  const committed = loseGenerationResponse(f, () => ({ ...excess, inputHash: f.current().revision }));
+  await renderResult(f);
+  await screen.findByText(lost);
+  const readInput = f.read.getMockImplementation()!;
+  f.read.mockImplementation(() => json({ code: 'PROVIDER_UNAVAILABLE', error: '장소 조회 실패' }, 503));
+  if (changed) await changeReservationElsewhere(f, 'museum');
+
+  await press('다시 불러오기');
+  if (changed) {
+    expect(await screen.findByText(/여행 정보가 바뀌었어요/)).toBeVisible();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  } else {
+    expect(await screen.findByRole('checkbox', { name: '도쿄 미술관 필수', checked: true })).toBeVisible();
+  }
+  expect(committed.size).toBe(1);
+  expect(f.read).toHaveBeenCalledTimes(1);
+  expect(f.save).not.toHaveBeenCalled();
+  expectReplay(f);
+
+  if (changed) {
+    f.read.mockImplementation(readInput);
+    f.generate.mockResolvedValueOnce(json({ ...excess, inputHash: f.current().revision }));
+    await press('다시 불러오기');
+    expect(await screen.findByText(/13:10/)).toBeVisible();
+    expect(f.read).toHaveBeenCalledTimes(2);
+    expect(generationKeys(f)[3]).not.toBe(generationKeys(f)[2]);
+  }
 });
 
 test('required-place selection rejects a recovered feasible result for a superseded reservation', async () => {

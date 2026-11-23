@@ -116,12 +116,15 @@ test('leaving during the opening recalculation aborts it and ignores a late succ
   expect(f.shapes).not.toHaveBeenCalled();
 });
 
-test('an over-capacity recalculation opens required-place selection without another calculation', async () => {
+test('an over-capacity recalculation opens selection with the input and places already read', async () => {
   const f = resultFixture(initialView);
+  f.read.mockReturnValueOnce(json(initialView)).mockImplementation(() => failure('장소 조회 실패'));
   f.generate.mockResolvedValueOnce(outdated()).mockResolvedValueOnce(json(excess));
   await renderResult(f);
   expect(await screen.findByText('시간이 부족해요')).toBeVisible();
   expect(screen.getByRole('header', { name: '필수 장소 선택' })).toBeVisible();
+  expect(screen.getByRole('checkbox', { name: '도쿄 미술관 필수', checked: true })).toBeVisible();
+  expect(f.read).toHaveBeenCalledTimes(1);
   expect(f.generate).toHaveBeenCalledTimes(2);
   expect(f.save).not.toHaveBeenCalled();
   expect(f.shapes).not.toHaveBeenCalled();

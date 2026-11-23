@@ -3,9 +3,8 @@ import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { parseConstraints } from '@travel/core/contracts/results/input';
 import { constraintsFrom, type ResultView, type VisitEdit } from '@travel/core/contracts/results/model';
 import { placeName } from '@travel/core/presentation';
-import { ApiFailure } from '../../api/client';
 import { useItineraryGeneration } from '../../api/itinerary-generation';
-import { useTripApi, type GeneratedTrip } from '../../api/trips';
+import { isStaleInput, useTripApi, type GeneratedTrip } from '../../api/trips';
 import { ActionButton } from '../../components/action-button';
 import { FormCard, FormError, FormScreen, form } from '../../components/input/form-layout';
 import { colors, text } from '../../theme';
@@ -25,13 +24,24 @@ type FlowProps = {
 };
 type Selection = { view: ResultView; result: GeneratedTrip };
 
-export function CapacityFlow({ tripId, initial, back, editConditions, viewResult }: FlowProps) {
+export function CapacityFlow({ tripId, initial, view: initialView, back, editConditions, viewResult }: FlowProps & { view?: ResultView }) {
   const api = useTripApi();
   const calculation = useItineraryGeneration(tripId);
+  const pendingView = useRef(initialView);
   const load = useCallback(async (signal: AbortSignal): Promise<Selection> => {
-    const view = await api.savedInput(tripId, signal);
-    const result = view.revision === initial.inputHash ? initial : await calculation.runVerified(signal, view.revision);
-    return { view, result };
+    const view = pendingView.current ?? await api.savedInput(tripId, signal);
+    signal.throwIfAborted();
+    // Keep the places while this calculation is pending. A later editor reload reads fresh input.
+    pendingView.current = view;
+    try {
+      const result = view.revision === initial.inputHash ? initial : await calculation.runVerified(signal, view.revision);
+      signal.throwIfAborted();
+      pendingView.current = undefined;
+      return { view, result };
+    } catch (failure) {
+      if (!signal.aborted && isStaleInput(failure)) pendingView.current = undefined;
+      throw failure;
+    }
   }, [api, calculation, initial, tripId]);
   const { state, retry } = useTripResource(load);
   if (state.status === 'ready') return <SelectionEditor tripId={tripId} initial={state.data}
@@ -109,7 +119,7 @@ function SelectionEditor({ tripId, initial, back, editConditions, reload, viewRe
       if (!request.signal.aborted) {
         const fields = Object.values(fieldErrors(failure));
         setError({ message: fields.length ? fields.join(' ') : errorMessage(failure),
-          stale: failure instanceof ApiFailure && failure.code === 'STALE_INPUT' });
+          stale: isStaleInput(failure) });
       }
     } finally {
       pending.current = null;

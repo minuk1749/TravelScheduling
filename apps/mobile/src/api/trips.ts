@@ -21,6 +21,8 @@ const json = (method: 'POST' | 'PUT', body: unknown) => ({
 export type ProfileView = { profile: CityProfile | null; recommendedPolicy: LivingSettings['taxiPolicy'] };
 export type GeneratedTrip = ItineraryResult & { itineraryId: string; inputHash: string };
 
+export const isStaleInput = (failure: unknown) => failure instanceof ApiFailure && failure.code === 'STALE_INPUT';
+
 /** A calculation is only shown for the input revision it was made from (T23·T22 shared rule). */
 export function verifyRevision(result: GeneratedTrip, revision: string) {
   if (result.inputHash !== revision) {

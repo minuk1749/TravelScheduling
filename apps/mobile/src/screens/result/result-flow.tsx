@@ -20,7 +20,7 @@ type Load =
   | { status: 'ready'; view: ResultView; result: GeneratedTrip };
 
 function ResultEditor({ tripId, view, result, back, editConditions, overCapacity }: FlowProps & {
-  view: ResultView; result: GeneratedTrip; overCapacity(result: GeneratedTrip): void;
+  view: ResultView; result: GeneratedTrip; overCapacity(view: ResultView, result: GeneratedTrip): void;
 }) {
   const itinerary = useItinerary({ tripId, view, result, overCapacity });
   const map = useResultMap();
@@ -32,7 +32,7 @@ function ResultEditor({ tripId, view, result, back, editConditions, overCapacity
  * input (GET constraints), otherwise recalculates once. Over-capacity results go to selection.
  */
 export function ResultFlow({ tripId, initial, view, back, editConditions, overCapacity }: FlowProps & {
-  initial: GeneratedTrip; view?: ResultView; overCapacity(result: GeneratedTrip): void;
+  initial: GeneratedTrip; view?: ResultView; overCapacity(view: ResultView, result: GeneratedTrip): void;
 }) {
   const api = useTripApi();
   const calculation = useItineraryGeneration(tripId);
@@ -45,7 +45,7 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
     if (load.status === 'ready' || load.error !== undefined) return;
     const request = new AbortController();
     function open(saved: ResultView, result: GeneratedTrip) {
-      if (result.status === 'OVER_CAPACITY') overCapacity(result);
+      if (result.status === 'OVER_CAPACITY') overCapacity(saved, result);
       else setLoad({ status: 'ready', view: saved, result });
     }
     const run = async () => {
@@ -86,16 +86,15 @@ export function ResultFlow({ tripId, initial, view, back, editConditions, overCa
   </FormScreen>;
 }
 
-type Phase = { key: number } & ({ kind: 'capacity'; result: GeneratedTrip } | { kind: 'result'; result: GeneratedTrip; view?: ResultView });
+type Phase = { key: number; result: GeneratedTrip; view?: ResultView };
 
 /** After a calculation: the result screen (OK/CONFLICT) or required-place selection (OVER_CAPACITY), in memory. */
 export function OutcomeFlow({ tripId, initial, back, editConditions }: FlowProps & { initial: GeneratedTrip }) {
-  const [phase, setPhase] = useState<Phase>(() => ({ key: 0, kind: initial.status === 'OVER_CAPACITY' ? 'capacity' : 'result', result: initial }));
-  const showCapacity = useCallback((result: GeneratedTrip) => setPhase(value => ({ key: value.key + 1, kind: 'capacity', result })), []);
-  const showResult = useCallback((view: ResultView, result: GeneratedTrip) =>
-    setPhase(value => ({ key: value.key + 1, kind: 'result', result, view })), []);
-  if (phase.kind === 'capacity') return <CapacityFlow key={phase.key} tripId={tripId} initial={phase.result}
-    back={back} editConditions={editConditions} viewResult={showResult} />;
+  const [phase, setPhase] = useState<Phase>({ key: 0, result: initial });
+  const open = useCallback((view: ResultView, result: GeneratedTrip) =>
+    setPhase(value => ({ key: value.key + 1, result, view })), []);
+  if (phase.result.status === 'OVER_CAPACITY') return <CapacityFlow key={phase.key} tripId={tripId} initial={phase.result}
+    view={phase.view} back={back} editConditions={editConditions} viewResult={open} />;
   return <ResultFlow key={phase.key} tripId={tripId} initial={phase.result} view={phase.view}
-    back={back} editConditions={editConditions} overCapacity={showCapacity} />;
+    back={back} editConditions={editConditions} overCapacity={open} />;
 }

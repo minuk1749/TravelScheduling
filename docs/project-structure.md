@@ -169,6 +169,7 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 ## T23 모바일 필수 장소 선택
 
 - 여행 생성 화면과 하루 생활 재계산이 `OVER_CAPACITY`를 받으면 `apps/mobile/src/screens/capacity/`의 선택 화면을 연다. 저장된 장소와 최초 계산을 같은 입력 해시로 맞춘다.
+- 결과 화면에서 필수 장소 선택으로 넘어갈 때는 계산 결과와 해시가 일치하는 `ResultView`를 함께 전달한다. 선택 화면에서 처음 읽은 입력으로 재계산할 때도 응답 유실에 대비해 장소 정보를 유지한다. 재시도는 같은 키로 결과를 복구하고 현재 revision을 확인한다. 입력 변경이 확인되면 다음 조회에서 입력과 장소를 다시 읽는다.
 - 재검증은 `src/api/trips.ts`의 제약 조회·저장과 `src/api/itinerary-generation.ts`의 생성 요청을 사용한다. 목록과 진단은 방문 ID를 기준으로 연결하고, 저장된 제약과 일치하는 검증 결과를 T22 결과 화면으로 연다. [T23 결정](decisions/T23-mobile-capacity-selection.md)
 
 ## T27 일정 생성 재시도
