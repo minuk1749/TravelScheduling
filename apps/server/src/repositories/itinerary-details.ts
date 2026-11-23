@@ -11,6 +11,8 @@ export type ItineraryDetails = {
   recommendation: { requiredCount: number; requiredVisitIds: string[] } | null;
   verification: ItineraryResult['verification']; transferIssues: ItineraryResult['transferIssues'];
   flightConflicts: ItineraryResult['flightConflicts']; skippedMeals: ItineraryResult['skippedMeals'];
+  /** Absent only in rows saved before T28 (not recorded); an empty array means every scheduled visit's hours were known. */
+  openingHoursUnknown?: ItineraryResult['openingHoursUnknown'];
   /** Airport legs; day legs live in the normalized `legs` rows. */
   transfers: LegComparison[];
 };
@@ -28,6 +30,7 @@ export function encodeItineraryDetails(result: ItineraryResult, schedule: Schedu
     transferIssues: result.transferIssues,
     flightConflicts: result.flightConflicts,
     skippedMeals: result.skippedMeals,
+    ...(result.openingHoursUnknown ? { openingHoursUnknown: result.openingHoursUnknown } : {}),
     transfers: result.comparisons.filter(leg => leg.kind === 'AIRPORT'),
   };
 }

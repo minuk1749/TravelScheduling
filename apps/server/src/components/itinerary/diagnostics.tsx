@@ -6,6 +6,7 @@ export function Diagnostics({ result, view, readOnly = false }: { result: Itiner
     <p>가용 {minutes(result.capacity.time.availableMinutes)} · 필요 시간 하한 {minutes(result.capacity.time.requiredMinutesLowerBound)}</p>
     {result.status === 'CONFLICT' && <p role="alert">고정 제약을 자동으로 바꾸지 않았습니다. {readOnly ? '소유자의 일정 수정이 필요합니다.' : '날짜·시각·순서·이동수단 또는 생활 설정을 조정해 주세요.'}</p>}
     {!result.verification.verified && <p role="alert">실제 출발 시각의 이동시간 검증을 완료하지 못했습니다.</p>}
+    {!!result.openingHoursUnknown?.length && <p>영업시간을 확인하지 못한 장소(방문 전 확인 필요): {result.openingHoursUnknown.map(id => visitName(view, id)).join(', ')}</p>}
     <ul>{result.capacity.unplaced.map(v => <li key={v.visitId}>{visitName(view, v.visitId)}: {REASONS[v.reason]}{v.fixed && ' (고정)'}</li>)}
       {result.capacity.issues.map((issue, i) => <li key={`issue-${i}`}>{issue.date}: {REASONS[issue.reason]}{'slot' in issue && ` (${MEALS[issue.slot]})`}</li>)}
       {result.transferIssues.map((issue, i) => <li key={`transfer-${i}`}>{issue.date}: {REASONS[issue.reason]}</li>)}

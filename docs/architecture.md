@@ -234,6 +234,8 @@ T27에서 요청 키가 있는 POST는 [생성 요청 저장소](../apps/server/
 각 요청의 소유권 검사 후 같은 서버에서는 소유자·여행·키가 같은 진행 중 요청을 공유한다. 서버 간에는 동일 여행·키를 PostgreSQL 세션 잠금으로 직렬화하고 소유권을 확인한 저장 응답을 복구한다. 최초 생성의 요청 키와 전체 결과는 일정과 함께 커밋한다.
 앱과 웹이 복구한 결과를 이미 읽어 둔 입력과 함께 표시할 때는 `GET /api/trips/[id]/constraints?fields=revision`으로 현재 입력 해시를 확인한다. 서버는 소유자 조건으로 읽은 DB 스냅샷에서 해시를 계산하며 장소 상세 조회를 생략한다. 새 키를 보내거나 헤더를 생략하면 새 결과를 생성한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
 
+T28에서 장소 확인은 고정하지 않은 희망 장소(WISH, 날짜·순서 미고정)만 쓰는 장소의 상세 정보 누락을 허용하고 그 방문을 스케줄러 입력에서 뺀다. 필수·고정 방문과 공항·숙소는 기존 입력 오류를 유지한다. 영업시간이 미상인 장소가 배치되면 `ItineraryResult.openingHoursUnknown`(방문 ID 목록)에 담으며 이동시간 `verification`과 별개다. 새 결과는 빈 배열도 포함하고, 필드가 없으면 T28 이전 결과로 확인 여부를 알 수 없다. 휴업(`[]`)은 기존대로 배치 불가다. [T28 결정](decisions/T28-optional-wish-and-unknown-hours.md)
+
 T7A의 전체 상세 PlaceRepository 계약은 ADR 0003에 따라 철회했다. 장소 ID 영구 저장은 T10 생성 저장소에서 연결한다.
 
 T10 현재 생성 DTO·한도·기본값·프로필 추천은 [ADR 0006](decisions/0006-trip-input-creation.md)에 기록한다.

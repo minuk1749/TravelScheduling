@@ -84,7 +84,15 @@ export interface ItineraryResult {
   /** CONFLICT also covers airport transfer/flight issues and an unverified re-query loop. */
   status: CapacityResult['status'];
   capacity: CapacityResult;
+  /** Travel times were re-queried at the actual departures. Says nothing about opening hours. */
   verification: { verified: boolean; attempts: number };
+  /**
+   * Visit IDs in the displayed schedule whose opening hours could not be checked (a closed place is
+   * rejected, never listed here). Results generated since T28 always carry the list: an empty array
+   * means every scheduled visit's hours were known. Absent means the result predates T28 and whether
+   * hours were known was not recorded, so consumers must not read absence as "all known".
+   */
+  openingHoursUnknown?: readonly string[];
   transferIssues: readonly TransferIssue[];
   /** Flight days where immigration plus the arrival transfer ends after the departure transfer must start. */
   flightConflicts: readonly FlightConflict[];

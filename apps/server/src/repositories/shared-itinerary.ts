@@ -68,5 +68,6 @@ export async function readSharedResult(client: PoolClient, row: StoredResult, ti
   }
   return { status: row.status, capacity, comparisons, efficiency: row.efficiency_summary,
     verification: d.verification, transferIssues: d.transferIssues,
-    flightConflicts: d.flightConflicts, skippedMeals: d.skippedMeals };
+    flightConflicts: d.flightConflicts, skippedMeals: d.skippedMeals,
+    ...(d.openingHoursUnknown ? { openingHoursUnknown: d.openingHoursUnknown } : {}) };
 }

@@ -29,3 +29,14 @@ test('T15A details codec: legacy rows missing any T12 field are rejected', async
   }
   assert.equal(isCompleteItineraryDetails({}), false);
 });
+
+test('T28 details codec: new rows keep an empty unknown-hours list; pre-T28 rows without the field stay readable and unrecorded', async () => {
+  const result = await service().service.compute(sampleTrip());
+  const stored = JSON.parse(JSON.stringify(encodeItineraryDetails(result, result.capacity.recommendation!.schedule)));
+  assert.ok(isCompleteItineraryDetails(stored));
+  assert.deepEqual(stored.openingHoursUnknown, []);
+  const legacy = { ...stored };
+  delete legacy.openingHoursUnknown;
+  assert.ok(isCompleteItineraryDetails(legacy), 'the field is optional for older rows');
+  assert.equal('openingHoursUnknown' in legacy, false);
+});

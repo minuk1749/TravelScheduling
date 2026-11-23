@@ -12,7 +12,10 @@ import { matrixRequest, routeRequest } from '../../src/travel-time/validation';
  * are synthetic (distance-based), not Google content, and no API key or network access is used.
  */
 export const TIME_ZONE = 'Asia/Tokyo';
-export type Sample = { googlePlaceId: string; latitude: number; longitude: number; hours?: readonly [string, string] };
+export type Sample = { googlePlaceId: string; latitude: number; longitude: number; hours?: readonly [string, string];
+  /** The provider reports the place as closed: empty hours, which is not the same as unknown hours. */
+  closed?: boolean;
+};
 export const samplePlaces = {
   airport: { googlePlaceId: 'sample-haneda-airport', latitude: 35.5494, longitude: 139.7798 },
   hotel: { googlePlaceId: 'sample-ginza-hotel', latitude: 35.6717, longitude: 139.7650 },
@@ -46,7 +49,7 @@ export class FixturePlaces {
     this.detailCalls.push(input.googlePlaceId);
     const place = this.find(input.googlePlaceId);
     if (!place || this.missing.has(input.googlePlaceId)) return null;
-    const openingHours = place.hours && input.dates.map(date => ({
+    const openingHours = place.closed ? [] : place.hours && input.dates.map(date => ({
       start: Temporal.PlainDateTime.from(`${date}T${place.hours![0]}`).toZonedDateTime(input.timeZone).toInstant().toString(),
       end: Temporal.PlainDateTime.from(`${date}T${place.hours![1]}`).toZonedDateTime(input.timeZone).toInstant().toString(),
     }));

@@ -4,7 +4,7 @@ import type { ScheduleResult } from '../../scheduler';
 import { MEAL_MINUTES, planDays, tripDates } from './day-plan';
 import { prepareDays, type PreparedDay } from './days';
 import { compareLeg, summarize } from './efficiency';
-import { resolvePlaces, schedulerVisits } from './places';
+import { resolvePlaces, schedulerVisits, unknownHoursInSchedule } from './places';
 import { FareConverter, RouteBook } from './routes';
 import { MAX_ROUTE_ATTEMPTS, scheduleWithActualRoutes, type VerifiedCapacity } from './verification';
 import type { GenerateOutcome, ItineraryDependencies, ItineraryResult, LegComparison, TripInputs } from './types';
@@ -57,12 +57,14 @@ export class ItineraryService {
     const schedule = status === 'CONFLICT' ? null : verified.capacity.recommendation?.schedule ?? null;
     const comparisons = schedule ? legComparisons(schedule, prepared, verified, profile) : [];
     const airportTransferLimits = status === 'CONFLICT' ? prepared.flatMap(day => day.airportTransferLimits) : [];
+    const openingHoursUnknown = unknownHoursInSchedule(visits, schedule);
     return {
       status,
       capacity: verified.capacity,
       availableByDate: Object.fromEntries(prepared.map(({ day }) => [day.date, day.window.available])),
       ...(airportTransferLimits.length ? { airportTransferLimits } : {}),
       verification: { verified: verified.verified, attempts: verified.attempts },
+      openingHoursUnknown,
       transferIssues,
       flightConflicts,
       skippedMeals: prepared.flatMap(day => day.skippedMeals),
