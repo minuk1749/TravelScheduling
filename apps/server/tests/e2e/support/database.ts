@@ -70,7 +70,11 @@ export async function createIsolatedSchema({ baseUrl, schema, url }: IsolatedDat
   return drop;
 }
 
-interface SuiteHooks { beforeAll(run: () => Promise<void>): void; afterAll(run: () => Promise<void>): void }
+/** The part of Playwright's `test` that openRunDatabase uses; node:test passes a stand-in that records the hooks. */
+export interface SuiteHooks { beforeAll(run: () => Promise<void>): void; afterAll(run: () => Promise<void>): void }
+
+/** Where a spec's pool connects and which schema it must resolve to (default: the run's environment). */
+export interface RunDatabaseTarget { url?: string; schema?: string }
 
 /**
  * A spec file's pool on the run's schema (Playwright passes its `test`). Before anything else runs, the connection must
@@ -80,7 +84,7 @@ interface SuiteHooks { beforeAll(run: () => Promise<void>): void; afterAll(run: 
  */
 export function openRunDatabase(
   hooks: SuiteHooks, prepare?: (pool: Pool) => Promise<void>,
-  target: { url?: string; schema?: string } = { url: process.env.DATABASE_URL, schema: process.env[SCHEMA_ENV] },
+  target: RunDatabaseTarget = { url: process.env.DATABASE_URL, schema: process.env[SCHEMA_ENV] },
 ): Pool {
   const pool = createDatabasePool(target.url);
   hooks.beforeAll(async () => {

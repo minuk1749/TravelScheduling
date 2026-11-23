@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
-import type { Pool, PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
 import { createDatabasePool } from '../src/lib/db';
 import { migrate, readMigrations } from '../src/lib/migrations';
 import { cityProfile } from './fixtures/trip-input';
 import { withDatabase } from './helpers/database';
+import { repositoryRoot } from './helpers/paths';
 import { schemaUrl, upsertCityProfile, isolateDatabase, openRunDatabase } from './e2e/support/database';
 import { setUpRunDatabase } from './e2e/support/global-setup';
-import { seedRouteShapes } from './e2e/support/route-shapes-seed';
+import { registerRouteShapesSeed } from './e2e/support/route-shapes-seed';
 
 /**
  * Valid libpq `options` the run must keep: a multi-schema search_path with an escaped space, another option, and a value
@@ -182,19 +185,28 @@ test('T25: the route shapes spec seeds users, sessions and trips only after the 
     await client.query("INSERT INTO users (id, google_id, email) VALUES (gen_random_uuid(), 'kept-user', 'kept@example.test')");
     const before = await rowCounts(client);
     const url = withOptions(process.env.DATABASE_URL!, `-c search_path=${defaultSchema}`);
-    const prepare = async (pool: Pool) => { await seedRouteShapes(pool); };
 
+    // The spec's own registration (route-shapes-auth.spec.ts calls it with Playwright's `test`), so every hook it adds runs.
     const wrong = suiteHooks();
-    openRunDatabase(wrong.hooks, prepare, { url, schema: 'e2e_some_other_run' });
+    const unseeded = registerRouteShapesSeed(wrong.hooks, { url, schema: 'e2e_some_other_run' });
     await assert.rejects(wrong.runSuite(), /not the run schema e2e_some_other_run/);
     assert.deepEqual(await rowCounts(client), before, 'no user, session, trip or itinerary is written to the other schema');
+    assert.throws(unseeded, /seed is not ready/, 'a test reading the seed fails instead of using a partial one');
 
     const right = suiteHooks();
-    openRunDatabase(right.hooks, prepare, { url, schema: defaultSchema });
+    const seeded = registerRouteShapesSeed(right.hooks, { url, schema: defaultSchema });
     await right.runSuite();
     assert.deepEqual(await rowCounts(client), { users: before.users + 2, sessions: before.sessions + 3, trips: before.trips + 1, itineraries: before.itineraries + 2 },
-      'on the run schema the same prepare step seeds the spec');
+      'on the run schema the same registration seeds the spec');
+    assert.match(seeded().path, new RegExp(`^/api/trips/[0-9a-f-]{36}/itinerary/shapes\\?inputHash=${seeded().inputHash}$`));
   });
+});
+
+test('T25: the route shapes spec writes to the database only through registerRouteShapesSeed', async () => {
+  const spec = await readFile(path.join(repositoryRoot, 'apps/server/tests/e2e/route-shapes-auth.spec.ts'), 'utf8');
+  assert.equal(spec.match(/registerRouteShapesSeed\(test\)/g)?.length, 1, 'the spec registers the checked seed once');
+  assert.doesNotMatch(spec, /\b(beforeAll|beforeEach|openRunDatabase|createDatabasePool|pg)\b/,
+    'no other hook or pool could write before or after a failed schema check');
 });
 
 test('T25: when a spec reaches the wrong schema it stops before writing and its cleanup deletes nothing there', async () => {

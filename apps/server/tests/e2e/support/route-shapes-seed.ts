@@ -8,6 +8,7 @@ import { insertTrip } from '../../../src/repositories/trip-inputs';
 import { loadTripInputs } from '../../../src/repositories/trip-snapshot';
 import { FixtureTravel, sampleDraft, sampleTrip } from '../../fixtures/itinerary';
 import { service } from '../../helpers/itinerary-service';
+import { openRunDatabase, type RunDatabaseTarget, type SuiteHooks } from './database';
 
 /** What route-shapes-auth.spec.ts reads back over HTTP: three session tokens and one trip with two saved itineraries. */
 export interface RouteShapesSeed {
@@ -16,12 +17,23 @@ export interface RouteShapesSeed {
 }
 
 /**
- * Writes an owner and a visitor with mobile sessions (one of the owner's expired) and the owner's trip with an older and
- * a newer saved itinerary for the same input. Pass it as openRunDatabase's `prepare`, so it only runs once the pool is
- * shown to use the run's schema: as a separate beforeAll it would still run after a failed check (Playwright runs the
- * remaining hooks) and write to whatever schema the connection did reach.
+ * The route shapes spec's whole database setup, registered on its suite: route-shapes-auth.spec.ts passes Playwright's
+ * `test`, e2e-database.test.ts passes a hook recorder and another target. The seed is openRunDatabase's `prepare`, so it
+ * only runs once the pool is shown to use the run's schema: as a separate beforeAll it would still run after a failed
+ * check (Playwright runs the remaining hooks) and write to whatever schema the connection did reach. The returned
+ * function reads the seed inside a test and throws if the setup did not complete.
  */
-export async function seedRouteShapes(pool: Pool): Promise<RouteShapesSeed> {
+export function registerRouteShapesSeed(hooks: SuiteHooks, target?: RunDatabaseTarget): () => RouteShapesSeed {
+  let seed: RouteShapesSeed | undefined;
+  openRunDatabase(hooks, async pool => { seed = await seedRouteShapes(pool); }, target);
+  return () => {
+    if (!seed) throw new Error('the route shapes seed is not ready: the schema check or the seed failed');
+    return seed;
+  };
+}
+
+/** An owner and a visitor with mobile sessions (one of the owner's expired) and the owner's trip with an older and a newer saved itinerary for the same input. */
+async function seedRouteShapes(pool: Pool): Promise<RouteShapesSeed> {
   const owner = randomUUID(), visitor = randomUUID();
   const ownerToken = newOpaqueToken(), visitorToken = newOpaqueToken(), expiredToken = newOpaqueToken();
   const client = await pool.connect();
