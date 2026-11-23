@@ -33,10 +33,10 @@ test('a long conflict stays inside the measured panel; dates, map controls and t
   // A short landscape parent can be smaller than the OS window (navigation/split view).
   await layout('result-screen', 750, 320);
   await layout('result-top-controls', 750, 125);
-  const expected = 320 - 125 - result.locate.offset - size.touch;
+  const expected = 320 - 125 - result.locate.offset - size.touch - result.mapAttributionHeight;
   expect(panel()).toHaveStyle({ height: expected });
   expect(map.mock.lastCall?.[0]).toMatchObject({ bottomInset: expected, topInset: 125 });
-  expect(screen.getByRole('button', { name: '현재 위치' })).toHaveStyle({ bottom: expected + result.locate.offset });
+  expect(screen.getByRole('button', { name: '현재 위치' })).toHaveStyle({ bottom: expected + result.mapAttributionHeight + result.locate.offset });
   expect(within(list()).queryByRole('button', { name: '2일 12.4' })).toBeNull();
   await press('2일 12.4');
   expect(screen.queryByRole('button', { name: last })).toBeNull();
@@ -63,7 +63,7 @@ test('the panel scrolls vertically at larger system text sizes and keeps horizon
     await openResult(resultFixture());
     await layout('result-screen', 780, 370);
     await layout('result-top-controls', 780, 131);
-    expect(StyleSheet.flatten(screen.getByTestId('place-panel').props.style).height).toBe(370 - 131 - result.locate.offset - size.touch);
+    expect(StyleSheet.flatten(screen.getByTestId('place-panel').props.style).height).toBe(370 - 131 - result.locate.offset - size.touch - result.mapAttributionHeight);
     const list = screen.getByTestId('place-panel-scroll');
     expect(within(list).getByTestId('place-card-row')).toBeOnTheScreen();
     expect(within(list).getByTestId('place-card-museum')).toHaveStyle({ width: result.cardRow.width });

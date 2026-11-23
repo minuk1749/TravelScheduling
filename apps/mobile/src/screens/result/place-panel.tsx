@@ -43,9 +43,9 @@ export function usePanelLayout(topInset = 0) {
   const { width, height } = parent ?? window;
   const target = height * result.panel.ratio;
   // On short parents keep the date chips and the current-location button in separate touch regions.
-  const available = height - topInset - result.locate.offset - result.locate.size;
+  const available = height - topInset - result.locate.offset - result.locate.size - result.mapAttributionHeight;
   const panelHeight = topInset ? Math.min(target, Math.max(size.touch, available)) : target;
-  return { panelHeight, wide: width > height, onLayout: (event: LayoutChangeEvent) => {
+  return { panelHeight, controlsBottom: panelHeight + result.mapAttributionHeight, wide: width > height, onLayout: (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setParent(previous => previous?.width === width && previous.height === height ? previous : { width, height });
   } };
@@ -69,8 +69,10 @@ export function InitialResult({ map: Map, back, failure }: {
   map: ResultMap; back(): void; failure?: { message: string; retry(): void; editConditions(): void };
 }) {
   const { panelHeight, onLayout } = usePanelLayout();
+  const safe = useSafeAreaInsets();
   return <View style={layout.screen} onLayout={onLayout}>
-    <Map markers={[]} routes={[]} selectedId={null} focusDate={null} focusIds={[]} topInset={0} bottomInset={panelHeight}
+    <Map markers={[]} routes={[]} selectedId={null} focusDate={null} focusIds={[]} topInset={safe.top} bottomInset={panelHeight}
+      overlay={{ left: safe.left, right: safe.right, controls: [] }}
       dimmed={false} locateRequest={0} onSelectMarker={() => {}} />
     <PanelFrame id="initial-place-panel" height={panelHeight}>
       <View style={styles.dateRow}>

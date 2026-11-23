@@ -3,7 +3,7 @@ import { processColor, StyleSheet } from 'react-native';
 import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { GoogleResultMap } from '../src/map/google-result-map';
 import type { LatLng, ResultMapProps } from '../src/map/types';
-import { colors, spacing } from '../src/theme';
+import { colors, result, spacing } from '../src/theme';
 import { deferred, json } from './helpers';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { conflictTrip, D1, D3, openResult, place, resultFixture, view } from './result-fixture';
@@ -36,7 +36,7 @@ test('projects the airport into visible map space, updates when the panel moves,
     markers: [{ id: 'airport', kind: 'AIRPORT', order: null, label: '하네다', coordinate }], routes: [], focusDate: '2026-12-03', focusIds: [],
     selectedId: null, topInset: 80, bottomInset: 120, dimmed: false, locateRequest: 0, onSelectMarker() {},
   };
-  mockProject.mockResolvedValueOnce({ x: 200, y: 500 });
+  mockProject.mockResolvedValue({ x: 200, y: 500 });
   const rendered = await render(<GoogleResultMap {...props} />);
   const map = screen.getByTestId('native-map');
   await fireEvent(map, 'layout', { nativeEvent: { layout: { width: 400, height: 800 } } });
@@ -48,10 +48,10 @@ test('projects the airport into visible map space, updates when the panel moves,
   await rendered.rerender(<GoogleResultMap {...props} bottomInset={350} />);
   expect(screen.getByText(label)).toBeVisible();
   expect(within(screen.getByTestId('airport-edge-BOTTOM')).getByText(label)).toBeVisible();
-  expect(screen.getByTestId('airport-edges')).toHaveStyle({ bottom: 350 });
+  expect(screen.getByTestId('airport-edges')).toHaveStyle({ bottom: 350 + result.mapAttributionHeight });
   await rendered.rerender(<GoogleResultMap {...props} />);
   expect(screen.queryByText(label)).toBeNull();
-  expect(mockProject).toHaveBeenCalledTimes(1);
+  expect(mockProject).toHaveBeenCalledTimes(3);
 
   const stale = deferred<{ x: number; y: number }>();
   mockProject.mockReturnValueOnce(stale.promise).mockResolvedValueOnce({ x: 200, y: 50 });
@@ -84,7 +84,7 @@ test('both airports share one readable edge notice, then follow rotation, map mo
   const combined = '✈ 하네다 · 나리타 · 화면 밖';
   expect(within(screen.getByTestId('airport-edge-RIGHT')).getByText(combined)).toBeVisible();
   expect(screen.getByTestId('airport-edge-RIGHT')).toHaveStyle({ alignItems: 'flex-end', justifyContent: 'center' });
-  expect(screen.getByTestId('airport-edges')).toHaveStyle({ top: 76, bottom: 150 });
+  expect(screen.getByTestId('airport-edges')).toHaveStyle({ top: 76, bottom: 150 + result.mapAttributionHeight });
 
   mockProject.mockResolvedValueOnce({ x: 390, y: 130 }).mockResolvedValueOnce({ x: -80, y: 160 });
   await fireEvent(map, 'layout', { nativeEvent: { layout: { width: 844, height: 390 } } });
@@ -196,11 +196,18 @@ test('the bottom airport notice clears the measured legend, retry, location and 
     ];
     const before = await normalControls();
     const idleBadge = await badgeBounds();
+    const panelHeight = StyleSheet.flatten(screen.getByTestId('place-panel').props.style).height;
+    const padding = screen.getByTestId('native-map').props.mapPadding;
+    expect(padding).toEqual({ top: 154, bottom: panelHeight, left: 24, right: 12 });
+    const attributionTop = height - padding.bottom - 32;
+    for (const rect of [...before, idleBadge]) expect(rect.y + rect.height).toBeLessThanOrEqual(attributionTop);
     await fireEvent.press(screen.getByRole('button', { name: '택시 14분 약 ¥2,300로 바꾸기' }));
     const toast = await screen.findByTestId('result-toast');
     const toastRect = await control(toast, width - 24 - 12 - spacing.cardGap * 2, 108);
     const locateRect = await control(screen.getByRole('button', { name: '현재 위치' }), 44, 44);
     const shownBadge = await badgeBounds();
+    expect(screen.getByTestId('native-map')).toHaveProp('mapPadding', padding);
+    for (const rect of [toastRect, locateRect, shownBadge]) expect(rect.y + rect.height).toBeLessThanOrEqual(attributionTop);
     expect(shownBadge.y + shownBadge.height).toBeLessThanOrEqual(toastRect.y);
     expect(overlaps(shownBadge, locateRect)).toBe(false);
     expect(overlaps(toastRect, locateRect)).toBe(false);
@@ -244,13 +251,14 @@ test('a short map keeps separate airport groups clear of the landscape controls,
     const transform = Object.assign({}, ...StyleSheet.flatten(badge.props.style).transform);
     return { x: left + transform.translateX, y: top + transform.translateY, width: w, height: h };
   }
-  const bottom = await labelRect('✈ 하네다 · 화면 밖', (bounds.left + width - bounds.right - 128) / 2, height - bounds.bottom - gap - 24);
-  const side = await labelRect('✈ 나리타 · 화면 밖', bounds.left + gap, (bounds.top + height - bounds.bottom - 24) / 2);
+  const edgeBottom = bounds.bottom + result.mapAttributionHeight;
+  const bottom = await labelRect('✈ 하네다 · 화면 밖', (bounds.left + width - bounds.right - 128) / 2, height - edgeBottom - gap - 24);
+  const side = await labelRect('✈ 나리타 · 화면 밖', bounds.left + gap, (bounds.top + height - edgeBottom - 24) / 2);
   type Rect = typeof side;
   const separated = (a: Rect, b: Rect) => a.x >= b.x + b.width || b.x >= a.x + a.width || a.y >= b.y + b.height || b.y >= a.y + a.height;
   expect([bottom, side].every(label => separated(label, toast) && separated(label, locate))).toBe(true);
   expect(separated(bottom, side)).toBe(true);
-  expect(screen.getByTestId('airport-edges')).toHaveStyle(bounds);
+  expect(screen.getByTestId('airport-edges')).toHaveStyle({ ...bounds, bottom: edgeBottom });
 
   await rendered.rerender(<GoogleResultMap {...props} overlay={{ ...overlay, controls: [locate] }} />);
   expect(screen.queryByText('✈ 나리타 · 화면 밖')).toBeNull();

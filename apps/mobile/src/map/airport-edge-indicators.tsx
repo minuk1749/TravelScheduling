@@ -19,8 +19,8 @@ export function AirportEdgeIndicators({ markers, focusDate, cameraVersion, ...pr
   const airports = markers.filter(marker => marker.kind === 'AIRPORT');
   if (!airports.length) return null;
   const coordinates = airports.map(({ coordinate }) => [coordinate.latitude, coordinate.longitude]);
-  // A different day, camera or native map size invalidates even an identical airport coordinate.
-  const key = JSON.stringify([focusDate, cameraVersion, props.viewport.width, props.viewport.height, coordinates]);
+  const key = JSON.stringify([focusDate, cameraVersion, props.viewport.width, props.viewport.height,
+    props.topInset, props.bottomInset, props.overlay?.left, props.overlay?.right, coordinates]);
   return <ProjectedEdges key={key} {...props} airports={airports} />;
 }
 

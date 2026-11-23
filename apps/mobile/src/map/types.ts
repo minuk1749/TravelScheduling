@@ -46,7 +46,7 @@ export type ResultMapProps = {
   focusDate: string | null;
   /** IDs the camera should fit (the day's places); markers outside the view get an edge label. */
   focusIds: readonly string[];
-  /** Height (pt) covered by the floating top bar and the bottom panel; used for camera fitting and airport edge indicators. */
+  /** Occluded heights in layout points. Native attribution, camera fitting and airport indicators use these insets. */
   topInset: number;
   bottomInset: number;
   /** Safe side insets and the visible controls floating above the bottom panel. */

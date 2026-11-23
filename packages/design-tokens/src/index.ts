@@ -52,6 +52,8 @@ export const result = {
   topBar: { top: 10, inset: 12, height: 52, radius: 26 },
   dateChips: { top: 72, inset: 12, height: 44, radius: 22, gap: 6 },
   locate: { offset: 56, inset: 12, size: 44 },
+  /** Keep the native Google logo and legal text visible between the panel and floating controls. */
+  mapAttributionHeight: spacing.steps[6],
   panel: { top: 480, ratio: 0.43 },
   cardRow: { width: 300, gap: 12, inset: 20 },
   card: { surface: '#F7F8FA', radius: 16, padding: 14, border: 1.5, divider: '#E5E8EB', dividerWidth: 1 },

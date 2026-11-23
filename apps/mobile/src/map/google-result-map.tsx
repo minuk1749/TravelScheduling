@@ -13,6 +13,7 @@ const ROUTE_WIDTH = spacing.steps[0] + 1;
 const OUTLINE = ROUTE_WIDTH + 3;
 const DASHES = { DOTTED: [1, ROUTE_WIDTH * 2], FLOATING: [ROUTE_WIDTH * 2, ROUTE_WIDTH * 1.5] } as const;
 const MARKER = size.checkbox + 2;
+const FOCUS_MARGIN = { top: spacing.section, bottom: spacing.section, left: spacing.section * 2, right: spacing.section * 2 };
 const ICONS = { LODGING: '⌂', AIRPORT: '✈', WISH: '★' } as const;
 
 function pathPoints(route: MapRouteSpec): readonly LatLng[] {
@@ -87,6 +88,8 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
   const [cameraVersion, setCameraVersion] = useState(0);
   const [viewport, setViewport] = useState<MapSize>({ width: 0, height: 0 });
   const safeLeft = overlay?.left ?? 0, safeRight = overlay?.right ?? 0;
+  const mapPadding = useMemo(() => ({ top: topInset, bottom: bottomInset, left: safeLeft, right: safeRight }),
+    [topInset, bottomInset, safeLeft, safeRight]);
   const reduced = useReducedMotion();
   const [showUser, setShowUser] = useState(false);
   const user = useRef<LatLng | null>(null);
@@ -98,10 +101,11 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
   useEffect(() => {
     const focus: LatLng[] = JSON.parse(focusKey);
     if (!mapReady || !focus.length) return;
-    const edgePadding = { top: topInset + spacing.section, bottom: bottomInset + spacing.section, left: safeLeft + spacing.section * 2, right: safeRight + spacing.section * 2 };
-    if (viewport.width <= edgePadding.left + edgePadding.right || viewport.height <= edgePadding.top + edgePadding.bottom) return;
-    map.current?.fitToCoordinates(focus, { edgePadding, animated: true });
-  }, [focusDate, focusKey, topInset, bottomInset, safeLeft, safeRight, mapReady, viewport.width, viewport.height]);
+    const width = viewport.width - mapPadding.left - mapPadding.right;
+    const height = viewport.height - mapPadding.top - mapPadding.bottom;
+    if (width <= FOCUS_MARGIN.left + FOCUS_MARGIN.right || height <= FOCUS_MARGIN.top + FOCUS_MARGIN.bottom) return;
+    map.current?.fitToCoordinates(focus, { edgePadding: FOCUS_MARGIN, animated: true });
+  }, [focusDate, focusKey, mapPadding, mapReady, viewport.width, viewport.height]);
 
   useEffect(() => {
     if (!locateRequest) return;
@@ -118,7 +122,7 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
 
   return <View style={StyleSheet.absoluteFill}>
     <MapView ref={map} style={StyleSheet.absoluteFill} provider={PROVIDER_GOOGLE} showsUserLocation={showUser}
-      showsMyLocationButton={false} toolbarEnabled={false}
+      mapPadding={mapPadding} paddingAdjustmentBehavior="never" showsMyLocationButton={false} toolbarEnabled={false}
       onLayout={event => {
         const { width, height } = event.nativeEvent.layout;
         setViewport({ width, height });
@@ -147,7 +151,8 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
       })}
     </MapView>
     {mapReady && viewport.width > 0 && viewport.height > 0 && <AirportEdgeIndicators map={map} markers={markers}
-      viewport={viewport} overlay={overlay} focusDate={focusDate} cameraVersion={cameraVersion} topInset={topInset} bottomInset={bottomInset} />}
+      viewport={viewport} overlay={overlay} focusDate={focusDate} cameraVersion={cameraVersion} topInset={topInset}
+      bottomInset={bottomInset + result.mapAttributionHeight} />}
   </View>;
 }
 

@@ -1,7 +1,9 @@
 import type { ReactNode, Ref } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { PermissionsAndroid, Platform, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { GoogleResultMap } from '../src/map/google-result-map';
+import { InitialResult } from '../src/screens/result/place-panel';
 import type { ResultMapProps } from '../src/map/types';
 import { spacing } from '../src/theme';
 import { deferred, json } from './helpers';
@@ -33,6 +35,36 @@ const location = () => fireEvent(map(), 'userLocationChange', { nativeEvent: { c
 
 afterEach(() => { jest.restoreAllMocks(); jest.clearAllMocks(); });
 
+test('keeps native Google attribution above the panel even when there is no camera fit', async () => {
+  const empty = { ...props, markers: [], focusIds: [], overlay: { left: 34, right: 12, controls: [] } };
+  const rendered = await render(<GoogleResultMap {...empty} />);
+  const insets = { top: 70, bottom: 250, left: 34, right: 12 };
+  expect(map().props.mapPadding?.bottom ?? 0).toBe(250);
+  expect(map()).toHaveProp('mapPadding', insets);
+  await layout(400, 800);
+  await ready();
+  await fireEvent(map(), 'regionChangeComplete');
+  expect(map()).toHaveProp('mapPadding', insets);
+  await rendered.rerender(<GoogleResultMap {...empty} bottomInset={120} />);
+  expect(map()).toHaveProp('mapPadding', { ...insets, bottom: 120 });
+  expect(mockFit).not.toHaveBeenCalled();
+});
+
+test('the first calculation respects the panel and landscape safe area before any map coordinates exist', async () => {
+  const safe = jest.mocked(useSafeAreaInsets);
+  const initial = safe.getMockImplementation();
+  safe.mockReturnValue({ top: 12, bottom: 21, left: 47, right: 34 });
+  try {
+    await render(<InitialResult map={GoogleResultMap} back={() => {}} />);
+    const height = StyleSheet.flatten(screen.getByTestId('initial-place-panel').props.style).height;
+    expect(height).toBeGreaterThan(0);
+    expect(map()).toHaveProp('mapPadding', { top: 12, bottom: height, left: 47, right: 34 });
+    expect(mockFit).not.toHaveBeenCalled();
+  } finally {
+    if (initial) safe.mockImplementation(initial);
+  }
+});
+
 test.each(['layout first', 'ready first'])('fits after layout and map readiness (%s); a pan preserves the camera', async order => {
   const rendered = await render(<GoogleResultMap {...props} />);
   expect(mockFit).not.toHaveBeenCalled();
@@ -44,12 +76,13 @@ test.each(['layout first', 'ready first'])('fits after layout and map readiness 
   } else {
     await ready();
     await layout(0, 800);
+    await layout(400, 330);
     expect(mockFit).not.toHaveBeenCalled();
     await layout(400, 800);
   }
   expect(mockFit).toHaveBeenCalledTimes(1);
   expect(mockFit).toHaveBeenLastCalledWith([coordinate], { animated: true, edgePadding: {
-    top: 70 + spacing.section, bottom: 250 + spacing.section, left: 2 * spacing.section, right: 2 * spacing.section,
+    top: spacing.section, bottom: spacing.section, left: 2 * spacing.section, right: 2 * spacing.section,
   } });
   await fireEvent(map(), 'regionChangeComplete');
   await rendered.rerender(<GoogleResultMap {...props} selectedId="visit" />);

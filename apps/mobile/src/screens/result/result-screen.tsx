@@ -88,7 +88,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const [locate, setLocate] = useState(0);
   const safe = useSafeAreaInsets();
   const [topInset, setTopInset] = useState(0);
-  const { panelHeight, wide, onLayout } = usePanelLayout(topInset);
+  const { panelHeight, controlsBottom, wide, onLayout } = usePanelLayout(topInset);
   const showShapeRetry = shapesFailed && displayed === shown && !notice;
   const { overlay, measure, toastHeight } = useMapControls(safe.left, safe.right, notice, showShapeRetry);
   const { dismissNotice } = itinerary;
@@ -149,10 +149,10 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       <DateChips days={days} selected={day.date} onSelect={chooseDate} />
     </SafeAreaView>
     <View testID="result-map-controls" pointerEvents="box-none" style={[StyleSheet.absoluteFill, { left: safe.left, right: safe.right }]}>
-      {!notice && <Legend onLayout={measure('legend')} wishes={wishes.length} bottom={panelHeight} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
-      {showShapeRetry && <ShapeRetry onLayout={measure('retry')} bottom={panelHeight} onPress={retryShapes} />}
-      <LocateButton toastHeight={wide ? 0 : toastHeight} onLayout={measure('locate')} bottom={panelHeight} onPress={() => setLocate(value => value + 1)} />
-      {notice && <Toast wide={wide} onLayout={measure('toast')} notice={notice} bottom={panelHeight} onClose={dismissNotice}
+      {!notice && <Legend onLayout={measure('legend')} wishes={wishes.length} bottom={controlsBottom} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
+      {showShapeRetry && <ShapeRetry onLayout={measure('retry')} bottom={controlsBottom} onPress={retryShapes} />}
+      <LocateButton toastHeight={wide ? 0 : toastHeight} onLayout={measure('locate')} bottom={controlsBottom} onPress={() => setLocate(value => value + 1)} />
+      {notice && <Toast wide={wide} onLayout={measure('toast')} notice={notice} bottom={controlsBottom} onClose={dismissNotice}
         onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
     </View>
     <PlacePanel day={day} index={selection.index} status={status} currency={currency} freeTime={freeTime(displayed?.availableByDate?.[day.date], day.timeZone)}
