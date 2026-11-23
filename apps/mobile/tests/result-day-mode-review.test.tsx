@@ -97,3 +97,37 @@ test.each(['meal', 'flight'])('a %s timing issue offers the fixes saved on its r
   expect(fixes.review.map(row => row.fix)).toEqual([reverse, slow]);
   expect(conflictingModeFixes(saved, D1, causes).review).toEqual([]);
 });
+
+test.each(['missing', 'duplicate'])('%s lodging names still identify which direction to release when both fixes use walking', async names => {
+  const sharedName = '시티 호텔';
+  const detail = (id: string) => names === 'missing' ? null : { ...saved.places[id]!, name: sharedName };
+  const reverseWalk: LegEdit = { ...reverse, mode: 'WALK' };
+  const initial = { ...saved, places: { ...saved.places, [hotel]: detail(hotel), [east.id]: detail(east.id) },
+    input: { ...saved.input, legModes: [reverseWalk, priorDate, slow] } };
+  const f = resultFixture(initial);
+  f.generate.mockResolvedValueOnce(json(lodgingConflict()));
+  await openResult(f);
+  await press(review);
+  const label = (context: string) => names === 'missing' ? context : `${sharedName} (${context})`;
+  const first = label('숙소 1 · 12.3 – 12.4'), second = label('숙소 2 · 12.4 – 12.5');
+  expect(sheet().getByRole('button', { name: `${second} → ${first} · 도보 고정 해제하고 다시 계산` })).toBeVisible();
+  await fireEvent.press(sheet().getByRole('button', { name: `${first} → ${second} · 도보 고정 해제하고 다시 계산` }));
+  await waitFor(() => expect(f.generate).toHaveBeenCalledTimes(2));
+  expect(constraintsFrom(f.current().input)).toEqual({ ...constraintsFrom(initial.input), legModes: [reverseWalk, priorDate] });
+});
+
+test('an unnamed airport and visit retain the same leg direction in the cause and release button', () => {
+  const airport = place('airport'), museum = place('museum');
+  const arrival: LegEdit = { date: D1, from: airport, to: museum, mode: 'WALK' };
+  const departure: LegEdit = { date: D3, from: museum, to: airport, mode: 'WALK' };
+  const initial = { ...view, places: { ...view.places, [airport]: null, [museum]: null },
+    input: { ...view.input, flights: [...view.input.flights,
+      { ...view.input.flights[0], direction: 'DEPARTURE' as const, localDateTime: `${D3}T12:00` }], legModes: [arrival, departure] } };
+  const result = lodgingConflict();
+  result.transferIssues = [{ ...arrival, direction: 'ARRIVAL', reason: 'NO_ROUTE' }, { ...departure, direction: 'DEPARTURE', reason: 'NO_ROUTE' }];
+  const causes = conflictCauses(initial, result);
+  expect(causes.find(cause => cause.date === D1)?.message).toContain('도착 공항 → 방문 장소 1');
+  expect(causes.find(cause => cause.date === D3)?.message).toContain('방문 장소 1 → 출발 공항');
+  expect(conflictingModeFixes(initial, D1, causes).matched[0].label).toBe('도착 공항 → 방문 장소 1 · 도보 고정 해제하고 다시 계산');
+  expect(conflictingModeFixes(initial, D3, causes).matched[0].label).toBe('방문 장소 1 → 출발 공항 · 도보 고정 해제하고 다시 계산');
+});
