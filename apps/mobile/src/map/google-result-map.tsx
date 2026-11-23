@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type RefObject, type ComponentRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { PermissionsAndroid, PixelRatio, Platform, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { colors, radius, result, shadows, size, spacing, text } from '../theme';
+import { colors, radius, result, size, spacing, text } from '../theme';
 import { useReducedMotion } from '../theme/use-reduced-motion';
+import { AirportEdgeIndicators } from './airport-edge-indicators';
 import { PlacedMapMarker } from './placed-map-marker';
 import { isMapConfigured } from './config';
-import { arcPoints, midpointHeading, offscreenSide, withAlpha } from './geometry';
+import { arcPoints, midpointHeading, withAlpha } from './geometry';
 import type { LatLng, MapMarkerSpec, MapRouteSpec, ResultMapProps } from './types';
 
 const ROUTE_WIDTH = spacing.steps[0] + 1;
@@ -63,32 +64,6 @@ function MarkerBody({ marker, selected }: { marker: MapMarkerSpec; selected: boo
 }
 
 type MapSize = { width: number; height: number };
-
-function AirportIndicator({ map, marker, viewport, topInset, bottomInset }: {
-  map: RefObject<ComponentRef<typeof MapView> | null>; marker: MapMarkerSpec; viewport: MapSize;
-  topInset: number; bottomInset: number;
-}) {
-  const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
-  const { latitude, longitude } = marker.coordinate;
-  useEffect(() => {
-    let current = true;
-    void map.current?.pointForCoordinate({ latitude, longitude }).then(
-      projected => { if (current) setPoint(projected); },
-      () => { if (current) setPoint(null); },
-    );
-    return () => { current = false; };
-  }, [map, latitude, longitude]);
-  const bottom = viewport.height - bottomInset;
-  const side = point && offscreenSide(point, viewport.width, topInset, bottom);
-  if (!side) return null;
-  const middle = (topInset + bottom) / 2;
-  const position = side === 'TOP' ? { top: topInset, alignSelf: 'center' as const }
-    : side === 'BOTTOM' ? { bottom: bottomInset, alignSelf: 'center' as const }
-      : side === 'LEFT' ? { left: 0, top: middle } : { right: 0, top: middle };
-  return <View testID={`airport-edge-${marker.id}`} pointerEvents="none" style={[styles.edge, position]}>
-    <Text style={text.tiny}>{ICONS.AIRPORT} {marker.label} · 화면 밖</Text>
-  </View>;
-}
 
 export function GoogleResultMap(props: ResultMapProps) {
   if (!isMapConfigured()) {
@@ -170,9 +145,8 @@ function ConfiguredMap({ markers, routes, selectedId, focusDate, focusIds, topIn
         </Marker>;
       })}
     </MapView>
-    {mapReady && viewport.width > 0 && viewport.height > 0 && markers.filter(marker => marker.kind === 'AIRPORT').map(marker =>
-      <AirportIndicator key={`${marker.id}:${marker.coordinate.latitude}:${marker.coordinate.longitude}:${cameraVersion}:${viewport.width}:${viewport.height}`}
-        marker={marker} map={map} viewport={viewport} topInset={topInset} bottomInset={bottomInset} />)}
+    {mapReady && viewport.width > 0 && viewport.height > 0 && <AirportEdgeIndicators map={map} markers={markers}
+      viewport={viewport} focusDate={focusDate} cameraVersion={cameraVersion} topInset={topInset} bottomInset={bottomInset} />}
   </View>;
 }
 
@@ -184,6 +158,4 @@ const styles = StyleSheet.create({
   endpoint: { width: MARKER, height: MARKER, borderRadius: spacing.steps[0], backgroundColor: colors.gray.text,
     alignItems: 'center', justifyContent: 'center' },
   airport: { backgroundColor: colors.gray.secondary },
-  edge: { position: 'absolute', margin: spacing.steps[1], paddingHorizontal: spacing.cardGap, paddingVertical: spacing.steps[0],
-    borderRadius: radius.chip, backgroundColor: colors.card, ...shadows.floating },
 });

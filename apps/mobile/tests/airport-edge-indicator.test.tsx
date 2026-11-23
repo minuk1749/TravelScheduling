@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode, Ref } from 'react';
 import { processColor } from 'react-native';
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { GoogleResultMap } from '../src/map/google-result-map';
 import type { LatLng, ResultMapProps } from '../src/map/types';
 import { colors } from '../src/theme';
@@ -46,7 +46,8 @@ test('projects the airport into visible map space, updates when the panel moves,
 
   await rendered.rerender(<GoogleResultMap {...props} bottomInset={350} />);
   expect(screen.getByText(label)).toBeVisible();
-  expect(screen.getByTestId('airport-edge-airport')).toHaveStyle({ bottom: 350 });
+  expect(within(screen.getByTestId('airport-edge-BOTTOM')).getByText(label)).toBeVisible();
+  expect(screen.getByTestId('airport-edges')).toHaveStyle({ bottom: 350 });
   await rendered.rerender(<GoogleResultMap {...props} />);
   expect(screen.queryByText(label)).toBeNull();
   expect(mockProject).toHaveBeenCalledTimes(1);
@@ -56,11 +57,52 @@ test('projects the airport into visible map space, updates when the panel moves,
   await fireEvent(map, 'regionChangeComplete');
   await fireEvent(map, 'regionChangeComplete');
   expect(screen.getByText(label)).toBeVisible();
-  expect(screen.getByTestId('airport-edge-airport')).toHaveStyle({ top: 80 });
+  expect(within(screen.getByTestId('airport-edge-TOP')).getByText(label)).toBeVisible();
+  expect(screen.getByTestId('airport-edges')).toHaveStyle({ top: 80 });
   await act(async () => { stale.resolve({ x: 200, y: 350 }); });
   expect(screen.getByText(label)).toBeVisible();
   await rendered.rerender(<GoogleResultMap {...props} topInset={20} />);
   expect(screen.queryByText(label)).toBeNull();
+});
+
+test('both airports share one readable edge notice, then follow rotation, map motion and the selected day', async () => {
+  const haneda = { id: 'HND', kind: 'AIRPORT' as const, order: null, label: '하네다', coordinate: { latitude: 35.55, longitude: 139.78 } };
+  const narita = { ...haneda, id: 'NRT', label: '나리타', coordinate: { latitude: 35.77, longitude: 140.39 } };
+  const props: ResultMapProps = {
+    markers: [haneda, narita], routes: [], selectedId: null, focusDate: D1, focusIds: [],
+    topInset: 76, bottomInset: 150, dimmed: false, locateRequest: 0, onSelectMarker() {},
+  };
+  const rendered = await render(<GoogleResultMap {...props} />);
+  const map = screen.getByTestId('native-map');
+  const firstAirport = deferred<{ x: number; y: number }>();
+  mockProject.mockReturnValueOnce(firstAirport.promise).mockResolvedValueOnce({ x: 710, y: 310 });
+  await fireEvent(map, 'layout', { nativeEvent: { layout: { width: 390, height: 844 } } });
+  await fireEvent(map, 'mapReady');
+  expect(screen.getByText('✈ 나리타 · 화면 밖')).toBeVisible();
+  await act(async () => { firstAirport.resolve({ x: 650, y: 280 }); });
+  const combined = '✈ 하네다 · 나리타 · 화면 밖';
+  expect(within(screen.getByTestId('airport-edge-RIGHT')).getByText(combined)).toBeVisible();
+  expect(screen.getByTestId('airport-edge-RIGHT')).toHaveStyle({ alignItems: 'flex-end', justifyContent: 'center' });
+  expect(screen.getByTestId('airport-edges')).toHaveStyle({ top: 76, bottom: 150 });
+
+  mockProject.mockResolvedValueOnce({ x: 390, y: 130 }).mockResolvedValueOnce({ x: -80, y: 160 });
+  await fireEvent(map, 'layout', { nativeEvent: { layout: { width: 844, height: 390 } } });
+  expect(screen.queryByText(combined)).toBeNull();
+  expect(screen.queryByTestId('airport-edge-RIGHT')).toBeNull();
+  expect(within(screen.getByTestId('airport-edge-LEFT')).getByText('✈ 나리타 · 화면 밖')).toBeVisible();
+
+  const oldNarita = deferred<{ x: number; y: number }>();
+  mockProject.mockResolvedValueOnce({ x: 370, y: 300 }).mockReturnValueOnce(oldNarita.promise);
+  await fireEvent(map, 'regionChangeComplete');
+  expect(within(screen.getByTestId('airport-edge-BOTTOM')).getByText('✈ 하네다 · 화면 밖')).toBeVisible();
+  // A selected date can retain the same airport IDs while the map is fitting a different area.
+  mockProject.mockResolvedValueOnce({ x: 420, y: -80 }).mockRejectedValueOnce(new Error('no projection'));
+  await rendered.rerender(<GoogleResultMap {...props} focusDate={D3} />);
+  expect(within(screen.getByTestId('airport-edge-TOP')).getByText('✈ 하네다 · 화면 밖')).toBeVisible();
+  await act(async () => { oldNarita.resolve({ x: 415, y: -80 }); });
+  expect(screen.queryByText(combined)).toBeNull();
+  expect(screen.queryByText('✈ 나리타 · 화면 밖')).toBeNull();
+  expect(screen.queryByTestId('airport-edge-BOTTOM')).toBeNull();
 });
 
 test('an initial conflict projects the airport of each local transfer day while fitting the camera to the lodging', async () => {
