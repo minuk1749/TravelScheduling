@@ -11,7 +11,7 @@
   - 로그인: `playwright.config.ts`가 실행마다 가짜 RS256 키를 한 번 만들어 환경 변수에 넣는다. 서버와 테스트 워커는 이 환경 변수를 상속한다. 서버에 미리 불러온 `google-doubles.mjs`는 이 키의 공개 키를 Google JWKS로 응답하고, 테스트는 같은 키로 서명한 ID 토큰을 `POST /api/session`에 보낸다. 검증에는 실제 `JoseGoogleIdTokenVerifier`(원격 JWKS 로더)를 사용한다.
   - 요청: `tests/e2e/support/app-client.ts`가 `apps/mobile/src/api`와 같은 경로·본문·`Idempotency-Key`를 사용한다. 결과 수정 두 건은 앱 결과 화면과 같이 새 `operationId`와 직전 조회의 `writeVersion`을 보내며, 응답·복구 조회의 영수증이 요청 ID와 저장 revision에 맞는지와 현재 revision에 이전 쓰기 버전을 보내면 409이고 저장 내용이 그대로인지 확인한다. 필수 장소 선택은 앱(`capacity-flow.tsx`)처럼 쓰기 옵션 없이 보낸다. 앱 코드는 Expo·React Native에 의존하므로 서버 테스트에서 직접 import하지 않는다.
   - 공유: 공유 열람 페이지는 남은 유일한 웹 화면이다. 그래서 같은 시나리오에서 실제 저장 결과를 375px 브라우저(지도 스텁)로 열어 T24의 디자인 토큰·글꼴 검사를 이어서 실행한다.
-  - DB 격리: E2E는 실행마다 임시 스키마 `e2e_<uuid>`에만 쓴다. `playwright.config.ts`가 `tests/e2e/support/database.ts`의 `isolateDatabase`로 `DATABASE_URL`에 `options=-c search_path=<스키마>`를 붙인다. 서버와 워커는 서명 키처럼 이 값을 상속한다. 원래 URL은 `E2E_BASE_DATABASE_URL`에 남는다. `global-setup.ts`가 스키마를 만들고 모든 마이그레이션을 적용하며, 실행이 끝나면 스키마를 삭제한다. 정리 단계에서는 기본 스키마의 `TOKYO` 행이 실행 전과 같은지 비교하고, 다르면 실행을 실패로 처리한다. 테스트용 도쿄 요금표 upsert(`upsertCityProfile`)는 HTTP 클라이언트에서 같은 파일로 옮겼다.
+  - DB 격리: E2E는 실행마다 임시 스키마 `e2e_<uuid>`에만 쓴다. `playwright.config.ts`가 `tests/e2e/support/database.ts`의 `isolateDatabase`로 `DATABASE_URL`의 `options` 끝에 `-c search_path=<스키마>`를 덧붙인다. 기존 옵션(이스케이프한 공백이 든 복수 스키마 `search_path`, `statement_timeout` 등)은 그대로 두고, PostgreSQL이 `-c`를 순서대로 적용하므로 마지막 `search_path`가 쓰인다. 서버와 워커는 서명 키처럼 이 값을 상속한다. 원래 URL은 `E2E_BASE_DATABASE_URL`에 남는다. `global-setup.ts`가 스키마를 만들고, 실행 URL의 `current_schema()`가 그 스키마인지 확인한 뒤에만 모든 마이그레이션을 적용하며, 실행이 끝나면 스키마를 삭제한다. 설정·정리는 기본 스키마를 읽지 않는다. 따라서 그 사이 다른 프로세스가 기본 스키마에 쓰는 것은 실패 원인이 아니며, 계정은 스키마 생성 권한만 있으면 되고 기존 테이블의 SELECT 권한은 필요 없다. 테스트용 도쿄 요금표 upsert(`upsertCityProfile`)는 HTTP 클라이언트에서 같은 파일로 옮겼다.
 
 ## 이유
 
@@ -26,6 +26,8 @@
 - **고정 테스트 키 파일을 커밋한다.** 설정이 단순해지지만 위의 비밀 값 검사 문제가 있다.
 - **E2E 전용 데이터베이스를 따로 만든다.** `CREATE DATABASE` 권한이 필요하다. 스키마 방식은 README가 이미 요구하는 스키마 생성 권한만으로 충분하다.
 - **시나리오가 끝난 뒤 기존 `TOKYO` 행을 복원한다.** 실행이 중간에 끊기면 복원되지 않는다. 동시에 실행하는 다른 프로세스도 실행 중에는 합성 요금을 읽는다.
+- **E2E 정리 단계에서 기본 스키마의 `TOKYO` 행을 실행 전후로 비교한다(라운드 4).** 그 사이 다른 프로세스의 정상 갱신도 실패로 처리하고, 기존 테이블의 SELECT 권한이 없는 계정은 시작할 수 없다. 쓰기 대상은 실행 URL의 `current_schema()` 확인으로 보장하고, 기존 행 보존은 `e2e-database.test.ts`가 직접 만든 스키마에서 검사한다.
+- **기존 `options`에서 `search_path`를 정규식으로 지우고 바꾼다(라운드 4).** 이스케이프한 공백(`app,\ public`)이 있으면 일부만 지워져 원래 유효한 URL로 연결할 수 없다.
 - **쿠키 경로를 남기고 Auth.js만 지운다.** 쿠키를 발급하는 주체가 없어 의미가 없다. 오래된 쿠키가 다시 인증에 쓰일 가능성만 남는다.
 - **`callbacks.ts`를 계획대로 남긴다.** 사용하는 곳이 없는 코드가 남는다. 작업 원칙(불필요한 코드 제거)에 따라 지우고, 이 기록과 §13.8에 남겼다.
 
@@ -36,7 +38,7 @@
 | T16 목록의 웹 전용 코드 삭제, 공유 열람 페이지만 남김 | `apps/server/tests/app-transition-design.test.ts`: §13.8의 지운 경로가 없고 남긴 경로가 있는지, 웹 페이지가 `share/[token]/page.tsx` 하나인지, `public/` 비어 있음, `next-auth` 의존성과 `verify-pwa` 호출 없음. `app-transition-contract.test.ts`: Auth.js 라우트·`src/auth.ts`가 없고 모든 사용자 API 모듈이 `RequestAuthenticator`를 쓰는지 |
 | 쿠키 경로 제거 | `bearer-ownership.test.ts`의 `T25: without a Bearer header…`: 모든 사용자 API가 쿠키만 있는 요청에 401. `mobile-session.test.ts`: 헤더 없음 401. `tests/e2e/route-shapes-auth.spec.ts`: 실제 서버에서 쿠키만 있는 요청 401 |
 | 흐름 1–10 Bearer HTTP 종단 시나리오 (실제 서버·DB·서비스, Google만 가짜) | `tests/e2e/journey.spec.ts`(`npm run test:e2e`). 로그인(다른 `aud` 401, 해시만 저장) → 여행 생성(도쿄 추천 택시 정책 `WHEN_NEEDED`, 장소 검색, DB 행) → 생활 설정(저장·오래된 revision 409) → 수용량 초과(추천 최대 필수 개수 `requiredCount`가 1–5이고 추천 ID 수·미리보기에 배치된 추천 장소 수와 같음, 같은 재시도 키는 같은 결과) → 추천 필수 선택 → 재검증 OK → 결과(구간별 대중교통·택시의 소요시간·요금, PREFER 반영, 경로 모양) → 수정(희망 장소 날짜·시각·순서 고정, 구간 수단 고정, 다시 읽어도 유지) → 공유(익명 조회 일치, 375px 페이지, 재발급 시 이전 링크 404) → 로그아웃(해당 기기만)·탈퇴(사용자·여행·링크 삭제). 각 단계에서 다른 사용자 403 확인 |
-| E2E가 기본 스키마를 바꾸지 않음 | `e2e-database.test.ts`(`npm test`): 기본 스키마를 대신하는 임시 스키마에 별도 값의 `TOKYO` 행을 둔 뒤 실행 스키마를 만든다. 모든 마이그레이션이 적용되었는지, `current_schema()`가 실행 스키마인지, 테스트 요금표가 실행 스키마에만 쓰였는지 확인한다. 실행 스키마를 삭제한 뒤 기존 행의 요금·출처·갱신일이 그대로인지도 확인한다. URL의 다른 `options`·쿼리를 보존하는지, 워커가 같은 스키마를 상속하는지도 검사한다. E2E 실행 자체에서는 `journey.spec.ts`가 연결 스키마를 확인하고, `global-setup.ts` 정리 단계가 기본 스키마의 `TOKYO` 행을 비교한다 |
+| E2E가 기본 스키마를 바꾸지 않음 | `e2e-database.test.ts`(`npm test`): 기본 스키마를 대신하는 임시 스키마에 별도 값의 `TOKYO` 행을 둔 뒤 실행 스키마를 만든다. 모든 마이그레이션이 적용되었는지, `current_schema()`가 실행 스키마인지, 테스트 요금표가 실행 스키마에만 쓰였는지 확인한다. 실행 스키마를 삭제한 뒤 기존 행의 요금·출처·갱신일이 그대로인지도 확인한다. 기본 URL은 이스케이프한 공백이 든 복수 스키마 `search_path`와 `statement_timeout=5000`을 함께 쓰며, 실제 연결에서 `current_schema()`가 실행 스키마이고 제한 시간이 `5s`인지 확인한다. 스키마 생성 권한만 있고 기본 `city_profiles`를 읽을 수 없는 계정으로도 설정·정리가 성공하는지 검사한다. URL의 다른 쿼리를 보존하는지, 워커가 같은 스키마를 상속하는지도 검사한다. E2E 실행 자체에서는 `global-setup.ts`가 마이그레이션 전에, `journey.spec.ts`가 시작할 때 연결 스키마를 확인한다 |
 | 공유 페이지 표시 | `sharing-ui.test.ts`(익명 조회·디자인 변수·편집 제어 없음·재발급 링크 무효·재시도), `tests/e2e/sharing.spec.ts` |
 
 실제 Google 로그인·지도와 배포 서버는 사람이 확인한다(T26D).

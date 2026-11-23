@@ -16,11 +16,15 @@ export interface IsolatedDatabase { baseUrl: string; schema: string; url: string
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
 
-/** The same database, but every connection resolves unqualified tables only in `schema` (libpq `options`). */
+/**
+ * The same database, but every connection resolves unqualified tables only in `schema` (libpq `options`). The existing
+ * options are kept verbatim (escaped spaces in a multi-schema search_path included) and the run's setting is appended:
+ * PostgreSQL applies `-c` switches in order, so the last search_path wins.
+ */
 export function schemaUrl(baseUrl: string, schema: string): string {
   const url = new URL(baseUrl);
-  const options = (url.searchParams.get('options') ?? '').replace(/-c\s*search_path=\S*/g, '').trim();
-  url.searchParams.set('options', `${options} -c search_path=${schema}`.trim());
+  const options = url.searchParams.get('options')?.trim();
+  url.searchParams.set('options', [options, `-c search_path=${schema}`].filter(Boolean).join(' '));
   return url.toString();
 }
 
@@ -42,30 +46,27 @@ async function withPool<T>(url: string, run: (pool: Pool) => Promise<T>): Promis
   try { return await run(pool); } finally { await pool.end(); }
 }
 
-/** Creates the schema, applies every migration to it and returns the function that drops it again. */
+/**
+ * Creates the schema, checks that the run's URL really resolves to it, applies every migration there and returns the
+ * function that drops it again. Only the run's schema is read or written, so the account needs no access to base tables.
+ */
 export async function createIsolatedSchema({ baseUrl, schema, url }: IsolatedDatabase): Promise<() => Promise<void>> {
   const drop = () => withPool(baseUrl, async pool => { await pool.query(`DROP SCHEMA IF EXISTS ${quoteIdentifier(schema)} CASCADE`); });
   await withPool(baseUrl, pool => pool.query(`CREATE SCHEMA ${quoteIdentifier(schema)}`));
   try {
     await withPool(url, async pool => {
       const client = await pool.connect();
-      try { await migrate(client); } finally { client.release(); }
+      try {
+        const { rows: [target] } = await client.query<{ schema: string | null }>('SELECT current_schema() AS schema');
+        if (target.schema !== schema) throw new Error(`e2e DATABASE_URL resolves to schema ${target.schema}, not the run schema ${schema}`);
+        await migrate(client);
+      } finally { client.release(); }
     });
   } catch (error) {
     await drop();
     throw error;
   }
   return drop;
-}
-
-/** The whole city_profiles row as JSON, or null when the schema has no such table or row. */
-export function cityProfileRow(url: string, cityCode: string): Promise<string | null> {
-  return withPool(url, async pool => {
-    const { rows: [table] } = await pool.query<{ exists: boolean }>("SELECT to_regclass('city_profiles') IS NOT NULL AS exists");
-    if (!table.exists) return null;
-    const { rows } = await pool.query<{ row: unknown }>('SELECT to_jsonb(c) AS row FROM city_profiles c WHERE city_code = $1', [cityCode]);
-    return rows[0] ? JSON.stringify(rows[0].row) : null;
-  });
 }
 
 /** Synthetic TOKYO fare profile (tests/fixtures/trip-input.ts), upserted so the e2e schema can price taxis. */

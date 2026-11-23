@@ -24,7 +24,7 @@ npm run build
 npm test
 ```
 
-`npm run test:e2e`(Playwright, `npx playwright install chromium` 필요)는 서버를 다시 빌드해 `localhost:3210`에서 띄운 뒤 Bearer HTTP 종단 시나리오와 공유 페이지를 검사합니다. Google 호출은 테스트 대역이 답하므로 실제 키가 필요 없습니다. E2E는 `DATABASE_URL`의 기본 스키마에 쓰지 않습니다. 실행마다 임시 스키마 `e2e_<uuid>`를 만들어 마이그레이션을 적용하고, 서버와 테스트가 그 스키마만 사용하며, 끝나면 삭제합니다. 따라서 개발 DB의 도쿄 요금표 같은 기존 행은 바뀌지 않습니다. DB가 없거나 `DATABASE_URL`이 없으면 연결 테스트는 실패하며 건너뛰지 않습니다. DB 연결 검사는 읽기 전용이고, 인증·모델 검사는 격리된 임시 스키마에 데이터를 쓰고 정리하므로 테스트 DB 계정에 스키마 생성 권한이 필요합니다.
+`npm run test:e2e`(Playwright, `npx playwright install chromium` 필요)는 서버를 다시 빌드해 `localhost:3210`에서 띄운 뒤 Bearer HTTP 종단 시나리오와 공유 페이지를 검사합니다. Google 호출은 테스트 대역이 답하므로 실제 키가 필요 없습니다. E2E는 `DATABASE_URL`의 기본 스키마에 쓰지 않습니다. 실행마다 임시 스키마 `e2e_<uuid>`를 만들어 마이그레이션을 적용하고, 서버와 테스트가 그 스키마만 사용하며, 끝나면 삭제합니다. 따라서 개발 DB의 도쿄 요금표 같은 기존 행은 바뀌지 않습니다. DB가 없거나 `DATABASE_URL`이 없으면 연결 테스트는 실패하며 건너뛰지 않습니다. DB 연결 검사는 읽기 전용이고, 인증·모델 검사는 격리된 임시 스키마에 데이터를 쓰고 정리하므로 테스트 DB 계정에 스키마 생성 권한이 필요합니다. `npm test`의 `e2e-database.test.ts`는 기존 테이블을 읽을 수 없는 계정으로도 E2E 설정이 되는지 확인하려고 임시 로그인 역할을 만들고 지우므로 `CREATEROLE` 권한(CI의 `postgres` 계정처럼)도 필요합니다. `test:e2e` 자체는 스키마 생성 권한만 있으면 됩니다.
 
 ## 워크스페이스
 
