@@ -3,9 +3,9 @@ import { colors, result, shadows, size, spacing, text } from '../../theme';
 import type { DayModel } from '../../result/days';
 import { dateChipLabel } from '../../result/format';
 
-/** §7 floating top bar: back, trip name + "기간 · 숙소 지역", 여행 조건 수정. */
-export function TopBar({ title, subtitle, back, edit, disabled }: {
-  title: string; subtitle: string; back(): void; edit(): void; disabled: boolean;
+/** §7 floating top bar with trip details and actions. */
+export function TopBar({ title, subtitle, back, edit, disabled, share, shareDisabled }: {
+  title: string; subtitle: string; back(): void; edit(): void; disabled: boolean; share(): void; shareDisabled: boolean;
 }) {
   return <View style={styles.bar}>
     <Pressable accessibilityRole="button" accessibilityLabel="뒤로" onPress={back} style={styles.icon}>
@@ -15,6 +15,10 @@ export function TopBar({ title, subtitle, back, edit, disabled }: {
       <Text accessibilityRole="header" numberOfLines={1} style={text.name}>{title}</Text>
       <Text numberOfLines={1} style={styles.subtitle}>{subtitle}</Text>
     </View>
+    <Pressable accessibilityRole="button" accessibilityLabel="공유" accessibilityState={{ disabled: shareDisabled }}
+      disabled={shareDisabled} onPress={share} style={styles.icon}>
+      <Text style={[text.secondary, shareDisabled && { color: colors.gray.disabled }]}>공유</Text>
+    </Pressable>
     <Pressable accessibilityRole="button" accessibilityLabel="여행 조건 수정" accessibilityState={{ disabled }}
       disabled={disabled} onPress={edit} style={styles.icon}>
       <Text style={[text.place, disabled && { color: colors.gray.disabled }]}>⚙</Text>

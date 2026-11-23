@@ -24,7 +24,7 @@ function errorBody(raw: unknown, status: number): ApiFailure {
 }
 
 type RequestOptions = RequestInit & {
-  allowNoContent?: boolean;
+  expectNoContent?: boolean;
   validate?: (body: unknown) => boolean;
 };
 
@@ -35,17 +35,24 @@ export class ApiClient {
     private readonly transport: typeof fetch = fetch,
   ) {}
 
-  async request<T>(path: string, { allowNoContent, validate, ...options }: RequestOptions = {}, authenticated = true): Promise<T> {
+  origin(): string {
     let base: URL;
     try { base = new URL(this.baseUrl); } catch {
       throw new Error('서버 주소 설정을 확인해 주세요.');
     }
     if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password
-      || base.pathname !== '/' || base.search || base.hash || !path.startsWith('/api/')) {
+      || base.pathname !== '/' || base.search || base.hash) {
       throw new Error('서버 주소 설정을 확인해 주세요.');
     }
-    const url = new URL(path, base);
-    if (url.origin !== base.origin || !url.pathname.startsWith('/api/')) throw new Error('잘못된 API 경로입니다.');
+    return base.origin;
+  }
+
+  async request<T>(path: string, { expectNoContent, validate, ...options }: RequestOptions = {}, authenticated = true): Promise<T> {
+    const origin = this.origin();
+    const url = new URL(path, origin);
+    if (!path.startsWith('/api/') || url.origin !== origin || !url.pathname.startsWith('/api/')) {
+      throw new Error('잘못된 API 경로입니다.');
+    }
     const token = authenticated ? await this.session.accessToken() : null;
     if (authenticated && !token) throw errorBody(null, 401);
     const headers = new Headers(options.headers);
@@ -63,11 +70,11 @@ export class ApiClient {
     }
     // Clear credentials before reading the body, including malformed/empty 401 responses.
     if (response.status === 401 && token) await this.session.invalidate(token);
-    if (response.status === 204 && allowNoContent) return undefined as T;
+    if (response.status === 204 && expectNoContent) return undefined as T;
     let body: unknown;
     try { body = await response.json(); } catch { body = null; }
     if (!response.ok) throw errorBody(body, response.status);
-    if (!body || typeof body !== 'object' || Array.isArray(body) || (validate && !validate(body))) {
+    if (expectNoContent || !body || typeof body !== 'object' || Array.isArray(body) || (validate && !validate(body))) {
       throw new Error('서버 응답을 확인하지 못했어요. 다시 시도해 주세요.');
     }
     return body as T;

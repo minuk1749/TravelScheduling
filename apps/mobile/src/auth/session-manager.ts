@@ -110,9 +110,28 @@ export class SessionManager implements ApiSession {
     try { await api.revoke(); } catch {
       this.publish({ error: '기기에서 로그아웃했어요. 서버의 로그인 종료는 확인하지 못했어요.' });
     } finally {
-      await this.clear();
-      try { await this.google.signOut(); } catch { /* Local app credentials are already cleared. */ }
+      await this.finishSignOut();
       this.publish({ busy: false });
     }
+  }
+
+  async withdraw(deleteAccount: () => Promise<void>): Promise<void> {
+    if (this.snapshot.busy || this.snapshot.status !== 'signedIn') return;
+    this.publish({ busy: true, error: null });
+    try {
+      await deleteAccount();
+      await this.finishSignOut();
+    } catch (error) {
+      if (this.getSnapshot().status !== 'storageError') {
+        this.publish({ error: error instanceof Error ? error.message : '탈퇴를 확인하지 못했어요. 다시 시도해 주세요.' });
+      }
+    } finally {
+      this.publish({ busy: false });
+    }
+  }
+
+  private async finishSignOut(): Promise<void> {
+    await this.clear();
+    try { await this.google.signOut(); } catch { /* Local session cleanup is independent of Google sign-out. */ }
   }
 }

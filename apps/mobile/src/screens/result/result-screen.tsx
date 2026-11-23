@@ -21,12 +21,14 @@ import { EditSheet } from './edit-sheet';
 import { LocateButton, Legend, ShapeRetry, Toast, useMapControls } from './map-controls';
 import { PlacePanel, usePanelLayout, type PanelStatus } from './place-panel';
 import { ScheduleSheet } from './schedule-sheet';
+import { ShareSheet } from './share-sheet';
 import { DateChips, TopBar } from './top-bar';
 import type { useItinerary } from './use-itinerary';
 import { useRouteShapes } from './use-route-shapes';
 import { WishSheet } from './wish-sheet';
 
-type Sheet = { kind: 'SCHEDULE' } | { kind: 'EDIT'; visitId: string } | { kind: 'WISH'; visitId: string; date: string; chooseVisit: boolean };
+type Sheet = { kind: 'SCHEDULE' } | { kind: 'SHARE' } | { kind: 'EDIT'; visitId: string }
+  | { kind: 'WISH'; visitId: string; date: string; chooseVisit: boolean };
 type Picked = { days: readonly DayModel[]; result: unknown; selection: Selection; visitId: string | null };
 const NOTICE_MS = 6000;
 const NOTHING: ReadonlySet<string> = new Set();
@@ -94,7 +96,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const { overlay, measure: measureFloating, toastHeight } = useMapControls(safe.left, safe.right, notice, showShapeRetry);
   const { height, panelHeight, controlsBottom, controlsInPanel, locateOffset, wide, onLayout } = usePanelLayout(topInset, toastHeight);
   const [formTop, setFormTop] = useState<number | null>(null);
-  const formOpen = formTop !== null || !!(editSelection && card) || sheet?.kind === 'WISH';
+  const formOpen = formTop !== null || !!(editSelection && card) || sheet?.kind === 'WISH' || sheet?.kind === 'SHARE';
   const scheduleOpen = sheet?.kind === 'SCHEDULE';
   // Form sheets report their top in the edge-to-edge window, including keyboard movement.
   // Using the enclosing frame's bottom is conservative when the map occupies a shorter parent.
@@ -169,7 +171,8 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     <SafeAreaView testID="result-top-controls" edges={['top', 'left', 'right']} pointerEvents="box-none" style={styles.top}
       onLayout={event => setTopInset(event.nativeEvent.layout.height)}>
       <TopBar title={cityName(view.input.cityCode)} subtitle={`${periodLabel(view.input)} · ${lodgings}`}
-        back={back} edit={editConditions} disabled={calculating} />
+        back={back} edit={editConditions} disabled={calculating}
+        share={() => setSheet({ kind: 'SHARE' })} shareDisabled={phase.kind !== 'idle'} />
       <DateChips days={days} selected={day.date} onSelect={chooseDate} />
     </SafeAreaView>
     {!controlsInPanel && controls}
@@ -192,6 +195,7 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
       onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
       select={visitId => { setSheet(null); const found = findVisit([day], visitId); if (found) select(found); }} />}
+    {sheet?.kind === 'SHARE' && <ShareSheet tripId={tripId} close={() => setSheet(null)} />}
     {editSelection && card && <EditSheet view={view} card={card} days={days} current={editOf(card.visitId)}
       day={day} close={() => setSheet(null)}
       apply={edit => {

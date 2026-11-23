@@ -36,6 +36,6 @@ Expo SDK 58 · TypeScript strict · expo-router 앱이다. T20은 로그인, 세
 
 ## 글꼴과 참고
 
-`assets/fonts/`에 [Pretendard 1.3.9](https://github.com/orioncactus/pretendard/releases/tag/v1.3.9)의 Regular·SemiBold TTF와 SIL OFL 라이선스를 포함했다. 원본 배포: npm `pretendard@1.3.9`의 `dist/public/static/alternative`.
+`packages/design-tokens/assets/fonts/`의 [Pretendard 1.3.9](https://github.com/orioncactus/pretendard/releases/tag/v1.3.9) Regular·SemiBold TTF와 SIL OFL 라이선스를 앱과 공유 웹에서 사용한다. 원본 배포: npm `pretendard@1.3.9`의 `dist/public/static/alternative`.
 
 연동 근거: [Expo Router 설치](https://docs.expo.dev/router/installation/), [Expo 테스트](https://docs.expo.dev/develop/unit-testing/), [Google 네이티브 로그인](https://react-native-google-signin.github.io/docs/original), [ID 토큰 대상 설정](https://react-native-google-signin.github.io/docs/integration-notes), [Expo 네이티브 설정](https://react-native-google-signin.github.io/docs/setting-up/expo).

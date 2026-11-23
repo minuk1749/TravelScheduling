@@ -462,7 +462,7 @@ HTTP/DB 스키마·수단 선택·추천 탐색·공항 직행일 짐 처리의 
 
 ## 13. T16 앱 전환 후 구조 (계획)
 
-기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력, T22 결과 화면(§13.4.3, §13.5), T23 필수 선택까지 구현했다. T24–T25 화면은 아래 계획을 따른다.
+기준: T16 설계 `3c9cb12`, T17 시작 원격 `develop` `9512b21`. §13.1의 패키지 이동은 T17에서 구현했다. §13.2의 오류 `code`와 §13.3의 모바일 세션·Bearer 인증은 T18에서 구현했다([T18 결정](decisions/T18-mobile-session-tokens.md)). T19 경로 모양 API, T20 앱 골격·토큰·로그인, T21 여행 입력, T22 결과 화면(§13.4.3, §13.5), T23 필수 선택, T24 공유·계정(§13.4.4)까지 구현했다. T25는 §13.8의 계획을 따른다.
 §1–12는 현재 구현 설명으로 유지하고, 해당 작업이 끝나면 그 작업이 본문을 갱신한다.
 결정 이유와 대안은 [T16 결정](decisions/T16-app-transition.md), 구현 세부는 [T17 결정](decisions/T17-npm-workspaces.md)에 있다. 아래 `ts` 블록은 계획 단계의 계약이라 타입 검사하지 않으며,
 구현하는 작업이 실제 export와 함께 `typescript` 블록으로 바꾼다.
@@ -483,7 +483,7 @@ apps/
   mobile/                  @travel/mobile. T20 Expo SDK 58 앱
     app/                   expo-router 화면 라우트
     src/{api,auth,theme,components,screens,navigation}/  T22: map(지도 계약·순수 계산·어댑터), result(결과 순수 모델)
-    assets/fonts/, tests/  Pretendard·jest-expo 컴포넌트 검사
+    tests/                 jest-expo 컴포넌트 검사
 packages/
   core/                    @travel/core
     src/scheduler/         순수 일정 계산
@@ -491,7 +491,7 @@ packages/
     src/contracts/         공용 DTO·오류 클래스·입력 검증·설정 계산
     src/presentation/      결과 표시 변환
     tests/                 scheduler·fare 검사
-  design-tokens/           @travel/design-tokens. T20 src/index.ts·문서 일치 검사
+  design-tokens/           @travel/design-tokens. src/index.ts·문서 일치 검사·assets/fonts/
 ```
 
 | 패키지 | 책임 | 의존해도 되는 것 | 의존하면 안 되는 것 |
@@ -709,6 +709,12 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
 - 순수 모델: `apps/mobile/src/result/days.ts`가 저장 입력과 결과에서 날짜별 카드(도착 구간·대기·숙소 복귀·당겨짐/늦춰짐·고정 조건)·구간(순서 색·도심 밖·바꿀 수단)·전체 일정 줄을 만든다. `conflicts.ts`는 3-8 원인, `edits.ts`는 제약 수정, `format.ts`는 문구다.
 - 경로 모양은 OK 결과의 `inputHash`와 `itineraryId`로 `GET …/itinerary/shapes`를 요청한다. 앱은 응답의 두 값이 일치할 때만 구간을 받고, 여행·해시·일정 ID가 표시 중인 결과와 일치하는 메모리 데이터만 사용한다. 결과를 바꾸면 이전 요청을 취소한다. [T22 결정](decisions/T22-mobile-result-screen.md)
 
+### 13.4.4 모바일 공유와 계정 (T24)
+
+- 결과 화면의 공유 시트는 새 링크가 기존 링크를 무효화한다고 안내한다. 기존 Bearer `POST /api/trips/[id]/share`가 반환한 경로를 `isShareToken`으로 검사하고 설정된 서버 주소에 결합한다. 발급에 성공하면 링크를 React Native `Share`에 전달한다. 같은 시트에서 다시 공유할 때는 저장한 링크를 쓰며 새 발급은 별도 동작이다.
+- `내 여행` → `/account`는 로그인 보호 그룹 `(app)/_layout.tsx` 아래에 있다. 로그아웃은 §13.3의 기존 경로를 쓴다. 탈퇴 확인 시트에서 Bearer `DELETE /api/account`를 보내고 204 성공 뒤 `SessionManager`가 메모리·SecureStore의 토큰을 삭제한다. 인증 상태에 따라 같은 라우트 가드가 로그인 화면을 연다. 기기 토큰 삭제에 실패하면 저장소 재시도 화면으로 전환한다.
+- `/share/[token]`은 §11의 익명 조회와 읽기 전용 표시를 유지한다. 같은 경로의 전용 스타일이 디자인 토큰을 CSS 변수로 받아 앱과 Pretendard를 공유한다. [T24 결정](decisions/T24-mobile-sharing-and-account.md)
+
 ### 13.5 지도 어댑터 인터페이스 (앱)
 
 화면은 `ResultMapProps` 계약만 알고 지도 SDK를 import하지 않는다. 구현은 `GoogleResultMap`(`apps/mobile/src/map/google-result-map.tsx`: `react-native-maps`, `PROVIDER_GOOGLE`, 앱 전용 Maps SDK 키)과
@@ -772,8 +778,8 @@ export const documentedResultMap: [
 - 원본 값: `packages/design-tokens/src/index.ts` 한 곳. `colors`, `legColors`(6색), `typography`, `spacing`, `radius`, `size`, `motion`을 export한다.
   값만 담고 플랫폼 타입(React Native `TextStyle`, CSS)에 의존하지 않는다.
 - 검사: 같은 패키지의 테스트가 `docs/design.md`의 2–4·8절 값을 읽어 토큰 값과 같은지 비교한다(T20).
-- 앱: `apps/mobile/src/theme/`가 토큰을 React Native 스타일로 바꾸고 Pretendard(`apps/mobile/assets/fonts/`)를 등록한다. 화면은 theme 이름만 쓰고 hex를 직접 쓰지 않는다.
-- 공유 열람 페이지(T24): 서버가 같은 토큰을 CSS 변수로 바꿔 쓴다.
+- 앱: `apps/mobile/src/theme/`가 토큰을 React Native 스타일로 바꾸고 Pretendard(`packages/design-tokens/assets/fonts/`)를 등록한다. 화면은 theme 이름을 참조한다.
+- 공유 열람 페이지(T24): `apps/server/src/app/share/[token]/page.tsx`가 같은 토큰을 CSS 변수로 전달한다. 같은 경로의 `share.css`는 공용 Pretendard 파일을 Regular·SemiBold로 등록한다.
 
 T20 구현 완료: `colors`, `legColors`, `typography`, `spacing`, `radius`, `size`, `motion`을 export하며 범위값은 `min/max`로 보존한다.
 `tests/design.test.ts`가 각 문서 행의 색·수치를 추출해 역할별로 비교한다(구성 요소 §5 포함).
@@ -792,6 +798,7 @@ T25 전까지는 앱 화면을 옮길 때 참고하는 기준 구현으로 남�
 - 웹 컴포넌트: `apps/server/src/components/trip-input-form.tsx`, `apps/server/src/components/place-picker.tsx`, `apps/server/src/components/city-profile-card.tsx`,
   `apps/server/src/components/living-settings/`, `apps/server/src/components/itinerary/index.tsx`, `apps/server/src/components/itinerary/visit-editor.tsx`,
   `apps/server/src/components/itinerary/share-controls.tsx`, `apps/server/src/components/itinerary/generation.ts`, `apps/server/src/components/itinerary/request-id.ts`, `apps/server/src/components/service-worker.tsx`
+- 기존 결과 화면 스타일: `apps/server/src/app/trips/[id]/result/result.css`
 - PWA: `apps/server/public/sw.js`, `apps/server/public/icon-192.png`, `apps/server/public/icon-512.png`, `apps/server/scripts/verify-pwa.mjs`(와 `build` 스크립트의 호출),
   `apps/server/next.config.ts`의 `/sw.js` 헤더, `apps/server/src/app/layout.tsx`의 manifest·서비스워커 등록 부분(레이아웃 자체는 공유 페이지용으로 남김)
 - 테스트: `apps/server/tests/pwa.test.ts`, `apps/server/tests/service-worker.test.ts`, `apps/server/tests/trip-input-ui.test.ts`, `apps/server/tests/living-settings-ui.test.ts`,
@@ -802,5 +809,5 @@ T25 전까지는 앱 화면을 옮길 때 참고하는 기준 구현으로 남�
 
 남기는 것: 공유 열람 페이지 `apps/server/src/app/share/[token]/page.tsx`와 표시 컴포넌트 `apps/server/src/components/itinerary/shared.tsx`, `apps/server/src/components/itinerary/map.tsx`,
 `apps/server/src/components/itinerary/google-map.ts`, `apps/server/src/components/itinerary/timeline.tsx`, `apps/server/src/components/itinerary/diagnostics.tsx`,
-스타일 `apps/server/src/app/trips/[id]/result/result.css`(T24가 공유 페이지 쪽으로 옮김), 웹 OAuth를 뺀 모든 API 라우트,
+공유 경로의 `apps/server/src/app/share/[token]/layout.tsx`와 `apps/server/src/app/share/[token]/share.css`, 웹 OAuth를 뺀 모든 API 라우트,
 Google 신원 확인 `apps/server/src/lib/auth/callbacks.ts`와 사용자 SQL `apps/server/src/lib/auth/store.ts`(T18 모바일 로그인이 재사용).

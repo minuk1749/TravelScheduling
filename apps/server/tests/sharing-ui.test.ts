@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
+import { colors, typography } from '@travel/design-tokens';
 import { installDom } from './helpers/dom';
 import { GoogleResultMap } from '../src/components/itinerary/google-map';
 import { FixturePlaces } from './fixtures/itinerary';
@@ -24,12 +25,17 @@ test('T14 UI: issue/copy/rotate, anonymous timeline and map without editing, inv
       if (failIssue) throw new Error('연결 실패');
       return handlers.rotate(request, 'trip');
     }
-    reads++; assert.equal(options?.credentials, 'omit'); assert.equal(options?.cache, 'no-store');
+    reads++;
+    assert.equal(request.method, 'GET');
+    assert.equal(options?.credentials, 'omit'); assert.equal(options?.cache, 'no-store');
+    assert.equal(request.headers.get('authorization'), null);
+    assert.equal(request.referrerPolicy, 'no-referrer');
     if (failRead) { failRead = false; return Response.json({ error: '잠시 후 다시 시도해 주세요.' }, { status: 503 }); }
     return handlers.read(request, new URL(request.url).pathname.split('/').at(-1)!);
   };
   const { render, fireEvent, cleanup, waitFor } = await import('@testing-library/react');
   const { SharedItineraryPage } = await import('../src/components/itinerary/shared');
+  const { default: SharePage } = await import('../src/app/share/[token]/page');
   const { ShareControls } = await import('../src/components/itinerary/share-controls');
   try {
     const controls = render(React.createElement(ShareControls, { tripId: 'trip' }));
@@ -43,21 +49,30 @@ test('T14 UI: issue/copy/rotate, anonymous timeline and map without editing, inv
     failIssue = true; issue(); await controls.findByText('연결 실패');
     assert.equal(controls.queryByLabelText('공유 링크'), null, 'uncertain failed rotation clears old link');
     controls.unmount();
-    const publicView = render(React.createElement(SharedItineraryPage, { token: latest.split('/').at(-1)! }));
+    const token = latest.split('/').at(-1)!;
+    const publicView = render(await SharePage({ params: Promise.resolve({ token }) }));
     await publicView.findByText('일정을 만들었습니다');
+    assert.ok(publicView.getByRole('heading', { name: '공유 여행 일정', level: 1 }));
+    assert.ok(publicView.getByText('읽기 전용 일정'));
+    const page = publicView.getByRole('main');
+    assert.equal(page.style.getPropertyValue('--share-background'), colors.background);
+    assert.equal(page.style.getPropertyValue('--share-primary'), colors.sky.primary);
+    assert.equal(page.style.getPropertyValue('--share-font'), typography.family);
+    assert.equal(page.style.getPropertyValue('--share-title'), `${typography.title.size}px`);
     assert.ok(publicView.getByRole('region', { name: '날짜별 타임라인' }));
     assert.ok(publicView.getByRole('region', { name: '여행 지도' }));
     assert.ok(publicView.getByText('☆ 희망 sample-teamlab'));
     assert.ok(publicView.getByRole('region', { name: '여행 전체 효율' }));
-    assert.equal(publicView.container.querySelector('input, select, textarea, fieldset'), null);
+    assert.equal(publicView.container.querySelector('input, select, textarea, fieldset, button'), null);
     assert.equal(publicView.queryByText(/마커를 선택해 날짜/), null);
     assert.equal(writes, 3, 'viewing does not mutate');
     publicView.unmount();
     const revoked = render(React.createElement(SharedItineraryPage, { token: old.split('/').at(-1)! }));
-    await revoked.findByText('공유 링크가 유효하지 않거나 만료되었습니다.'); revoked.unmount();
+    assert.match((await revoked.findByRole('alert')).textContent ?? '', /공유 링크가 유효하지 않거나 만료되었습니다/);
+    revoked.unmount();
     failRead = true;
     const retry = render(React.createElement(SharedItineraryPage, { token: latest.split('/').at(-1)! }));
-    await retry.findByText('잠시 후 다시 시도해 주세요.');
+    assert.match((await retry.findByRole('alert')).textContent ?? '', /잠시 후 다시 시도해 주세요/);
     fireEvent.click(retry.getByRole('button', { name: '다시 불러오기' }));
     await retry.findByText('일정을 만들었습니다');
     assert.equal(reads, 4);

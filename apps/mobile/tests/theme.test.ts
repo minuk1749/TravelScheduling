@@ -14,12 +14,13 @@ test('theme maps Pretendard weights, tracking and tabular numerals for native te
 
 test('both registered font weights are bundled TrueType assets with OFL license', () => {
   expect(Object.keys(fonts)).toEqual(['Pretendard-Regular', 'Pretendard-SemiBold']);
+  const fontAssets = path.join(__dirname, '../../../packages/design-tokens/assets/fonts');
   for (const name of Object.keys(fonts)) {
-    const data = readFileSync(path.join(__dirname, '../assets/fonts', `${name}.ttf`));
+    const data = readFileSync(path.join(fontAssets, `${name}.ttf`));
     expect(data.readUInt32BE(0)).toBe(0x00010000);
     expect(data.length).toBeGreaterThan(1000);
   }
-  expect(readFileSync(path.join(__dirname, '../assets/fonts/LICENSE.txt'), 'utf8')).toContain('SIL OPEN FONT LICENSE');
+  expect(readFileSync(path.join(fontAssets, 'LICENSE.txt'), 'utf8')).toContain('SIL OPEN FONT LICENSE');
 });
 
 test('mobile production source cannot import server code, use plaintext storage or hardcode colors', () => {

@@ -15,7 +15,7 @@ test('T20 declaration files have no runtime edges and bundled fonts remain check
   const fonts = sources.get('apps/mobile/src/theme/fonts.ts');
   assert.ok(fonts);
   for (const weight of ['Regular', 'SemiBold']) {
-    const asset = `apps/mobile/assets/fonts/Pretendard-${weight}.ttf`;
+    const asset = `packages/design-tokens/assets/fonts/Pretendard-${weight}.ttf`;
     assert.ok(fonts.runtime.includes(asset));
     assert.ok(fonts.declarations.includes(asset));
   }

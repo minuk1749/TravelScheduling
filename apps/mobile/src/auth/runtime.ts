@@ -6,6 +6,7 @@ export type AppRuntime = {
   auth: SessionManager;
   api: ApiClient;
   sessions: SessionApi;
+  deleteAccount(): Promise<void>;
 };
 
 export function createRuntime(deps: {
@@ -15,11 +16,12 @@ export function createRuntime(deps: {
   const api = new ApiClient(deps.apiUrl, auth, deps.transport);
   return {
     auth, api,
+    deleteAccount: () => api.request<void>('/api/account', { method: 'DELETE', expectNoContent: true }),
     sessions: {
       create: idToken => api.request('/api/session', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }),
       }, false),
-      revoke: () => api.request<void>('/api/session', { method: 'DELETE', allowNoContent: true }),
+      revoke: () => api.request<void>('/api/session', { method: 'DELETE', expectNoContent: true }),
     },
   };
 }
