@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { typography } from '@travel/design-tokens';
 import { cityProfile } from '../fixtures/trip-input';
 import { createDatabasePool } from '../../src/lib/db';
 import { migrate } from '../../src/lib/migrations';
@@ -210,6 +211,17 @@ test('T15 375px journey: login → create → settings → over capacity → sel
   const anonymous = await reader.newPage();
   await installMapsDouble(anonymous);
   await anonymous.goto(link);
+  const sharedPage = anonymous.getByRole('main');
+  await expect(sharedPage).toHaveCSS('background-color', 'rgb(242, 244, 246)');
+  await expect(sharedPage).toHaveCSS('font-family', /^Pretendard,/);
+  const heading = sharedPage.getByRole('heading', { name: '공유 여행 일정', exact: true });
+  await expect(heading).toHaveCSS('font-size', `${typography.title.size}px`);
+  await expect(heading).toHaveCSS('font-weight', `${typography.title.weight}`);
+  const fontWeights = await anonymous.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter(font => font.family === 'Pretendard' && font.status === 'loaded').map(font => font.weight).sort();
+  });
+  expect(fontWeights).toEqual([String(typography.body.weight), String(typography.title.weight)]);
   const shared = anonymous.getByRole('region', { name: '날짜별 타임라인' });
   await expect(shared).toBeVisible();
   expect(await shared.locator('.result-stop').allInnerTexts()).toEqual(ownerStops);

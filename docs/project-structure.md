@@ -48,8 +48,8 @@ CI는 PostgreSQL 16에서 `npm ci → lint → typecheck → build → test` 순
 | `apps/mobile/src/auth/`, `src/api/` | T20 세션 상태·복원·폐기, Google/SecureStore 포트·어댑터, 런타임 조립, Bearer HTTP·401 처리, T21 여행·장소·생활 설정 요청(`trips.ts`), T22 경로 모양 요청·`verifyRevision`, T27 생성·재시도(`itinerary-generation.ts`) | core 오류 계약, Expo SecureStore, 네이티브 Google SDK | 서버 코드 import, 평문 저장소·토큰 로그 |
 | `apps/mobile/src/map/` | T22 결과 지도 계약(`types.ts`), 순수 계산(`geometry.ts` polyline·구간 색·도심 밖·곡선, `selection.ts` 카드 선택·이전/다음·강조 구간, `scene.ts` 마커·구간 명세), 어댑터 주입(`provider.tsx`)·Google 구현(`google-result-map.tsx`)·화면 밖 공항 이름을 가장자리별로 묶는 `airport-edge-indicators.tsx`·표시 중인 컨트롤과 안내의 실측 경계를 반영하는 `edge-layout.ts`·지도 키 확인(`config.ts`) | design-tokens, `result/` 모델 타입, `react-native-maps`(Google 어댑터만) | 화면 import, 서버 코드, 순수 파일의 React Native |
 | `apps/mobile/src/result/` | T22 결과 순수 모델: 날짜별 카드·구간·전체 일정 줄(`days.ts`), 배치 여부와 편집할 희망 장소(`wishes.ts`), 충돌 원인(`conflicts.ts`), 제약 수정(`edits.ts`), 문구(`format.ts`) | core 계약·표시, `map/geometry`, Temporal | React Native, I/O |
-| `apps/mobile/src/theme/`, `assets/fonts/` | 디자인 값의 RN 스타일 변환, Pretendard 400/600, 동작 줄이기 | design-tokens, React Native·expo-font | 화면별 색·수치 복제 |
-| `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·그림자·움직임 값, T22 결과 화면 값(`result`), 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
+| `apps/mobile/src/theme/` | 디자인 값의 RN 스타일 변환, Pretendard 400/600 등록, 동작 줄이기 | design-tokens, React Native·expo-font | 화면별 색·수치 복제 |
+| `packages/design-tokens/` | 플랫폼 독립 색·글자·간격·모서리·크기·그림자·움직임 값, T22 결과 화면 값(`result`), 공용 Pretendard 글꼴과 라이선스(`assets/fonts/`), 디자인 문서 일치 검사 | 외부 의존 없음 | 플랫폼 타입·I/O |
 
 결과 화면(T13)은 아래 T13 연결 절을 따른다.
 
@@ -179,3 +179,9 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 ## T28 희망 장소 누락과 영업시간 미상
 
 `services/itinerary/places.ts`는 고정하지 않은 희망 장소(WISH, 날짜·순서 미고정)만 쓰는 장소의 상세 정보가 없으면 그 방문을 스케줄러 입력에서 빼고 계속한다. 필수·고정 방문과 공항·숙소는 기존 `ItineraryInputError`를 유지하고 제공자 장애는 전파한다. 영업시간은 정상·휴업(`[]`)·미상(`undefined`)을 구별하며, 배치된 방문 중 미상인 방문 ID는 `ItineraryResult.openingHoursUnknown`으로 응답하고(새 결과는 빈 배열 포함, 필드 부재는 T28 이전 결과) `itineraries.details`에 저장한다. 앱은 `result/days.ts`의 `CardModel.hoursUnknown`으로 카드·전체 일정에 안내를 보이며 이동시간 검증 실패(`verification`)와 구별한다. [T28 결정](decisions/T28-optional-wish-and-unknown-hours.md)
+
+## T24 모바일 공유와 계정
+
+- 결과 화면 상단의 공유 버튼은 `screens/result/share-sheet.tsx`를 연다. 발급·재발급은 `api/sharing.ts`의 Bearer POST `/api/trips/[id]/share`를 사용한다. 서버 주소와 검증된 `/share/{token}`을 합쳐 OS 공유 시트로 보낸다.
+- `(app)/_layout.tsx`가 로그인 보호 그룹을 만들고 `내 여행`의 계정 버튼으로 `/account`를 연다. 로그아웃은 기존 `DELETE /api/session`, 확인한 탈퇴는 `DELETE /api/account`를 사용한다. 탈퇴 성공 뒤 `SessionManager`가 기기 토큰을 지우면 보호 그룹이 닫히고 로그인 화면이 열린다.
+- 공개 웹 `/share/[token]`은 T14 지도·일정 표시와 익명 GET을 유지한다. 페이지 스타일과 CSS 변수는 `app/share/[token]/`에 있다. 앱과 웹이 design-tokens의 색·글자 값과 Pretendard 글꼴을 공유한다. [T24 결정](decisions/T24-mobile-sharing-and-account.md)

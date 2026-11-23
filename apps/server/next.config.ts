@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const config: NextConfig = {
-  transpilePackages: ['@travel/core'],
+  transpilePackages: ['@travel/core', '@travel/design-tokens'],
   async headers() {
     return [{
       source: '/sw.js',

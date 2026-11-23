@@ -120,6 +120,7 @@ export const form = StyleSheet.create({
   wrap: { flexDirection: 'row', gap: spacing.steps[1], flexWrap: 'wrap', alignItems: 'center' },
   stack: { gap: spacing.cardGap },
   flex: { flex: 1 },
+  double: { flex: 2 },
   secondary: { ...text.secondary, color: colors.gray.secondary },
 });
 

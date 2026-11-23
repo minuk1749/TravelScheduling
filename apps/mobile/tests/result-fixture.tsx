@@ -5,6 +5,7 @@ import { parseConstraints } from '@travel/core/contracts/results/input';
 import { constraintsFrom, type ResultView } from '@travel/core/contracts/results/model';
 import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import Generate from '../app/(app)/trips/[id]/generate';
+import AppLayout from '../app/(app)/_layout';
 import type { GeneratedTrip } from '../src/api/trips';
 import { AuthProvider } from '../src/auth/provider';
 import { MapAdapterProvider, type ResultMap } from '../src/map/provider';
@@ -167,7 +168,7 @@ export function resultFixture(initial: ResultView = view, { legacy = false } = {
 export async function renderResult(f: ReturnType<typeof resultFixture>, map: ResultMap = FakeResultMap) {
   await renderRouter({
     _layout: () => <AuthProvider runtime={f.runtime}><MapAdapterProvider map={map}><RootNavigator /></MapAdapterProvider></AuthProvider>,
-    login: () => null, '(app)/index': () => null, '(app)/trips/[id]/index': () => <Text>저장한 여행</Text>,
+    login: () => null, '(app)/_layout': AppLayout, '(app)/index': () => null, '(app)/trips/[id]/index': () => <Text>저장한 여행</Text>,
     '(app)/trips/[id]/settings': () => <Text>하루 생활</Text>, '(app)/trips/[id]/generate': Generate,
   }, { initialUrl: '/trips/trip/generate' });
 }
