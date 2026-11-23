@@ -154,6 +154,7 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 ## T22 모바일 결과 화면 (지도 우선 · 장소 카드)
 
+- 제약 저장소 `itinerary-constraints.ts`는 입력과 쓰기 버전을 일관된 스냅샷에서 읽고, 여행 행 잠금 아래에서 조건부 저장과 요청별 영수증 발급을 처리한다. [마이그레이션 008](../apps/server/migrations/008_constraint_write_receipt.sql)이 제약·생활 설정 쓰기마다 버전을 교체하여 같은 값으로 돌아온 경우에도 오래된 재시도를 식별한다.
 - 생성 서비스는 고정된 공항 이동이 다른 날짜의 활동 시간창을 줄이면 충돌 응답에 `airportTransferLimits`를 포함한다. 결과 화면은 이 기록으로 해당 날짜에 영향을 준 구간을 표시하고, 저장된 제약의 기준일·출발지·도착지로 해제를 요청한다.
 - 전체 일정은 일반 입력 시트와 헤더·스크롤 본문 구조를 공유하고, `ExpandedFormSheet`로 상단 바 아래까지 펼친다.
 - `/trips/[id]/generate`(T21 생성 화면) → POST 응답 → `screens/result/result-flow.tsx`의 `OutcomeFlow`: OK·CONFLICT는 `ResultFlow`(GET `/constraints`로 입력, revision이 다르면 한 번 재계산), OVER_CAPACITY는 T23 `CapacityFlow`. T23 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름을 메모리로 오간다.

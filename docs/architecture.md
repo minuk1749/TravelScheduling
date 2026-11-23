@@ -385,7 +385,8 @@ Node 24와 PostgreSQL 16을 사용한다. `npm test`는 빌드 이후 실행하�
 - [공유 DTO](../apps/server/src/results/model.ts), [검증](../apps/server/src/results/input.ts), [표시 변환](../apps/server/src/results/presentation.ts)은 브라우저/서버 공용이며 DB·네트워크에 의존하지 않는다.
 - [결과 서비스](../apps/server/src/services/itinerary/editing.ts)는 ConstraintRepository와 장소 제공자 포트만 사용한다. [HTTP](../apps/server/src/results/http.ts)가 인증·소유권·동일 출처·오류를 처리하고 server.ts가 구체 구현을 조립한다.
 - [저장소](../apps/server/src/repositories/itinerary-constraints.ts)는 여행 행 잠금 아래 소유권과 전체 입력 해시를 재검사하고 방문/수단 제약을 원자적으로 저장한다.
-- GET `/api/trips/[id]/constraints`는 `{ input, revision, places }`, PUT은 `{ revision, constraints: { visits, legModes } }`를 받고 `{ input, revision }`을 반환한다. revision은 동선 입력 해시다. 누락/중복/다른 여행 ID·기간 밖 날짜·DST 모호 시각을 거부한다.
+- GET `/api/trips/[id]/constraints`는 `{ input, revision, writeVersion, places }`를 반환한다. PUT은 `{ revision, constraints: { visits, legModes } }`를 받고 `{ input, revision, writeVersion }`을 반환한다. revision은 동선 입력 해시이고 writeVersion은 매 제약·생활 설정 저장 때 바뀌는 UUID다. 누락/중복/다른 여행 ID·기간 밖 날짜·DST 모호 시각을 거부한다.
+- PUT은 선택적으로 `operationId`, `expectedWriteVersion`, `expectedOperationId`(UUID v4)를 받는다. 서버는 여행 행을 잠그고 전달된 조건을 모두 확인한다. 불일치는 409다. operationId가 있는 성공 응답에는 `receipt: { operationId, revision }`이 추가된다. 응답이 유실되면 GET의 `?operationId=…`로 소유 여행의 최신 쓰기인지 확인할 수 있다. [008](../apps/server/migrations/008_constraint_write_receipt.sql)은 여행마다 최신 쓰기의 증거만 보관한다.
 - 방문 제약은 기존 trip_places에, 구간 제약은 [006](../apps/server/migrations/006_itinerary_constraints.sql)의 trips.leg_modes에 저장한다. 후자는 날짜·출발/도착 장소 ID·수동 수단 배열이다. 장소 이름/귀속 정보는 실시간 응답에만 포함한다.
 - [일상 구간 적용](../apps/server/src/services/itinerary/constraints.ts)은 기존 짐 속성을 유지하고, 공항 이동은 기존 transfer 선택에 fixedMode를 전달한다. 입력 해시에 수단 제약도 포함된다.
 - PUT 성공 뒤 기존 POST `/api/trips/[id]/itinerary`로 재검증한다. POST 응답에 inputHash를 추가해 다른 입력으로 생성된 결과 표시를 막는다. 생성 실패 시 저장한 제약은 유지된다. 화면 재접속은 입력을 복원하고 버튼으로 재생성한다.
@@ -697,7 +698,7 @@ export interface RouteShapeProvider {   // TravelTimeProvider와 분리(인터�
 ### 13.4.3 모바일 결과 화면 (T22)
 
 - 진입: `/trips/[id]/generate`가 기존 `POST …/itinerary`를 실행하고, 응답을 `OutcomeFlow`에 넘긴다. OK·CONFLICT는 결과 화면(`ResultFlow`), OVER_CAPACITY는 T23 선택 화면이다. T23의 `동선 보기`와 결과 화면의 재계산 OVER_CAPACITY도 같은 흐름으로 오간다. 하루 생활 재계산의 OVER_CAPACITY도 `OutcomeFlow`를 연다.
-- `ResultFlow`는 `GET …/constraints`로 입력을 읽는다. revision이 응답의 `inputHash`와 같으면 응답을 그대로 쓰고, 다르면 한 번 다시 계산한다. 서버 API·DB는 바꾸지 않는다.
+- `ResultFlow`는 `GET …/constraints`로 입력을 읽는다. revision이 응답의 `inputHash`와 같으면 응답을 그대로 쓰고, 다르면 한 번 다시 계산한다.
 - 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `constraintsFrom`으로 만든 제약을 `withVisit`·`withLegMode`로 바꿔 `PUT …/constraints`(core `parseConstraints`로 검증) → `POST …/itinerary` → `verifyRevision` 순서로 처리한다. 저장 직전 제약은 `변경 취소`·`되돌리기`에 쓰고, POST 실패 뒤에는 저장된 입력으로 POST만 다시 실행한다.
 - 순수 모델: `apps/mobile/src/result/days.ts`가 저장 입력과 결과에서 날짜별 카드(도착 구간·대기·숙소 복귀·당겨짐/늦춰짐·고정 조건)·구간(순서 색·도심 밖·바꿀 수단)·전체 일정 줄을 만든다. `conflicts.ts`는 3-8 원인, `edits.ts`는 제약 수정, `format.ts`는 문구다.
 - 경로 모양은 OK 결과의 `inputHash`와 `itineraryId`로 `GET …/itinerary/shapes`를 요청한다. 앱은 응답의 두 값이 일치할 때만 구간을 받고, 여행·해시·일정 ID가 표시 중인 결과와 일치하는 메모리 데이터만 사용한다. 결과를 바꾸면 이전 요청을 취소한다. [T22 결정](decisions/T22-mobile-result-screen.md)

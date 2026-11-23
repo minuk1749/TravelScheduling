@@ -16,7 +16,10 @@ export function constraintHandlers(deps: Dependencies) {
       const userId = await deps.userId(request);
       const access = await authorizeTrip(userId, id, deps.findOwner);
       if (access !== 200) return accessError(access, ACCESS_ERRORS[access]);
-      if (!write) return json(await deps.service().load(id));
+      if (!write) {
+        const operationId = new URL(request.url).searchParams.get('operationId');
+        return json(await deps.service().load(id, operationId === null ? undefined : { ownerId: userId!, operationId }));
+      }
       let body: unknown;
       try { body = await request.json(); } catch { return apiError(400, 'INVALID_JSON', '올바른 JSON을 보내 주세요.'); }
       return json(await deps.service().save(id, userId!, body));

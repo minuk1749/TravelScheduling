@@ -8,7 +8,15 @@ export type VisitEdit = {
 };
 export type LegEdit = { date: string; from: string; to: string; mode: TravelMode };
 export type Constraints = { visits: VisitEdit[]; legModes: LegEdit[] };
-export type ResultSnapshot = { input: TripInputs; revision: string };
+export type ConstraintWriteOptions = { operationId?: string; expectedWriteVersion?: string; expectedOperationId?: string };
+export type ConstraintReceipt = { operationId: string; revision: string };
+export type ResultSnapshot = {
+  input: TripInputs; revision: string;
+  /** Opaque generation of the saved input. Older servers omit this field. */
+  writeVersion?: string;
+  /** Returned only to the caller who presents the operation ID for the current write. */
+  receipt?: ConstraintReceipt;
+};
 export type ResultView = ResultSnapshot & { places: Record<string, Pick<PlaceDetails, 'googlePlaceId' | 'name' | 'coordinates' | 'attributions'> | null> };
 /** Only fields needed to display a result; no owner, revision or editable settings. */
 export type ResultDisplayView = {
