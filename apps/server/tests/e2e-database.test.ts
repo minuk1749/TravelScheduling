@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import test from 'node:test';
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { createDatabasePool } from '../src/lib/db';
 import { migrate, readMigrations } from '../src/lib/migrations';
 import { cityProfile } from './fixtures/trip-input';
 import { withDatabase } from './helpers/database';
 import { schemaUrl, upsertCityProfile, isolateDatabase, openRunDatabase } from './e2e/support/database';
 import { setUpRunDatabase } from './e2e/support/global-setup';
+import { seedRouteShapes } from './e2e/support/route-shapes-seed';
 
 /**
  * Valid libpq `options` the run must keep: a multi-schema search_path with an escaped space, another option, and a value
@@ -147,16 +148,54 @@ test('T25: e2e setup and teardown succeed for an account that may create schemas
   }, url));
 });
 
-/** Playwright's beforeAll/afterAll, run in order and stopping at the first failure as Playwright does. */
+/**
+ * A suite's beforeAll/afterAll in registration order. Every hook runs even after an earlier one failed (the first error
+ * is rethrown at the end), the least forgiving reading of Playwright's rules: a write registered as its own beforeAll
+ * would reach the wrong schema here, so only writes inside openRunDatabase's `prepare` pass these tests.
+ */
 function suiteHooks() {
   const before: Array<() => Promise<void>> = [], after: Array<() => Promise<void>> = [];
+  const runAll = async (runs: Array<() => Promise<void>>, errors: unknown[]) => {
+    for (const run of runs) { try { await run(); } catch (error) { errors.push(error); } }
+  };
   return {
     hooks: { beforeAll: (run: () => Promise<void>) => { before.push(run); }, afterAll: (run: () => Promise<void>) => { after.push(run); } },
     async runSuite() {
-      try { for (const run of before) await run(); } finally { for (const run of after) await run(); }
+      const errors: unknown[] = [];
+      await runAll(before, errors);
+      await runAll(after, errors);
+      if (errors.length > 0) throw errors[0];
     },
   };
 }
+
+async function rowCounts(client: PoolClient) {
+  const { rows: [counts] } = await client.query<{ users: number; sessions: number; trips: number; itineraries: number }>(`SELECT
+    (SELECT count(*)::int FROM users) AS users, (SELECT count(*)::int FROM mobile_sessions) AS sessions,
+    (SELECT count(*)::int FROM trips) AS trips, (SELECT count(*)::int FROM itineraries) AS itineraries`);
+  return counts;
+}
+
+test('T25: the route shapes spec seeds users, sessions and trips only after the schema check succeeds', async () => {
+  await withDatabase(async (client, defaultSchema) => {
+    await seedBaseTokyo(client);
+    await client.query("INSERT INTO users (id, google_id, email) VALUES (gen_random_uuid(), 'kept-user', 'kept@example.test')");
+    const before = await rowCounts(client);
+    const url = withOptions(process.env.DATABASE_URL!, `-c search_path=${defaultSchema}`);
+    const prepare = async (pool: Pool) => { await seedRouteShapes(pool); };
+
+    const wrong = suiteHooks();
+    openRunDatabase(wrong.hooks, prepare, { url, schema: 'e2e_some_other_run' });
+    await assert.rejects(wrong.runSuite(), /not the run schema e2e_some_other_run/);
+    assert.deepEqual(await rowCounts(client), before, 'no user, session, trip or itinerary is written to the other schema');
+
+    const right = suiteHooks();
+    openRunDatabase(right.hooks, prepare, { url, schema: defaultSchema });
+    await right.runSuite();
+    assert.deepEqual(await rowCounts(client), { users: before.users + 2, sessions: before.sessions + 3, trips: before.trips + 1, itineraries: before.itineraries + 2 },
+      'on the run schema the same prepare step seeds the spec');
+  });
+});
 
 test('T25: when a spec reaches the wrong schema it stops before writing and its cleanup deletes nothing there', async () => {
   await withDatabase(async (client, defaultSchema) => {
