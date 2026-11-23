@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   badgeRow: { paddingHorizontal: spacing.screen, alignItems: 'center' },
   badge: { color: colors.amber.text, backgroundColor: colors.amber.surface, borderRadius: radius.small,
     paddingHorizontal: spacing.steps[1], paddingVertical: spacing.steps[0], overflow: 'hidden' },
-  button: { minHeight: size.touch, paddingHorizontal: spacing.cardInside, borderRadius: radius.small,
+  button: { minHeight: size.touch, maxWidth: '100%', paddingHorizontal: spacing.cardInside, borderRadius: radius.small,
     backgroundColor: colors.gray.button, justifyContent: 'center' },
   primary: { backgroundColor: colors.sky.primary },
   buttonLabel: { color: colors.gray.secondary },

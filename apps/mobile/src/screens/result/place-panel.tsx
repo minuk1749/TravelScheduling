@@ -1,4 +1,6 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import type { LegEdit } from '@travel/core/contracts/results/model';
 import type { ResultMap } from '../../map/provider';
 import { ActionButton } from '../../components/action-button';
@@ -34,16 +36,40 @@ function CalculationSummary({ label }: { label: string }) {
   </View>;
 }
 
+/** The content of the panel never determines how much of the map it covers. */
+export function usePanelLayout(topInset = 0) {
+  const window = useWindowDimensions();
+  const [parentHeight, setParentHeight] = useState<number | null>(null);
+  const height = parentHeight ?? window.height;
+  const target = height * result.panel.ratio;
+  // On short parents keep the date chips and the current-location button in separate touch regions.
+  const available = height - topInset - result.locate.offset - result.locate.size;
+  const panelHeight = topInset ? Math.min(target, Math.max(size.touch, available)) : target;
+  return { panelHeight, onLayout: (event: LayoutChangeEvent) => setParentHeight(event.nativeEvent.layout.height) };
+}
+
+function PanelFrame({ id, height, page, children }: { id: string; height: number; page?: string; children: ReactNode }) {
+  const safe = useSafeAreaInsets();
+  return <View testID={id} style={[styles.panel, { height }]}>
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.handle} />
+    <ScrollView key={page} testID={id + '-scroll'} style={styles.scroll} directionalLockEnabled
+      contentInsetAdjustmentBehavior="never" contentContainerStyle={[styles.content, {
+        paddingLeft: safe.left, paddingRight: safe.right, paddingBottom: safe.bottom + spacing.section,
+      }]}>
+      {children}
+    </ScrollView>
+  </View>;
+}
+
 /** No completed day, place cards or legs are available before the first successful generation. */
 export function InitialResult({ map: Map, back, failure }: {
   map: ResultMap; back(): void; failure?: { message: string; retry(): void; editConditions(): void };
 }) {
-  const height = useWindowDimensions().height * result.panel.ratio;
-  return <View style={layout.screen}>
-    <Map markers={[]} routes={[]} selectedId={null} focusDate={null} focusIds={[]} topInset={0} bottomInset={height}
+  const { panelHeight, onLayout } = usePanelLayout();
+  return <View style={layout.screen} onLayout={onLayout}>
+    <Map markers={[]} routes={[]} selectedId={null} focusDate={null} focusIds={[]} topInset={0} bottomInset={panelHeight}
       dimmed={false} locateRequest={0} onSelectMarker={() => {}} />
-    <View testID="initial-place-panel" style={[styles.panel, { minHeight: height }]}>
-      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.handle} />
+    <PanelFrame id="initial-place-panel" height={panelHeight}>
       <View style={styles.dateRow}>
         <View style={styles.flex}>
           <Text accessibilityRole="header" style={text.title}>동선 만들기</Text>
@@ -52,7 +78,7 @@ export function InitialResult({ map: Map, back, failure }: {
       </View>
       {failure && <FailureBlock message={failure.message} onRetry={failure.retry} onEditConditions={failure.editConditions} />}
       <ActionButton label="저장한 여행 보기" secondary onPress={back} />
-    </View>
+    </PanelFrame>
   </View>;
 }
 
@@ -93,15 +119,14 @@ function Pager({ index, count, disabled, onIndex, onEdit }: {
 }
 
 /** §7 fixed place panel. The handle is decorative because the panel height does not change by dragging. */
-export function PlacePanel({ day, index, status, currency, freeTime, canAddWish, minHeight, onLayout, actions }: {
+export function PlacePanel({ day, index, status, currency, freeTime, canAddWish, height, actions }: {
   day: DayModel; index: number; status: PanelStatus; currency: string | null; freeTime: string; canAddWish: boolean;
-  minHeight: number; onLayout(event: LayoutChangeEvent): void; actions: PanelActions;
+  height: number; actions: PanelActions;
 }) {
   const busy = status.kind === 'CALCULATING';
   const interactive = status.kind === 'READY';
   const selected = day.cards[index] ?? null;
-  return <View testID="place-panel" style={[styles.panel, { minHeight }]} onLayout={onLayout}>
-    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.handle} />
+  return <PanelFrame id="place-panel" height={height} page={day.date}>
     <DateRow day={day} status={status} onSchedule={actions.onSchedule} />
     {status.kind === 'PREVIOUS' && <PreviousBadge onRetry={actions.onRetry} />}
     {status.kind === 'FAILED' ? <FailureBlock message={status.message}
@@ -123,13 +148,15 @@ export function PlacePanel({ day, index, status, currency, freeTime, canAddWish,
           : <Pager index={index} count={day.cards.length} disabled={!interactive || !selected?.start}
             onIndex={actions.onIndex} onEdit={() => { if (selected) actions.onEdit(selected); }} />}
       </>}
-  </View>;
+  </PanelFrame>;
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   panel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: colors.card,
-    borderTopLeftRadius: radius.panel, borderTopRightRadius: radius.panel, paddingBottom: spacing.section, gap: spacing.cardGap, ...shadows.panel },
+    borderTopLeftRadius: radius.panel, borderTopRightRadius: radius.panel, ...shadows.panel },
+  scroll: { flex: 1 },
+  content: { gap: spacing.cardGap, paddingTop: spacing.cardGap },
   handle: { alignSelf: 'center', marginTop: spacing.steps[1], width: size.handle.width, height: size.handle.height,
     borderRadius: radius.small, backgroundColor: colors.gray.line },
   dateRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.screen, gap: spacing.steps[1] },

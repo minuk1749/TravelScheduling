@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
 import { placeName } from '@travel/core/presentation';
 import type { ResultMap as ResultMapAdapter } from '../../map/provider';
@@ -13,11 +13,11 @@ import { conflictCauses, conflictingModeFixes } from '../../result/conflicts';
 import { buildDays, placedVisitIds, type DayModel, type LegModel } from '../../result/days';
 import { withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
-import { colors, result } from '../../theme';
+import { colors } from '../../theme';
 import { cityName, kindLabels } from '../trip-input/presentation';
 import { EditSheet } from './edit-sheet';
 import { LocateButton, Legend, ShapeRetry, Toast } from './map-controls';
-import { PlacePanel, type PanelStatus } from './place-panel';
+import { PlacePanel, usePanelLayout, type PanelStatus } from './place-panel';
 import { ScheduleSheet } from './schedule-sheet';
 import { DateChips, TopBar } from './top-bar';
 import type { useItinerary } from './use-itinerary';
@@ -75,8 +75,9 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   }
   const showPrevious = failed && previousFor === phase;
   const [locate, setLocate] = useState(0);
-  const [insets, setInsets] = useState({ top: 0, bottom: 0 });
-  const { height } = useWindowDimensions();
+  const safe = useSafeAreaInsets();
+  const [topInset, setTopInset] = useState(0);
+  const { panelHeight, onLayout } = usePanelLayout(topInset);
   const { dismissNotice } = itinerary;
   useEffect(() => {
     if (!notice) return;
@@ -124,24 +125,25 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   };
   const lodgings = [...new Set(view.input.lodgings.map(lodging => placeName(view, lodging.place.id)))].join(', ') || '당일 여행';
 
-  return <View style={styles.screen}>
+  return <View testID="result-screen" style={styles.screen} onLayout={onLayout}>
     <ResultMap markers={scene.markers} routes={scene.routes} focusDate={day.date} focusIds={scene.focusIds}
-      selectedId={sheet?.kind === 'WISH' ? sheet.visitId : card?.visitId ?? null} topInset={insets.top} bottomInset={insets.bottom}
+      selectedId={sheet?.kind === 'WISH' ? sheet.visitId : card?.visitId ?? null} topInset={topInset} bottomInset={panelHeight}
       dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
-    <SafeAreaView edges={['top']} pointerEvents="box-none" style={styles.top}
-      onLayout={event => { const top = event.nativeEvent.layout.height; setInsets(value => ({ ...value, top })); }}>
+    <SafeAreaView testID="result-top-controls" edges={['top', 'left', 'right']} pointerEvents="box-none" style={styles.top}
+      onLayout={event => setTopInset(event.nativeEvent.layout.height)}>
       <TopBar title={cityName(view.input.cityCode)} subtitle={`${periodLabel(view.input)} · ${lodgings}`}
         back={back} edit={editConditions} disabled={calculating} />
       <DateChips days={days} selected={day.date} onSelect={chooseDate} />
     </SafeAreaView>
-    {!notice && <Legend wishes={wishes.length} bottom={insets.bottom} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
-    {shapesFailed && displayed === shown && !notice && <ShapeRetry bottom={insets.bottom} onPress={retryShapes} />}
-    <LocateButton bottom={insets.bottom} onPress={() => setLocate(value => value + 1)} />
-    {notice && <Toast notice={notice} bottom={insets.bottom} onClose={dismissNotice}
-      onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
+    <View testID="result-map-controls" pointerEvents="box-none" style={[StyleSheet.absoluteFill, { left: safe.left, right: safe.right }]}>
+      {!notice && <Legend wishes={wishes.length} bottom={panelHeight} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
+      {shapesFailed && displayed === shown && !notice && <ShapeRetry bottom={panelHeight} onPress={retryShapes} />}
+      <LocateButton bottom={panelHeight} onPress={() => setLocate(value => value + 1)} />
+      {notice && <Toast notice={notice} bottom={panelHeight} onClose={dismissNotice}
+        onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
+    </View>
     <PlacePanel day={day} index={selection.index} status={status} currency={currency} freeTime={freeTime(displayed?.availableByDate?.[day.date], day.timeZone)}
-      canAddWish={wishes.length > 0} minHeight={height * result.panel.ratio}
-      onLayout={event => { const bottom = event.nativeEvent.layout.height; setInsets(value => ({ ...value, bottom })); }}
+      canAddWish={wishes.length > 0} height={panelHeight}
       actions={{
         onIndex: index => select({ date: day.date, index }), onSchedule: () => setSheet({ kind: 'SCHEDULE' }),
         onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: target => swap(target.arrival, target.arrival?.swap?.mode),
