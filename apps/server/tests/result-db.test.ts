@@ -54,7 +54,7 @@ test('only the current operation can prove its commit, including a retry or undo
     const legacy = await loadTripInputs(client, id);
     assert.ok(legacy?.status === 'READY');
     await migrate(client);
-    const read = (operationId?: string) => loadConstraintInputs(client, id, operationId ? { ownerId: owner, operationId } : undefined);
+    const read = (operationId?: string) => loadConstraintInputs(client, id, owner, operationId);
     const initial = await read();
     assert.ok(initial?.status === 'READY' && initial.writeVersion);
     assert.equal(initial.inputHash, legacy.inputHash);
@@ -69,9 +69,12 @@ test('only the current operation can prove its commit, including a retry or undo
     assert.deepEqual((await read(a))?.receipt, first.receipt);
     assert.equal((await read(b))?.receipt, undefined);
     assert.equal((await read())?.receipt, undefined);
-    assert.equal(await loadConstraintInputs(client, id, { ownerId: randomUUID(), operationId: a }), null);
+    for (const operation of [undefined, a]) {
+      assert.equal(await loadConstraintInputs(client, id, randomUUID(), operation), null);
+      assert.equal(await loadConstraintInputs(client, randomUUID(), owner, operation), null);
+    }
     const otherTrip = await insertTrip(client, owner, sampleDraft());
-    assert.equal((await loadConstraintInputs(client, otherTrip, { ownerId: owner, operationId: a }))?.receipt, undefined);
+    assert.equal((await loadConstraintInputs(client, otherTrip, owner, a))?.receipt, undefined);
     await saveItinerary(client, id, first.revision, await service().service.compute(first.input));
     await client.query('UPDATE trips SET share_token=$2 WHERE id=$1', [id, randomUUID()]);
     assert.deepEqual((await read(a))?.receipt, first.receipt, 'sharing and generation preserve the evidence');

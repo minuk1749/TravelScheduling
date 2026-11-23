@@ -28,10 +28,10 @@ test('authenticated clients can request their specific receipt; old and malforme
   const owner = randomUUID(), operation = randomUUID(), version = randomUUID(), original = randomUUID(), input = sampleTrip();
   const revision = 'a'.repeat(64), receipt = { operationId: operation, revision };
   const repo = new ResultEditService({
-    loadInputs: async (id, lookup) => {
-      assert.equal(id, input.id);
+    loadInputs: async (id, ownerId, operationId) => {
+      assert.equal(id, input.id); assert.equal(ownerId, owner);
       return { status: 'READY', input, inputHash: revision, writeVersion: version,
-        ...(lookup?.ownerId === owner && lookup.operationId === operation ? { receipt } : {}) };
+        ...(operationId === operation ? { receipt } : {}) };
     },
     save: async (id, user, hash, constraints, options) => {
       assert.equal(id, input.id); assert.equal(user, owner); assert.equal(hash, revision);
@@ -53,6 +53,31 @@ test('authenticated clients can request their specific receipt; old and malforme
     const bad = await save(input); assert.equal(bad.status, 400); assert.equal((await bad.json()).code, 'INVALID_INPUT');
   }
 });
+test('an owner check with no matching snapshot returns only the access error for every constraints read', async () => {
+  const owner = randomUUID(), operation = randomUUID(), places = new FixturePlaces();
+  const reads: Array<string | undefined> = [];
+  const service = new ResultEditService({
+    loadInputs: async (tripId, ownerId, operationId) => {
+      assert.equal(tripId, 'trip'); assert.equal(ownerId, owner);
+      reads.push(operationId);
+      return null;
+    },
+    save: async () => assert.fail('saving requires a matching snapshot'),
+  }, places);
+  const handlers = constraintHandlers({ userId: async () => owner, findOwner: async () => owner, service: () => service });
+  const responses = [
+    await handlers.get(new Request(url), 'trip'),
+    await handlers.get(new Request(url + '?operationId=' + operation), 'trip'),
+    await handlers.put(new Request(url, { method: 'PUT', body: '{}' }), 'trip'),
+  ];
+  for (const response of responses) {
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { code: 'NOT_FOUND', error: '여행을 찾을 수 없습니다.' });
+  }
+  assert.deepEqual(reads, [undefined, operation, undefined]);
+  assert.deepEqual(places.detailCalls, []);
+});
+
 test('T13 errors distinguish stale, validation, missing input, provider and internal failures', async () => {
   for (const [error, status] of [[new ResultStaleError(), 409], [new ResultUnavailableError(), 409], [new TripInputError({ date: '날짜 오류' }), 400], [new PlaceProviderError('UNAVAILABLE'), 503], [new PlaceProviderError('INVALID_RESPONSE'), 502], [new Error('secret SQL'), 500]] as const) {
     const fail = async (): Promise<never> => { throw error; };

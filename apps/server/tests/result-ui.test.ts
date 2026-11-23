@@ -31,7 +31,7 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
         input = applyEdits(input, parseConstraints(body.constraints, input));
         return Response.json({ input, revision: inputHash(input) });
       }
-      return Response.json(await editor.load(input.id));
+      return Response.json(await editor.load(input.id, 'owner'));
     }
     generations++;
     if (failGeneration) { failGeneration = false; return Response.json({ error: '경로 조회 실패' }, { status: 503 }); }

@@ -4,10 +4,9 @@ import { parseConstraints } from '../../results/input';
 import { TripInputError } from '../../trips/input';
 import { displayPlaces, tripPlaceRefs } from './display-places';
 
-export type ReceiptLookup = { ownerId: string; operationId: string };
 export type ConstraintLoad = TripLoad & Pick<ResultSnapshot, 'writeVersion' | 'receipt'>;
 export interface ConstraintRepository {
-  loadInputs(tripId: string, lookup?: ReceiptLookup): Promise<ConstraintLoad | null>;
+  loadInputs(tripId: string, ownerId: string, operationId?: string): Promise<ConstraintLoad | null>;
   save(tripId: string, ownerId: string, revision: string, constraints: Constraints, options?: ConstraintWriteOptions): Promise<ResultSnapshot | null>;
 }
 
@@ -20,16 +19,19 @@ function optionalUuid(value: unknown, field: string): string | undefined {
 }
 export class ResultEditService {
   constructor(private readonly repository: ConstraintRepository, private readonly places: ItineraryPlaces) {}
-  async load(tripId: string, lookup?: ReceiptLookup): Promise<ResultView> {
-    const operationId = optionalUuid(lookup?.operationId, 'operationId');
-    const loaded = await this.repository.loadInputs(tripId, operationId && lookup ? { ownerId: lookup.ownerId, operationId } : undefined);
-    if (loaded?.status !== 'READY') throw new ResultUnavailableError();
+  private async loadReady(tripId: string, ownerId: string, operationId?: string) {
+    const loaded = await this.repository.loadInputs(tripId, ownerId, operationId);
+    if (!loaded) throw new ResultTripNotFoundError();
+    if (loaded.status !== 'READY') throw new ResultUnavailableError();
+    return loaded;
+  }
+  async load(tripId: string, ownerId: string, operationId?: string): Promise<ResultView> {
+    const loaded = await this.loadReady(tripId, ownerId, optionalUuid(operationId, 'operationId'));
     const { input, inputHash: revision, writeVersion, receipt } = loaded;
     return { input, revision, writeVersion, receipt, places: await displayPlaces(this.places, tripPlaceRefs(input), input.timeZone, input.startDate) };
   }
   async save(tripId: string, ownerId: string, body: unknown): Promise<ResultSnapshot> {
-    const loaded = await this.repository.loadInputs(tripId);
-    if (loaded?.status !== 'READY') throw new ResultUnavailableError();
+    const loaded = await this.loadReady(tripId, ownerId);
     const row = body !== null && typeof body === 'object' ? body as Record<string, unknown> : {};
     if (typeof row.revision !== 'string') throw new TripInputError({ revision: '다시 불러온 후 저장해 주세요.' });
     if (row.revision !== loaded.inputHash) throw new ResultStaleError();
@@ -41,5 +43,6 @@ export class ResultEditService {
     return saved;
   }
 }
+export class ResultTripNotFoundError extends Error {}
 export class ResultUnavailableError extends Error {}
 export class ResultStaleError extends Error {}

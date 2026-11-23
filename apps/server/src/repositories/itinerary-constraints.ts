@@ -1,22 +1,26 @@
 import type { Pool, PoolClient } from 'pg';
-import type { ConstraintLoad, ConstraintRepository, ReceiptLookup } from '../services/itinerary/editing';
+import type { ConstraintLoad, ConstraintRepository } from '../services/itinerary/editing';
 import type { Constraints, ConstraintWriteOptions, ResultSnapshot } from '../results/model';
 import { loadTripInputs } from './trip-snapshot';
 import { parseConstraints } from '../results/input';
 
-/** Read the input, generation and optional proof from a single PostgreSQL snapshot. */
-export async function loadConstraintInputs(client: PoolClient, tripId: string, lookup?: ReceiptLookup): Promise<ConstraintLoad | null> {
+/** Read owner, input, generation and optional proof from a single PostgreSQL snapshot. */
+export async function loadConstraintInputs(client: PoolClient, tripId: string, ownerId: string, operationId?: string): Promise<ConstraintLoad | null> {
   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   try {
+    const { rows: [meta] } = await client.query<{ version: string; receipt_revision: string | null }>(
+      `SELECT constraint_write_version AS version,
+         CASE WHEN constraint_operation_id = $3 THEN constraint_operation_revision END AS receipt_revision
+       FROM trips WHERE id = $1 AND owner_id = $2`, [tripId, ownerId, operationId]);
+    if (!meta) return null;
     const loaded = await loadTripInputs(client, tripId);
-    if (loaded?.status !== 'READY') { await client.query('COMMIT'); return loaded; }
-    const { rows: [meta] } = await client.query<{ version: string; operation: string | null }>(`SELECT constraint_write_version AS version,
-      CASE WHEN constraint_operation_id = $3 AND constraint_operation_revision = $4 THEN constraint_operation_id END AS operation
-      FROM trips WHERE id = $1 AND ($2::uuid IS NULL OR owner_id = $2)`, [tripId, lookup?.ownerId, lookup?.operationId, loaded.inputHash]);
-    await client.query('COMMIT');
-    return meta ? { ...loaded, writeVersion: meta.version,
-      ...(meta.operation ? { receipt: { operationId: meta.operation, revision: loaded.inputHash } } : {}) } : null;
-  } catch (error) { await client.query('ROLLBACK'); throw error; }
+    if (loaded?.status !== 'READY') return loaded;
+    const receipt = operationId && meta.receipt_revision === loaded.inputHash
+      ? { operationId, revision: loaded.inputHash } : undefined;
+    return { ...loaded, writeVersion: meta.version, ...(receipt ? { receipt } : {}) };
+  } finally {
+    await client.query('ROLLBACK');
+  }
 }
 
 export async function saveConstraints(client: PoolClient, tripId: string, ownerId: string, revision: string, constraints: Constraints,
@@ -49,9 +53,9 @@ export async function saveConstraints(client: PoolClient, tripId: string, ownerI
 }
 export class PostgresConstraintRepository implements ConstraintRepository {
   constructor(private readonly pool: Pool) {}
-  async loadInputs(tripId: string, lookup?: ReceiptLookup) {
+  async loadInputs(tripId: string, ownerId: string, operationId?: string) {
     const client = await this.pool.connect();
-    try { return await loadConstraintInputs(client, tripId, lookup); } finally { client.release(); }
+    try { return await loadConstraintInputs(client, tripId, ownerId, operationId); } finally { client.release(); }
   }
   async save(tripId: string, ownerId: string, revision: string, constraints: Constraints, options?: ConstraintWriteOptions) {
     const client = await this.pool.connect();

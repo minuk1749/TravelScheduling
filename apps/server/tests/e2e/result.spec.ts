@@ -17,7 +17,7 @@ test('T13 375px result: wishlist pin, manual mode, reload, timeline and no horiz
       input = applyEdits(input, parseConstraints(body.constraints, input));
       await route.fulfill({ json: { input, revision: inputHash(input) } }); return;
     }
-    await route.fulfill({ json: await editor.load(input.id) });
+    await route.fulfill({ json: await editor.load(input.id, 'owner') });
   });
   await page.route('**/api/trips/test/itinerary', async route => route.fulfill({ json: { ...await service().service.compute(input), inputHash: inputHash(input) } }));
   await page.goto('/trips/test/result');
