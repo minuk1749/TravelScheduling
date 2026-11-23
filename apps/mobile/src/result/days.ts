@@ -123,7 +123,8 @@ function coordinatesByDay(view: ResultView, dates: readonly string[], departures
 }
 
 function legModels(view: ResultView, roads: readonly LegRoad[], coordinates: ReadonlyMap<string, LatLng>): LegModel[] {
-  const centre = CITY_CENTRES[view.input.cityCode];
+  const { cityCode } = view.input;
+  const centre = Object.hasOwn(CITY_CENTRES, cityCode) ? CITY_CENTRES[cityCode] : undefined;
   return roads.map(({ leg, key, road }, index) => {
     const mode = leg.selected.mode;
     const from = coordinates.get(leg.from), to = coordinates.get(leg.to);
