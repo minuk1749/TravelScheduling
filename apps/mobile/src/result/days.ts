@@ -159,6 +159,9 @@ type Context = {
   view: ResultView; before: Map<string, Placement> | null;
 };
 
+const fixOnDate = (visit: ResultView['input']['visits'][number], date: string) =>
+  !visit.fixedDate || visit.fixedDate === date ? fixedLabel(visit) : null;
+
 function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT' }> | null, visitId: string,
   number: number | null, legs: readonly LegModel[], last: boolean): CardModel | null {
   const visit = context.view.input.visits.find(row => row.id === visitId);
@@ -171,7 +174,7 @@ function card(context: Context, date: string, stop: Extract<Stop, { kind: 'VISIT
   const moved = !!stop && !!before && (startDifference !== 0 || minutesBetween(before.end, stop.end) !== 0);
   return {
     visitId, placeId, number, name: placeName(context.view, placeId), kind: visit.kind, stay: visit.minutes,
-    start: stop?.start ?? null, end: stop?.end ?? null, fixed: visit.fixedDate && visit.fixedDate !== date ? null : fixedLabel(visit), arrival, departure,
+    start: stop?.start ?? null, end: stop?.end ?? null, fixed: fixOnDate(visit, date), arrival, departure,
     wait: arrival && stop ? Math.max(0, Math.round(minutesBetween(arrival.arrival, stop.start))) : 0,
     returnAt: last && departure && context.view.input.lodgings.some(lodging => lodging.place.id === departure.to) ? departure.arrival : null,
     shift: Math.round(startDifference),
@@ -258,17 +261,32 @@ export function buildDays(view: ResultView, shown: ItineraryResult | null, previ
     return { date, number: index + 1, timeZone: scheduled?.timeZone ?? view.input.timeZone, cards, legs, coordinates: dayCoordinates,
       rows: timeline(events.get(date) ?? [], stops, cards, legs), ...bounds(stops, legs), travelMinutes };
   });
-  // A failed move leaves the last successful stop on its original day. The cause belongs to the
-  // requested day, where it has no scheduled time or legs until the next calculation succeeds.
+  return causes.length ? withConflictCauses(view, days, causes) : days;
+}
+
+/** The historical stops, legs, coordinates and timeline stay together. Only the panel's fixes and
+ * cause cards follow the current input, including a failed move to a date without a placement. */
+export function withConflictCauses(view: ResultView, scheduled: DayModel[], causes: readonly ConflictCause[]): DayModel[] {
+  const byDate = new Map(scheduled.map(day => [day.date, day]));
+  const calendar = scheduled[0]?.date === view.input.startDate && scheduled.at(-1)?.date === view.input.endDate ? scheduled
+    : buildDays(view, null, null).map(day => byDate.get(day.date) ?? day);
+  const visits = new Map(view.input.visits.map(visit => [visit.id, visit]));
+  const days = calendar.map((day, index) => ({ ...day, number: index + 1, cards: day.cards.map(item => {
+    const visit = visits.get(item.visitId);
+    const fixed = visit ? fixOnDate(visit, day.date) : null;
+    return { ...item, fixed };
+  }) }));
   for (const cause of causes) {
     if (!cause.visitId) continue;
     const day = cause.date ? days.find(row => row.date === cause.date)
       : days.find(row => row.cards.some(item => item.visitId === cause.visitId)) ?? days[0];
     if (!day) continue;
     const existing = day.cards.find(item => item.visitId === cause.visitId);
-    if (existing) existing.issue = cause.message;
-    else {
-      const item = card(context, day.date, null, cause.visitId, null, [], false);
+    if (existing) {
+      existing.issue = cause.message;
+      existing.name = placeName(view, existing.placeId);
+    } else {
+      const item = card({ view, before: null }, day.date, null, cause.visitId, null, [], false);
       if (item) day.cards.push({ ...item, issue: cause.message });
     }
   }

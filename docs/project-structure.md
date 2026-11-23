@@ -160,6 +160,7 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 - 모바일 `api/client.ts`는 JSON 성공 본문을 읽고, `api/result-response.ts`는 일정 생성 결과와 제약 조회·저장 응답의 필수 필드를 확인한다. 저장 응답이 손상되면 재시도 시 저장된 입력을 다시 읽어 제약 반영 여부를 확인한다.
 - `result-screen.tsx`가 선택 `{ date, index }` 하나로 카드·지도 마커·강조 구간을 계산한다(`map/selection.ts`·`scene.ts`, `result/days.ts`). 지도는 `MapAdapterProvider`로 주입한 `ResultMapProps` 구현만 그린다(앱: `GoogleResultMap`, 테스트: `tests/fake-result-map.tsx`).
 - 수정(장소 고정·순서·희망 전환, 희망 장소 날짜 추가, 구간 이동수단)은 `use-itinerary.ts`가 기존 `PUT /constraints` → `POST /itinerary` → `verifyRevision`으로 처리하고, 저장 직전 제약으로 `변경 취소`·`되돌리기`를 한다. T19 GET은 표시 중인 일정 ID와 해시를 대조하며, `use-route-shapes.ts`는 여행·해시·일정 ID가 일치하는 경로를 날짜별 구간 모델에 전달한다. 지도 마커, 직선 대체 경로, 전체 일정의 도심 밖 판정은 같은 날짜별 장소 좌표를 사용한다. 장소 상세 좌표가 없으면 표시 날짜에 출발하는 구간의 실제 도로 끝점을 우선하고, 다음으로 같은 일정의 다른 날에서 같은 장소 ID의 도로 끝점을 찾는다.
+- 충돌 상태의 지도와 전체 일정 시트는 마지막 성공 입력·결과·경로 모양으로 만든 날짜별 일정을 공유한다. 고정 편집, 미배치 원인 마커와 이동수단 해제 후보는 충돌이 발생한 입력을 사용한다.
 - 장소 카드와 전체 일정 시트는 `swap-chip.tsx`로 같은 구간 대안의 소요 시간·요금과 변경 동작을 표시한다. 전체 일정에서는 공항·숙소 구간도 변경할 수 있다.
 - 디자인 §4 그림자와 §6–7 값은 design-tokens의 `shadow`·`result`(토큰 테스트가 문서와 비교). [T22 결정](decisions/T22-mobile-result-screen.md), [가정](questions.md#t22-결과-화면-가정)
 

@@ -8,6 +8,8 @@ import type { LatLng, MapMarkerSpec, MapRouteSpec } from './types';
 
 export type SceneInput = {
   view: ResultView;
+  /** Input that produced the current conflict. Scheduled markers still belong to view. */
+  conflictView?: ResultView;
   /** Selected date; undefined while nothing has been calculated (3-5 first generation). */
   day: DayModel | undefined;
   card: CardModel | null;
@@ -20,17 +22,20 @@ export type SceneInput = {
 export const lodgingMarkerId = (placeId: string) => `lodging:${placeId}`;
 export const airportMarkerId = (placeId: string) => `airport:${placeId}`;
 
-function placesMarkers({ view, day, placed }: SceneInput, coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
+function placesMarkers({ view, conflictView, day, placed }: SceneInput, coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
   const markers: MapMarkerSpec[] = [];
   for (const card of day?.cards ?? []) {
-    const coordinate = coordinates.get(card.placeId);
-    if (coordinate) markers.push({ id: card.visitId, coordinate, kind: 'PLACED', order: card.number, label: card.name });
+    const unplaced = card.start ? undefined : conflictView?.places[card.placeId]?.coordinates;
+    const coordinate = unplaced ?? coordinates.get(card.placeId);
+    const label = conflictView && card.start ? placeName(view, card.placeId) : card.name;
+    if (coordinate) markers.push({ id: card.visitId, coordinate, kind: 'PLACED', order: card.number, label });
   }
-  for (const visit of view.input.visits) {
-    const coordinate = coordinates.get(visit.place.id);
+  const editable = conflictView ?? view;
+  for (const visit of editable.input.visits) {
+    const coordinate = conflictView?.places[visit.place.id]?.coordinates ?? coordinates.get(visit.place.id);
     if (visit.priority === 'WISH' && !placed.has(visit.id) && coordinate
       && !markers.some(marker => marker.id === visit.id)) {
-      markers.push({ id: visit.id, coordinate, kind: 'WISH', order: null, label: placeName(view, visit.place.id) });
+      markers.push({ id: visit.id, coordinate, kind: 'WISH', order: null, label: placeName(editable, visit.place.id) });
     }
   }
   return markers;
@@ -38,11 +43,11 @@ function placesMarkers({ view, day, placed }: SceneInput, coordinates: ReadonlyM
 
 type ConflictMapLeg = { index: number; from: string; to: string };
 
-function endpointMarkers({ view, day }: SceneInput, conflictLegs: readonly ConflictMapLeg[], coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
+function endpointMarkers({ view, conflictView, day }: SceneInput, conflictLegs: readonly ConflictMapLeg[], coordinates: ReadonlyMap<string, LatLng>): MapMarkerSpec[] {
   const markers = new Map<string, MapMarkerSpec>();
-  const add = (id: string, placeId: string, kind: 'LODGING' | 'AIRPORT') => {
-    const coordinate = coordinates.get(placeId);
-    if (coordinate && !markers.has(id)) markers.set(id, { id, coordinate, kind, order: null, label: placeName(view, placeId) });
+  const add = (id: string, placeId: string, kind: 'LODGING' | 'AIRPORT', current?: ResultView) => {
+    const coordinate = current?.places[placeId]?.coordinates ?? coordinates.get(placeId);
+    if (coordinate && !markers.has(id)) markers.set(id, { id, coordinate, kind, order: null, label: placeName(current ?? view, placeId) });
   };
   for (const lodging of view.input.lodgings) {
     if (!day || (lodging.checkIn <= day.date && day.date <= lodging.checkOut)) add(lodgingMarkerId(lodging.place.id), lodging.place.id, 'LODGING');
@@ -54,9 +59,13 @@ function endpointMarkers({ view, day }: SceneInput, conflictLegs: readonly Confl
   }
   const airports = new Set(view.input.flights.map(flight => flight.airport.id));
   const transfers = day?.legs.filter(leg => leg.kind === 'AIRPORT') ?? [];
-  for (const leg of [...transfers, ...conflictLegs]) {
-    for (const id of [leg.from, leg.to]) if (airports.has(id)) add(airportMarkerId(id), id, 'AIRPORT');
-  }
+  const addAirports = (legs: readonly { from: string; to: string }[], current?: ResultView) => {
+    for (const leg of legs) {
+      for (const id of [leg.from, leg.to]) if (airports.has(id)) add(airportMarkerId(id), id, 'AIRPORT', current);
+    }
+  };
+  addAirports(transfers);
+  addAirports(conflictLegs, conflictView);
   return [...markers.values()];
 }
 
@@ -70,9 +79,10 @@ function legRoutes(input: SceneInput): MapRouteSpec[] {
   });
 }
 
-function conflictRoutes(coordinates: ReadonlyMap<string, LatLng>, legs: readonly ConflictMapLeg[]): MapRouteSpec[] {
+function conflictRoutes(coordinates: ReadonlyMap<string, LatLng>, legs: readonly ConflictMapLeg[], current?: ResultView): MapRouteSpec[] {
   return legs.flatMap(leg => {
-    const from = coordinates.get(leg.from), to = coordinates.get(leg.to);
+    const from = current?.places[leg.from]?.coordinates ?? coordinates.get(leg.from);
+    const to = current?.places[leg.to]?.coordinates ?? coordinates.get(leg.to);
     if (!from || !to) return [];
     return [{ id: `conflict:${leg.index}`, order: leg.index + 1, mode: 'TRANSIT', color: colors.red.text, line: 'FLOATING',
       emphasis: 'CONFLICT', path: { kind: 'STRAIGHT', from, to } }];
@@ -88,7 +98,7 @@ export function mapScene(input: SceneInput) {
     leg && leg.date === input.day?.date ? [{ from: leg.from, to: leg.to, index }] : []) : [];
   const coordinates = input.day?.coordinates ?? placeDetailCoordinates(input.view);
   const markers = [...endpointMarkers(input, conflictLegs, coordinates), ...placesMarkers(input, coordinates)];
-  const routes = [...legRoutes(input), ...conflictRoutes(coordinates, conflictLegs)];
+  const routes = [...legRoutes(input), ...conflictRoutes(coordinates, conflictLegs, input.conflictView)];
   const focusIds = markers.filter(marker => marker.kind === 'PLACED' || marker.kind === 'LODGING').map(marker => marker.id);
   return { markers, routes, focusIds: focusIds.length ? focusIds : markers.map(marker => marker.id) };
 }
