@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { LegEdit } from '@travel/core/contracts/results/model';
+import { FormSheet } from '../../components/input/form-layout';
+import type { ConflictModeFix, ConflictModeFixes } from '../../result/conflicts';
+import { dateTitle } from '../../result/format';
 import { colors, radius, size, spacing, text } from '../../theme';
 import type { CardModel } from '../../result/days';
 
@@ -45,7 +49,7 @@ export function PreviousBadge({ onRetry }: { onRetry?(): void }) {
 /** 3-8: fixed places are never moved automatically; offer to edit the cause or undo the change. */
 export type ConflictStatus = {
   kind: 'CONFLICT'; count: number; messages: readonly string[]; target: CardModel | null; canUndo: boolean;
-  modeFixes: { fix: LegEdit; label: string }[];
+  modeFixes: ConflictModeFixes;
 };
 
 export function ConflictActions({ status, onEdit, onReleaseMode, onRevert, onEditConditions }: {
@@ -53,16 +57,26 @@ export function ConflictActions({ status, onEdit, onReleaseMode, onRevert, onEdi
   onEdit(card: CardModel): void; onReleaseMode(leg: LegEdit): void; onRevert(): void; onEditConditions(): void;
 }) {
   const target = status.target;
+  const { matched, review } = status.modeFixes;
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const releaseButton = ({ fix, label }: ConflictModeFix) =>
+    <Button key={JSON.stringify([fix.date, fix.from, fix.to])} label={label}
+      onPress={() => { setReviewOpen(false); onReleaseMode(fix); }} />;
   return <View style={styles.block}>
     {status.messages.map(message => <Text key={message} style={[text.tiny, { color: colors.red.text }]}>⚠ {message}</Text>)}
     <Text style={styles.secondary}>고정된 장소는 자동으로 옮기지 않아요</Text>
     <View style={styles.row}>
-      {status.modeFixes.map(({ fix, label }) =>
-        <Button key={JSON.stringify([fix.date, fix.from, fix.to])} label={label} onPress={() => onReleaseMode(fix)} />)}
+      {matched.map(releaseButton)}
+      {review.length > 0 && <Button label={matched.length ? '같은 날짜의 다른 이동수단 고정 검토' : '이 날짜의 이동수단 고정 검토'}
+        onPress={() => setReviewOpen(true)} />}
       {target ? <Button label={`${target.name} 고정 수정`} onPress={() => onEdit(target)} />
         : <Button label="여행 조건 수정" onPress={onEditConditions} />}
       {status.canUndo && <Button label="변경 취소" primary onPress={onRevert} />}
     </View>
+    {reviewOpen && review.length > 0 && <FormSheet title={`${dateTitle(review[0].fix.date)} 이동수단 고정`}
+      close={() => setReviewOpen(false)} footer={<Button label="취소" onPress={() => setReviewOpen(false)} />}>
+      {review.map(releaseButton)}
+    </FormSheet>}
   </View>;
 }
 

@@ -1,5 +1,5 @@
 import type { ItineraryResult } from '@travel/core/contracts/itinerary';
-import type { ResultView } from '@travel/core/contracts/results/model';
+import type { LegEdit, ResultView } from '@travel/core/contracts/results/model';
 import { MEALS, MODES, placeName, REASONS } from '@travel/core/presentation';
 import { sameModeConstraint } from './edits';
 
@@ -45,9 +45,20 @@ export function conflictCauses(view: ResultView, result: ItineraryResult | null)
   return causes;
 }
 
-/** The stored date and directed endpoints identify a mode fix even if there is no previous schedule. */
-export function conflictingModeFixes(view: ResultView, date: string, causes: readonly ConflictCause[]) {
-  return (view.input.legModes ?? [])
-    .filter(fix => fix.date === date && causes.some(cause => cause.leg && sameModeConstraint(cause.leg, fix)))
-    .map(fix => ({ fix, label: `${route(view, fix.from, fix.to)} · ${MODES[fix.mode]} 고정 해제하고 다시 계산` }));
+export type ConflictModeFix = { fix: LegEdit; label: string };
+export type ConflictModeFixes = { matched: ConflictModeFix[]; review: ConflictModeFix[] };
+
+/** Exact leg issues identify a fix. An issue reported only for the day warrants reviewing its other fixes. */
+export function conflictingModeFixes(view: ResultView, date: string, causes: readonly ConflictCause[]): ConflictModeFixes {
+  const dayCauses = causes.filter(cause => cause.date === date);
+  const hasDayIssue = dayCauses.some(cause => cause.visitId === null && cause.leg === null);
+  const result: ConflictModeFixes = { matched: [], review: [] };
+  for (const fix of view.input.legModes ?? []) {
+    if (fix.date !== date) continue;
+    const matched = dayCauses.some(cause => cause.leg && sameModeConstraint(cause.leg, fix));
+    if (!matched && !hasDayIssue) continue;
+    const group = matched ? result.matched : result.review;
+    group.push({ fix, label: `${route(view, fix.from, fix.to)} · ${MODES[fix.mode]} 고정 해제하고 다시 계산` });
+  }
+  return result;
 }
