@@ -122,7 +122,9 @@ export class SessionManager implements ApiSession {
       await deleteAccount();
       await this.finishSignOut();
     } catch (error) {
-      this.publish({ error: error instanceof Error ? error.message : '탈퇴를 확인하지 못했어요. 다시 시도해 주세요.' });
+      if (this.getSnapshot().status !== 'storageError') {
+        this.publish({ error: error instanceof Error ? error.message : '탈퇴를 확인하지 못했어요. 다시 시도해 주세요.' });
+      }
     } finally {
       this.publish({ busy: false });
     }

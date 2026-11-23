@@ -177,19 +177,26 @@ test.each([500, 200])('T24 withdrawal response %s leaves the session available a
   expect(await f.storage.read()).toBeNull();
 });
 
-test('T24 withdrawal blocks protected screens if SecureStore deletion must be retried', async () => {
-  const f = fixture(JSON.stringify(session));
+test.each([204, 401])('T24 withdrawal response %s allows retrying failed SecureStore deletion', async status => {
+  const savedSession = JSON.stringify(session);
+  const f = fixture(savedSession);
   f.storage.clear.mockRejectedValueOnce(new Error('locked'));
-  f.transport.mockResolvedValueOnce(new Response(null, { status: 204 }));
+  f.transport.mockResolvedValueOnce(status === 401
+    ? json({ code: 'UNAUTHENTICATED', error: '로그인 후 다시 시도해 주세요.' }, status)
+    : new Response(null, { status }));
   await renderApp(f, '/account');
   await fireEvent.press(await screen.findByRole('button', { name: '회원 탈퇴' }));
   await fireEvent.press(screen.getByRole('button', { name: '탈퇴하기' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/로그인 정보를 지우지 못했어요/);
   expect(screen.queryByRole('header', { name: '계정' })).toBeNull();
   expect(await f.auth.accessToken()).toBeNull();
+  expect(await f.storage.read()).toBe(savedSession);
 
   await fireEvent.press(screen.getByRole('button', { name: '다시 시도' }));
   expect(await screen.findByRole('button', { name: 'Google로 로그인' })).toBeVisible();
+  expect(screen).toHavePathname('/login');
   expect(await f.storage.read()).toBeNull();
+  expect(f.storage.clear).toHaveBeenCalledTimes(2);
+  expect(f.transport).toHaveBeenCalledWith('https://travel.example/api/account', expect.objectContaining({ method: 'DELETE' }));
   expect(f.transport).toHaveBeenCalledTimes(1);
 });
