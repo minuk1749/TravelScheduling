@@ -4,6 +4,7 @@ import React from 'react';
 import { installDom } from './helpers/dom';
 import { sampleTrip, okVisits, FixturePlaces } from './fixtures/itinerary';
 import { service } from './helpers/itinerary-service';
+import { itineraryReplay } from './helpers/itinerary-replay';
 import { applyEdits } from './helpers/result';
 import { inputHash } from '../src/repositories/trip-snapshot';
 import { parseConstraints } from '../src/results/input';
@@ -80,6 +81,35 @@ test('T13 UI: markers, wishlist date, comparisons, overflow selection/revalidati
     assert.equal((view.getByLabelText('sample-sensoji 시각') as HTMLInputElement).value, '19:00');
   } finally {
     cleanup(); globalThis.fetch = originalFetch; GoogleResultMap.prototype.mount = originalMount;
+    await dom.restore();
+  }
+});
+
+test('T27 result editor hides the recovered timeline when another device changed a reservation', async () => {
+  const dom = installDom('http://localhost/trips/trip/result');
+  const previousFetch = globalThis.fetch;
+  const api = itineraryReplay();
+  globalThis.fetch = api.fetch;
+  const { render, fireEvent, cleanup } = await import('@testing-library/react');
+  const { ItineraryResults } = await import('../src/components/itinerary');
+  try {
+    const view = render(React.createElement(ItineraryResults, { tripId: 'trip' }));
+    const generate = await view.findByRole('button', { name: '저장하고 동선 재검증' });
+    fireEvent.click(generate);
+    await view.findByText('응답 본문 유실');
+    api.changeReservation();
+    fireEvent.click(generate);
+    await view.findByText(/다른 곳에서 여행 정보가 바뀌었습니다/);
+    assert.deepEqual(api.keys, [api.keys[0], api.keys[0]]);
+    assert.equal(view.queryByRole('region', { name: '날짜별 타임라인' }), null);
+    assert.equal(view.queryByText('저장된 제약으로 재계산했습니다.'), null);
+
+    fireEvent.click(view.getByRole('button', { name: '저장된 설정 다시 불러오기' }));
+    fireEvent.click(await view.findByRole('button', { name: '저장하고 동선 재검증' }));
+    await view.findByRole('region', { name: '날짜별 타임라인' });
+    assert.notEqual(api.keys[2], api.keys[0]);
+  } finally {
+    cleanup(); globalThis.fetch = previousFetch;
     await dom.restore();
   }
 });

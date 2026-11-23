@@ -789,11 +789,11 @@ T25 전까지는 앱 화면을 옮길 때 참고하는 기준 구현으로 남�
   `apps/server/src/app/trips/[id]/settings/page.tsx`, `apps/server/src/app/trips/[id]/result/page.tsx`, `apps/server/src/app/api/auth/[...nextauth]/route.ts`, `apps/server/src/auth.ts`
 - 웹 컴포넌트: `apps/server/src/components/trip-input-form.tsx`, `apps/server/src/components/place-picker.tsx`, `apps/server/src/components/city-profile-card.tsx`,
   `apps/server/src/components/living-settings/`, `apps/server/src/components/itinerary/index.tsx`, `apps/server/src/components/itinerary/visit-editor.tsx`,
-  `apps/server/src/components/itinerary/share-controls.tsx`, `apps/server/src/components/itinerary/request-id.ts`, `apps/server/src/components/service-worker.tsx`
+  `apps/server/src/components/itinerary/share-controls.tsx`, `apps/server/src/components/itinerary/generation.ts`, `apps/server/src/components/itinerary/request-id.ts`, `apps/server/src/components/service-worker.tsx`
 - PWA: `apps/server/public/sw.js`, `apps/server/public/icon-192.png`, `apps/server/public/icon-512.png`, `apps/server/scripts/verify-pwa.mjs`(와 `build` 스크립트의 호출),
   `apps/server/next.config.ts`의 `/sw.js` 헤더, `apps/server/src/app/layout.tsx`의 manifest·서비스워커 등록 부분(레이아웃 자체는 공유 페이지용으로 남김)
 - 테스트: `apps/server/tests/pwa.test.ts`, `apps/server/tests/service-worker.test.ts`, `apps/server/tests/trip-input-ui.test.ts`, `apps/server/tests/living-settings-ui.test.ts`,
-  `apps/server/tests/result-ui.test.ts`(공유 화면이 쓰는 표시 검사는 `apps/server/tests/sharing-ui.test.ts`에 남김), `apps/server/tests/e2e/trip-input.spec.ts`,
+  `apps/server/tests/result-ui.test.ts`(공유 화면이 쓰는 표시 검사는 `apps/server/tests/sharing-ui.test.ts`에 남김), `apps/server/tests/helpers/itinerary-replay.ts`, `apps/server/tests/e2e/trip-input.spec.ts`,
   `apps/server/tests/e2e/living-settings.spec.ts`, `apps/server/tests/e2e/result.spec.ts`, `apps/server/tests/helpers/e2e-places.ts`,
   `apps/server/tests/e2e/journey.spec.ts`(Bearer HTTP 종단 시나리오로 교체)
 - 의존성: `next-auth`. `@googlemaps/js-api-loader`·`@types/google.maps`는 공유 페이지 지도가 쓰므로 남긴다.

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
 import { installDom } from './helpers/dom';
+import { itineraryReplay } from './helpers/itinerary-replay';
 import { settingsSnapshot } from './fixtures/living-settings';
 import { calculateSettings } from '../src/settings/calculate';
 import { parseSettings } from '../src/settings/input';
@@ -56,6 +57,40 @@ test('T11 UI edits recalculate immediately, show fixed conflicts, preserve draft
     assert.equal((view.getByLabelText('2026-12-02 끼니 수') as HTMLSelectElement).value, 'inherit');
     fireEvent.click(view.getByRole('button', { name: '변경 취소' }));
     assert.equal((view.getByLabelText('2026-12-02 끼니 수') as HTMLSelectElement).value, '0');
+  } finally {
+    cleanup(); globalThis.fetch = previousFetch;
+    await dom.restore();
+  }
+});
+
+test('T27 settings preview detects a reservation changed after response loss and can start a fresh calculation', async () => {
+  const dom = installDom('http://localhost/trips/trip/settings');
+  const previousFetch = globalThis.fetch;
+  const api = itineraryReplay();
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/constraints') && api.keys.length === 2) {
+      return Response.json({ error: '현재 입력 조회 실패' }, { status: 503 });
+    }
+    return api.fetch(url, options);
+  };
+  const { render, fireEvent, cleanup } = await import('@testing-library/react');
+  const { SettingsItineraryPreview } = await import('../src/components/living-settings/itinerary-preview');
+  try {
+    const view = render(React.createElement(SettingsItineraryPreview, { tripId: 'trip' }));
+    await view.findByText(/응답 본문 유실/);
+    api.changeReservation();
+    const retry = () => fireEvent.click(view.getByRole('button', { name: '전체 동선 다시 계산' }));
+    retry();
+    await view.findByText(/현재 입력 조회 실패/);
+    assert.equal(view.queryByText('이동시간과 영업시간까지 검증했습니다.'), null);
+    retry();
+    await view.findByText(/다른 곳에서 여행 정보가 바뀌었습니다/);
+    assert.deepEqual(api.keys, [api.keys[0], api.keys[0], api.keys[0]]);
+    assert.equal(view.queryByText('이동시간과 영업시간까지 검증했습니다.'), null);
+    assert.equal(view.queryByRole('link', { name: '지도와 타임라인에서 확인하기' }), null);
+    retry();
+    await view.findByText('이동시간과 영업시간까지 검증했습니다.');
+    assert.notEqual(api.keys[3], api.keys[0]);
   } finally {
     cleanup(); globalThis.fetch = previousFetch;
     await dom.restore();

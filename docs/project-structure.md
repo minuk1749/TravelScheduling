@@ -173,4 +173,4 @@ T17 구현·대안·검증: [결정](decisions/T17-npm-workspaces.md). core는 T
 
 ## T27 일정 생성 재시도
 
-앱의 최초 생성·설정 저장·결과 편집·필수 장소 재검증과 웹의 생성 화면이 POST에 `Idempotency-Key`를 보낸다. 앱은 재시도 응답을 받은 뒤 현재 저장 입력의 revision을 확인한다. 서버의 `itineraries/http.ts`가 매 요청의 소유권과 키를 검사하고, 서버 인스턴스가 공유하는 `repositories/itinerary-requests.ts`가 같은 소유자·여행·키의 동시 요청을 한 실행으로 합친다. 그 실행이 DB 잠금을 얻어 기존 결과를 조회하거나 T12 서비스를 실행한다. 마이그레이션 009가 저장 행과 요청 키를 연결한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
+앱의 최초 생성·설정 저장·결과 편집·필수 장소 재검증과 웹의 생성 화면이 POST에 `Idempotency-Key`를 보낸다. 앱과 웹은 재시도 응답을 표시하기 전에 현재 저장 입력의 revision을 확인한다. 웹 결과 화면과 생활 설정 미리보기는 `components/itinerary/generation.ts`에서 요청 키 관리와 `GET /constraints` 조회를 공유한다. 서버의 `itineraries/http.ts`가 매 요청의 소유권과 키를 검사하고, 서버 인스턴스가 공유하는 `repositories/itinerary-requests.ts`가 같은 소유자·여행·키의 동시 요청을 한 실행으로 합친다. 그 실행이 DB 잠금을 얻어 기존 결과를 조회하거나 T12 서비스를 실행한다. 마이그레이션 009가 저장 행과 요청 키를 연결한다. [T27 결정](decisions/T27-itinerary-generation-retries.md)
