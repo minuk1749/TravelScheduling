@@ -12,10 +12,6 @@ export async function upsertGoogleUser(googleId: string, email: string): Promise
   );
   return result.rows[0].id;
 }
-export async function userExists(id: string): Promise<boolean> {
-  const result = await db().query('SELECT 1 FROM users WHERE id = $1', [id]);
-  return result.rowCount === 1;
-}
 export async function deleteUser(id: string): Promise<void> {
   await db().query('DELETE FROM users WHERE id = $1', [id]);
 }

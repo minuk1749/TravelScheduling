@@ -120,11 +120,10 @@ test('POST /api/session maps input, token and provider failures to the documente
   await expect(await handlers({ signIn: async () => { throw new Error('secret SQL'); } }).create(login({ idToken: 'token' })), 500, 'INTERNAL');
 });
 
-test('Bearer authenticator: valid → user; malformed, unknown, expired and revoked → unauthenticated without cookie fallback', async () => {
+test('Bearer authenticator: valid → user; malformed, unknown, expired, revoked and missing → unauthenticated', async () => {
   const store = new MemorySessionStore();
   const service = new MobileSessionService(verifier(), store, users());
-  let cookieReads = 0;
-  const authenticator = new SessionRequestAuthenticator(store, async () => { cookieReads++; return 'cookie-user'; });
+  const authenticator = new SessionRequestAuthenticator(store);
   const { token } = (await service.signIn(await googleIdToken()))!;
   const request = (authorization?: string) => withBearer('/api/trips', 'GET', authorization);
 
@@ -138,10 +137,7 @@ test('Bearer authenticator: valid → user; malformed, unknown, expired and revo
   store.now = () => new Date();
   await service.signOut(token);
   assert.equal(await authenticator.userId(request(`Bearer ${token}`)), undefined, 'revoked');
-  assert.equal(cookieReads, 0, 'an Authorization header never falls back to the cookie session');
-  assert.equal(await authenticator.userId(request()), 'cookie-user');
-  assert.equal(cookieReads, 1);
-  assert.equal(await new SessionRequestAuthenticator(store).userId(request()), undefined, 'Bearer-only authenticator');
+  assert.equal(await authenticator.userId(request()), undefined, 'no Authorization header (T25: no cookie session)');
   assert.deepEqual(readBearer(request()), { kind: 'NONE' });
 });
 

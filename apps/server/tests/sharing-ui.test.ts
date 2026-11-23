@@ -9,22 +9,19 @@ import { MemoryShares, sharedSnapshot } from './helpers/sharing';
 import { SharingService } from '../src/services/sharing';
 import { sharingHandlers } from '../src/sharing/http';
 
-test('T14 UI: issue/copy/rotate, anonymous timeline and map without editing, invalid link and retry', async () => {
+test('T14 UI: anonymous timeline and map without editing, rotated link is invalid, retry after failure', async () => {
   const dom = installDom('https://app.example.test');
   const originalFetch = globalThis.fetch, originalMount = GoogleResultMap.prototype.mount;
-  let copied = '', writes = 0, reads = 0;
-  Object.defineProperty(dom.window.navigator, 'clipboard', { value: { writeText: async (text: string) => { copied = text; } } });
+  let reads = 0;
   GoogleResultMap.prototype.mount = async function(element, points) { element.textContent = points.map(p => `${p.state}: ${p.name}`).join(', '); };
   const service = new SharingService(new MemoryShares(await sharedSnapshot()), () => new FixturePlaces());
-  const handlers = sharingHandlers({ userId: async () => 'owner', findOwner: async () => 'owner', service: () => service });
-  let failRead = false, failIssue = false;
+  const handlers = sharingHandlers({ userId: async () => undefined, findOwner: async () => null, service: () => service });
+  // Owners issue links from the app (POST /share: sharing-http.test.ts and the e2e journey); this page only reads.
+  const issue = async () => { const token = await service.rotate('trip', 'owner'); assert.ok(token); return token; };
+  const old = await issue(), token = await issue();
+  let failRead = false;
   globalThis.fetch = async (url, options) => {
     const request = new Request(new URL(String(url), dom.window.location.origin), options);
-    if (request.method === 'POST') {
-      writes++;
-      if (failIssue) throw new Error('연결 실패');
-      return handlers.rotate(request, 'trip');
-    }
     reads++;
     assert.equal(request.method, 'GET');
     assert.equal(options?.credentials, 'omit'); assert.equal(options?.cache, 'no-store');
@@ -33,23 +30,10 @@ test('T14 UI: issue/copy/rotate, anonymous timeline and map without editing, inv
     if (failRead) { failRead = false; return Response.json({ error: '잠시 후 다시 시도해 주세요.' }, { status: 503 }); }
     return handlers.read(request, new URL(request.url).pathname.split('/').at(-1)!);
   };
-  const { render, fireEvent, cleanup, waitFor } = await import('@testing-library/react');
+  const { render, fireEvent, cleanup } =await import('@testing-library/react');
   const { SharedItineraryPage } = await import('../src/components/itinerary/shared');
   const { default: SharePage } = await import('../src/app/share/[token]/page');
-  const { ShareControls } = await import('../src/components/itinerary/share-controls');
   try {
-    const controls = render(React.createElement(ShareControls, { tripId: 'trip' }));
-    const issue = () => fireEvent.click(controls.getByRole('button', { name: '공유 링크 발급·재발급' }));
-    issue(); const link = await controls.findByLabelText('공유 링크');
-    const old = (link as HTMLInputElement).value;
-    fireEvent.click(controls.getByRole('button', { name: '링크 복사' }));
-    await waitFor(() => assert.equal(copied, old));
-    issue(); await waitFor(() => assert.notEqual((link as HTMLInputElement).value, old));
-    const latest = (link as HTMLInputElement).value;
-    failIssue = true; issue(); await controls.findByText('연결 실패');
-    assert.equal(controls.queryByLabelText('공유 링크'), null, 'uncertain failed rotation clears old link');
-    controls.unmount();
-    const token = latest.split('/').at(-1)!;
     const publicView = render(await SharePage({ params: Promise.resolve({ token }) }));
     await publicView.findByText('일정을 만들었습니다');
     assert.ok(publicView.getByRole('heading', { name: '공유 여행 일정', level: 1 }));
@@ -65,13 +49,12 @@ test('T14 UI: issue/copy/rotate, anonymous timeline and map without editing, inv
     assert.ok(publicView.getByRole('region', { name: '여행 전체 효율' }));
     assert.equal(publicView.container.querySelector('input, select, textarea, fieldset, button'), null);
     assert.equal(publicView.queryByText(/마커를 선택해 날짜/), null);
-    assert.equal(writes, 3, 'viewing does not mutate');
     publicView.unmount();
-    const revoked = render(React.createElement(SharedItineraryPage, { token: old.split('/').at(-1)! }));
+    const revoked = render(React.createElement(SharedItineraryPage, { token: old }));
     assert.match((await revoked.findByRole('alert')).textContent ?? '', /공유 링크가 유효하지 않거나 만료되었습니다/);
     revoked.unmount();
     failRead = true;
-    const retry = render(React.createElement(SharedItineraryPage, { token: latest.split('/').at(-1)! }));
+    const retry = render(React.createElement(SharedItineraryPage, { token }));
     assert.match((await retry.findByRole('alert')).textContent ?? '', /잠시 후 다시 시도해 주세요/);
     fireEvent.click(retry.getByRole('button', { name: '다시 불러오기' }));
     await retry.findByText('일정을 만들었습니다');

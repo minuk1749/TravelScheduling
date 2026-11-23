@@ -59,7 +59,7 @@ test('existing error responses match the documented fields contract', async () =
   }
 });
 
-test('T18: only the Auth.js route imports auth.ts; every user API module authenticates through RequestAuthenticator', async () => {
+test('T25: no route uses Auth.js; every user API module authenticates through RequestAuthenticator', async () => {
   const session = await section('13.3');
   const ownership = session.split('\n').find(line => line.startsWith('| 소유권 연결 |'));
   assert.ok(ownership?.includes('`apps/server/src/app/api/trips/[id]/route.ts`'), 'Ownership row must name the converted direct route');
@@ -67,10 +67,11 @@ test('T18: only the Auth.js route imports auth.ts; every user API module authent
     .map(entry => path.posix.join('apps/server/src/app/api', entry.split(path.sep).join('/')))
     .filter(file => file.endsWith('/route.ts'));
   assert.ok(routes.includes('apps/server/src/app/api/trips/[id]/route.ts'));
+  assert.ok(!routes.some(file => file.includes('/api/auth/')), 'The Auth.js route was removed in T25');
   for (const file of routes) {
-    const imports = /from '(?:\.\.\/)+auth'/.test(await readFile(path.join(root, file), 'utf8'));
-    assert.equal(imports, file.includes('[...nextauth]'), `${file} must not authenticate with Auth.js directly`);
+    assert.doesNotMatch(await readFile(path.join(root, file), 'utf8'), /from '(?:\.\.\/)+auth'|next-auth/, `${file} must not authenticate with Auth.js`);
   }
+  await assert.rejects(readFile(path.join(root, 'apps/server/src/auth.ts')), 'apps/server/src/auth.ts was removed in T25');
   for (const name of ['trips', 'places', 'itineraries', 'route-shapes', 'settings', 'results', 'sharing']) {
     const source = await readFile(path.join(root, `apps/server/src/${name}/server.ts`), 'utf8');
     assert.doesNotMatch(source, /from '\.\.\/auth'/, name);

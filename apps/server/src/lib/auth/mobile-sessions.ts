@@ -1,6 +1,5 @@
 import { hashOpaqueToken, newOpaqueToken } from '../opaque-token';
-import type { AuthStore } from './callbacks';
-import type { GoogleIdTokenVerifier, IssuedSession, MobileSessionStore } from './ports';
+import type { GoogleIdTokenVerifier, GoogleUserStore, IssuedSession, MobileSessionStore } from './ports';
 
 export type { IssuedSession, MobileSessionStore } from './ports';
 export const SESSION_LIFETIME_DAYS = 30;
@@ -11,7 +10,7 @@ export class MobileSessionService {
   constructor(
     private readonly verifier: GoogleIdTokenVerifier,
     private readonly sessions: Pick<MobileSessionStore, 'issue' | 'revoke'>,
-    private readonly users: Pick<AuthStore, 'upsertGoogleUser'>,
+    private readonly users: GoogleUserStore,
     private readonly now: () => Date = () => new Date(),
   ) {}
 

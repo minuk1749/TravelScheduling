@@ -1,6 +1,6 @@
 import { JoseGoogleIdTokenVerifier, mobileClientIds } from '../lib/auth/google-id-token';
 import { MobileSessionService } from '../lib/auth/mobile-sessions';
-import { bearerAuthenticator, mobileSessionStore } from '../lib/auth/server';
+import { mobileSessionStore, requestAuthenticator } from '../lib/auth/server';
 import { deleteUser, upsertGoogleUser } from '../lib/auth/store';
 import { accountHandlers, sessionHandlers } from './http';
 
@@ -13,4 +13,4 @@ const sessionService = () => service ??= new MobileSessionService(
 );
 
 export const sessions = sessionHandlers({ service: sessionService });
-export const account = accountHandlers({ authenticator: bearerAuthenticator, deleteUser });
+export const account = accountHandlers({ authenticator: requestAuthenticator, deleteUser });

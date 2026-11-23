@@ -4,8 +4,9 @@ import { createDatabasePool } from '../../src/lib/db';
 
 export async function withDatabase(
   run: (client: PoolClient, schema: string, pool: Pool) => Promise<void>,
+  connectionString?: string,
 ): Promise<void> {
-  const pool = createDatabasePool();
+  const pool = createDatabasePool(connectionString);
   try {
     const client = await pool.connect();
     const schema = `test_db_${randomUUID().replaceAll('-', '')}`;
