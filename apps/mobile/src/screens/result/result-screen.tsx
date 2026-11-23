@@ -51,10 +51,12 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const { shapes, failed: shapesFailed, retry: retryShapes } = useRouteShapes(tripId, displayed?.status === 'OK' ? displayed : null);
   const days = useMemo(() => buildDays(view, displayed, conflict ? null : previous, causes, shapes), [view, displayed, conflict, previous, causes, shapes]);
 
+  const [sheet, setSheet] = useState<Sheet | null>(null);
   const [picked, setPicked] = useState<Picked>(() => pick(days, shown, initialSelection(days, causes)));
   let current = picked;
   if (picked.days !== days || picked.result !== shown) {
     const newResult = picked.result !== shown;
+    if (newResult && conflict && sheet) setSheet(null);
     const visitId = newResult ? focusVisit ?? picked.visitId : picked.visitId;
     const selection = newResult && conflict ? initialSelection(days, causes) : reconcileSelection(days, picked.selection, visitId);
     current = pick(days, shown, selection);
@@ -65,7 +67,6 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const modeFixes = useMemo(() => conflict
     ? conflictingModeFixes(view, day.date, causes, shown.airportTransferLimits) : null,
   [conflict, view, day.date, causes, shown.airportTransferLimits]);
-  const [sheet, setSheet] = useState<Sheet | null>(null);
   const editSelection = sheet?.kind === 'EDIT' ? findVisit([day], sheet.visitId) : null;
   const selection = editSelection ?? current.selection;
   const card = selectedCard(days, selection);
@@ -77,6 +78,11 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
     else if (previousFor !== phase) setPreviousFor(phase);
   }
   const showPrevious = failed && previousFor === phase;
+  // Conflict cards use the current fixes, but the historical timeline uses the input that produced its stops.
+  const scheduleDay = useMemo(() => {
+    if (sheet?.kind !== 'SCHEDULE' || !conflict || failed) return day;
+    return base ? buildDays(base.view, base.result, null).find(item => item.date === day.date) : undefined;
+  }, [sheet?.kind, conflict, failed, day, base]);
   const [locate, setLocate] = useState(0);
   const safe = useSafeAreaInsets();
   const [topInset, setTopInset] = useState(0);
@@ -157,8 +163,9 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         onShowPrevious: () => setPreviousFor(phase), onRetry: itinerary.retry,
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />
-    {sheet?.kind === 'SCHEDULE' && <ScheduleSheet day={day} places={view.places} currency={currency} efficiency={displayed?.efficiency ?? null}
-      previous={showPrevious} onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
+    {sheet?.kind === 'SCHEDULE' && <ScheduleSheet date={day.date} day={scheduleDay} places={(conflict && base ? base.view : view).places}
+      currency={currency} efficiency={displayed?.efficiency ?? null} history={showPrevious ? 'failed' : conflict ? 'conflict' : undefined}
+      onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
       select={visitId => { setSheet(null); const found = findVisit([day], visitId); if (found) select(found); }} />}
     {editSelection && card && <EditSheet view={view} card={card} days={days} current={editOf(card.visitId)}

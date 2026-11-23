@@ -65,17 +65,21 @@ export function EfficiencyRows({ summary, estimated }: { summary: EfficiencySumm
 }
 
 /** 3-2: the whole day as one list; pressing a place closes the sheet and selects its card. */
-export function ScheduleSheet({ day, places, currency, efficiency, estimated, previous, close, select, onSwap }: {
-  day: DayModel; places: ResultView['places']; currency: string | null; efficiency: EfficiencySummary | null; estimated: boolean; previous: boolean;
+export function ScheduleSheet({ date, day, places, currency, efficiency, estimated, history, close, select, onSwap }: {
+  date: string; day: DayModel | undefined; places: ResultView['places']; currency: string | null;
+  efficiency: EfficiencySummary | null; estimated: boolean; history?: 'failed' | 'conflict';
   close(): void; select(visitId: string): void; onSwap?(leg: LegModel, mode: LegModel['mode']): void;
 }) {
-  const placeIds = new Set([...day.cards.map(card => card.placeId), ...day.legs.flatMap(leg => [leg.from, leg.to])]);
-  for (const row of day.rows) if (row.kind === 'ENDPOINT') placeIds.add(row.placeId);
-  return <ExpandedFormSheet topOffset={result.topBar.top + result.topBar.height} title={`${dateTitle(day.date)} 전체 일정`} close={close}>
-    {previous && <PreviousBadge />}
-    {day.rows.length === 0 && <Text style={text.body}>배치된 장소 없음</Text>}
-    {day.rows.map((row, index) => <Row key={index} row={row} zone={day.timeZone} currency={currency} select={select} onSwap={onSwap} />)}
-    {efficiency && <EfficiencyRows summary={efficiency} estimated={estimated} />}
+  const placeIds = new Set(day ? [...day.cards.map(card => card.placeId), ...day.legs.flatMap(leg => [leg.from, leg.to])] : []);
+  for (const row of day?.rows ?? []) if (row.kind === 'ENDPOINT') placeIds.add(row.placeId);
+  return <ExpandedFormSheet topOffset={result.topBar.top + result.topBar.height} title={`${dateTitle(date)} 전체 일정`} close={close}>
+    {history === 'failed' && <PreviousBadge />}
+    {history === 'conflict' && <Text accessibilityRole="alert" style={[text.secondary, styles.conflict]}>
+      {day ? '⚠ 고정 조건 충돌 · 이전 계산 결과' : '⚠ 고정 조건 충돌 · 이 날짜에 이전 계산 결과가 없어요'}
+    </Text>}
+    {day?.rows.length === 0 && <Text style={text.body}>배치된 장소 없음</Text>}
+    {day?.rows.map((row, index) => <Row key={index} row={row} zone={day.timeZone} currency={currency} select={select} onSwap={onSwap} />)}
+    {day && efficiency && <EfficiencyRows summary={efficiency} estimated={estimated} />}
     <Text style={text.secondary}>장소 정보 · Google Maps</Text>
     {[...placeIds].map(id => {
       const place = places[id];
@@ -89,6 +93,7 @@ export function ScheduleSheet({ day, places, currency, efficiency, estimated, pr
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  conflict: { color: colors.red.text },
   alternatives: { flexDirection: 'row', flexWrap: 'wrap', columnGap: spacing.cardGap },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.cardGap, minHeight: size.touch },
   time: { ...text.secondary, width: size.iconTile + spacing.cardGap, color: colors.gray.secondary },

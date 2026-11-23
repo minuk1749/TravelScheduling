@@ -23,8 +23,8 @@ test.each([false, true])('full-day sheet anchors below the trip bar for both sho
   const preference = jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(reduced);
   const close = jest.fn(), select = jest.fn();
   const frame = (day: typeof days[number]) => <SafeAreaInsetsContext.Provider value={safe}>
-    <ScheduleSheet day={day} places={view.places} currency="JPY" efficiency={null} estimated={false}
-      previous={false} close={close} select={select} />
+    <ScheduleSheet date={day.date} day={day} places={view.places} currency="JPY" efficiency={null} estimated={false}
+      close={close} select={select} />
   </SafeAreaInsetsContext.Provider>;
   const timing = jest.mocked(Animated.timing);
   timing.mockClear();
