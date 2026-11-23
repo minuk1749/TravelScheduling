@@ -42,10 +42,13 @@ export function usePanelLayout(topInset = 0) {
   const [parent, setParent] = useState<{ width: number; height: number } | null>(null);
   const { width, height } = parent ?? window;
   const target = height * result.panel.ratio;
-  // On short parents keep the date chips and the current-location button in separate touch regions.
-  const available = height - topInset - result.locate.offset - result.locate.size - result.mapAttributionHeight;
+  const belowDates = height - topInset - result.mapAttributionHeight;
+  const floatingSpace = belowDates - result.locate.offset - result.locate.size;
+  // A short map cannot fit floating controls between the date chips and the SDK credits.
+  const controlsInPanel = topInset > 0 && floatingSpace < size.touch;
+  const available = controlsInPanel ? belowDates : floatingSpace;
   const panelHeight = topInset ? Math.min(target, Math.max(size.touch, available)) : target;
-  return { panelHeight, controlsBottom: panelHeight + result.mapAttributionHeight, wide: width > height, onLayout: (event: LayoutChangeEvent) => {
+  return { height, panelHeight, controlsInPanel, controlsBottom: panelHeight + result.mapAttributionHeight, wide: width > height, onLayout: (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setParent(previous => previous?.width === width && previous.height === height ? previous : { width, height });
   } };
@@ -124,15 +127,16 @@ function Pager({ index, count, disabled, onIndex, onEdit }: {
 }
 
 /** §7 fixed place panel. The handle is decorative because the panel height does not change by dragging. */
-export function PlacePanel({ day, index, status, currency, freeTime, canAddWish, height, actions }: {
+export function PlacePanel({ day, index, status, currency, freeTime, canAddWish, height, actions, mapControls }: {
   day: DayModel; index: number; status: PanelStatus; currency: string | null; freeTime: string; canAddWish: boolean;
-  height: number; actions: PanelActions;
+  height: number; actions: PanelActions; mapControls?: ReactNode;
 }) {
   const busy = status.kind === 'CALCULATING';
   const interactive = status.kind === 'READY';
   const selected = day.cards[index] ?? null;
   return <PanelFrame id="place-panel" height={height} page={day.date}>
     <DateRow day={day} status={status} onSchedule={actions.onSchedule} />
+    {mapControls}
     {status.kind === 'PREVIOUS' && <PreviousBadge onRetry={actions.onRetry} />}
     {status.kind === 'FAILED' ? <FailureBlock message={status.message}
       onShowPrevious={status.hasPrevious ? actions.onShowPrevious : undefined} onRetry={actions.onRetry} />

@@ -212,8 +212,10 @@ test('the bottom airport notice clears the measured legend, retry, location and 
     expect(overlaps(shownBadge, locateRect)).toBe(false);
     expect(overlaps(toastRect, locateRect)).toBe(false);
     // The same toast leaves a side clear when the measured parent rotates into landscape.
+    await emitLayout(screen.getByTestId('result-screen'), { x: 0, y: 0, width: 750, height: 350 });
+    expect(screen.getByTestId('result-toast')).toHaveStyle({ width: '50%' });
     await emitLayout(screen.getByTestId('result-screen'), { x: 0, y: 0, width: 750, height: 320 });
-    expect(toast).toHaveStyle({ width: '50%' });
+    expect(screen.getByTestId('result-toast')).toHaveStyle({ position: 'relative', width: '100%' });
     await emitLayout(screen.getByTestId('result-screen'), { x: 0, y: 0, width, height });
     expect(before.filter(rect => overlaps(idleBadge, rect))).toEqual([]);
     await fireEvent.press(screen.getByRole('button', { name: '알림 닫기' }));

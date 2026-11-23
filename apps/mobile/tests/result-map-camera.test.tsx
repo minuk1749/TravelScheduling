@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { GoogleResultMap } from '../src/map/google-result-map';
 import { InitialResult } from '../src/screens/result/place-panel';
 import type { ResultMapProps } from '../src/map/types';
-import { spacing } from '../src/theme';
+import { colors, result, spacing } from '../src/theme';
 import { deferred, json } from './helpers';
 import { D2, openResult, plan, resultFixture, trip, REVISION } from './result-fixture';
 
@@ -48,6 +48,42 @@ test('keeps native Google attribution above the panel even when there is no came
   await rendered.rerender(<GoogleResultMap {...empty} bottomInset={120} />);
   expect(map()).toHaveProp('mapPadding', { ...insets, bottom: 120 });
   expect(mockFit).not.toHaveBeenCalled();
+});
+
+test('opening the full schedule covers every map pixel until the normal credit strip is restored', async () => {
+  await openResult(resultFixture());
+  const ordinary = map().props.mapPadding;
+  await fireEvent.press(screen.getByRole('button', { name: '전체 일정' }));
+  expect(screen.getByTestId('expanded-sheet')).toBeOnTheScreen();
+  expect(screen.getByTestId('result-map-cover')).toHaveStyle({
+    position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: colors.background,
+  });
+  await fireEvent.press(screen.getByRole('button', { name: '닫기' }));
+  expect(screen.queryByTestId('result-map-cover')).toBeNull();
+  expect(map()).toHaveProp('mapPadding', ordinary);
+});
+
+test.each(['이 장소 수정', '희망 장소 추가, 1곳 중 선택'])('keeps native credits above the measured sheet opened by %s', async button => {
+  await openResult(resultFixture());
+  const resize = (id: string, y: number, height: number) => act(async () => {
+    screen.getByTestId(id).props.onLayout?.({ nativeEvent: { layout: { x: 0, y, width: 400, height } } });
+  });
+  await resize('result-screen', 0, 800);
+  await resize('result-top-controls', 0, 125);
+  const ordinary = map().props.mapPadding;
+  await fireEvent.press(screen.getByRole('button', { name: button }));
+  await resize('form-sheet', 250, 550);
+  expect(map().props.mapPadding.bottom).toBe(550);
+  expect(screen.getByTestId('result-shade-above-credits')).toHaveStyle({ bottom: 550 + result.mapAttributionHeight });
+  expect(screen.getByTestId('result-shade-below-credits')).toHaveStyle({ height: 550, bottom: 0 });
+  expect(screen.queryByTestId('result-map-cover')).toBeNull();
+  expect(screen.queryByTestId('map-legend')).toBeNull();
+  // The keyboard can move the sheet above the map's remaining legal attribution area.
+  await resize('form-sheet', 125 + result.mapAttributionHeight - 1, 480);
+  expect(screen.getByTestId('result-map-cover')).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: '취소' }));
+  expect(screen.queryByTestId('result-map-cover')).toBeNull();
+  expect(map()).toHaveProp('mapPadding', ordinary);
 });
 
 test('the first calculation respects the panel and landscape safe area before any map coordinates exist', async () => {

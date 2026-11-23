@@ -11,6 +11,29 @@ const layout = (id: string, width: number, height: number) =>
   fireEvent(screen.getByTestId(id), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width, height } } });
 const legs = [['hotel', 'museum'], ['museum', 'market'], ['market', 'shrine'], ['shrine', 'cafe'], ['cafe', 'hotel']] as const;
 
+test('a 280-point parent keeps the date touch row, map controls and credit strip disjoint', async () => {
+  const fixture = resultFixture({ ...view, input: { ...view.input, endDate: '2026-12-16' } });
+  const map = jest.fn(FakeResultMap);
+  await openResult(fixture, map);
+  await layout('result-screen', 750, 280);
+  await layout('result-top-controls', 750, 125);
+  const top = within(screen.getByTestId('result-top-controls'));
+  expect(top.getAllByRole('button', { name: /일 12\./ })).toHaveLength(14);
+  const panel = screen.getByTestId('place-panel');
+  const height = StyleSheet.flatten(panel.props.style).height;
+  expect(280 - height - result.mapAttributionHeight).toBeGreaterThanOrEqual(125);
+  expect(map.mock.lastCall?.[0].bottomInset).toBe(height);
+  const locate = screen.getByRole('button', { name: '현재 위치' });
+  const style = StyleSheet.flatten(locate.props.style);
+  const touchTop = style.position === 'absolute' ? 280 - style.bottom - style.height : 280 - height;
+  expect(touchTop).toBeGreaterThanOrEqual(125);
+  expect(within(panel).getByRole('button', { name: '현재 위치' })).toBe(locate);
+  await fireEvent.press(locate);
+  expect(map.mock.lastCall?.[0].locateRequest).toBe(1);
+  await fireEvent.press(top.getByRole('button', { name: '14일 12.16' }));
+  expect(top.getByRole('button', { name: '14일 12.16', selected: true })).toBeOnTheScreen();
+});
+
 test('a long conflict stays inside the measured panel; dates, map controls and the last release remain accessible', async () => {
   const fixes = legs.map(([from, to]) => ({ date: D1, from: place(from), to: place(to), mode: 'TRANSIT' as const }));
   const fixture = resultFixture({ ...view, input: { ...view.input, legModes: fixes } });

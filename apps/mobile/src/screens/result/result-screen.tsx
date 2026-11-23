@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaFrame, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { constraintsFrom } from '@travel/core/contracts/results/model';
 import { placeName } from '@travel/core/presentation';
 import type { ResultMap as ResultMapAdapter } from '../../map/provider';
@@ -14,7 +14,8 @@ import { buildDays, withConflictCauses, type DayModel, type LegModel } from '../
 import { unplacedWishes } from '../../result/wishes';
 import { withLegMode, withVisit } from '../../result/edits';
 import { freeTime, periodLabel } from '../../result/format';
-import { colors } from '../../theme';
+import { SheetTopContext } from '../../components/input/form-layout';
+import { colors, motion, result, spacing } from '../../theme';
 import { cityName, kindLabels } from '../trip-input/presentation';
 import { EditSheet } from './edit-sheet';
 import { LocateButton, Legend, ShapeRetry, Toast, useMapControls } from './map-controls';
@@ -88,9 +89,18 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   const [locate, setLocate] = useState(0);
   const safe = useSafeAreaInsets();
   const [topInset, setTopInset] = useState(0);
-  const { panelHeight, controlsBottom, wide, onLayout } = usePanelLayout(topInset);
+  const frame = useSafeAreaFrame();
+  const { height, panelHeight, controlsBottom, controlsInPanel, wide, onLayout } = usePanelLayout(topInset);
+  const [formTop, setFormTop] = useState<number | null>(null);
+  const formOpen = formTop !== null || !!(editSelection && card) || sheet?.kind === 'WISH';
+  const scheduleOpen = sheet?.kind === 'SCHEDULE';
+  // Form sheets report their top in the edge-to-edge window, including keyboard movement.
+  // Using the enclosing frame's bottom is conservative when the map occupies a shorter parent.
+  const coveredBottom = formTop === null ? panelHeight : Math.max(panelHeight, Math.max(height, frame.y + frame.height) - formTop);
+  const coverMap = scheduleOpen || (formOpen && formTop === null) || height - topInset - coveredBottom < result.mapAttributionHeight;
+  const mapBottom = coverMap ? panelHeight : coveredBottom;
   const showShapeRetry = shapesFailed && displayed === shown && !notice;
-  const { overlay, measure, toastHeight } = useMapControls(safe.left, safe.right, notice, showShapeRetry);
+  const { overlay, measure, toastHeight } = useMapControls(safe.left, safe.right, notice, showShapeRetry, !controlsInPanel && !formOpen && !scheduleOpen);
   const { dismissNotice } = itinerary;
   useEffect(() => {
     if (!notice) return;
@@ -138,25 +148,31 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
   };
   const lodgings = [...new Set(view.input.lodgings.map(lodging => placeName(view, lodging.place.id)))].join(', ') || '당일 여행';
 
-  return <View testID="result-screen" style={styles.screen} onLayout={onLayout}>
+  const position = { inPanel: controlsInPanel, bottom: controlsBottom };
+  const controls = !formOpen && !scheduleOpen && <View testID="result-map-controls" pointerEvents="box-none"
+    style={controlsInPanel ? styles.panelControls : [StyleSheet.absoluteFill, { left: safe.left, right: safe.right }]}>
+    {!notice && <Legend {...position} onLayout={measure('legend')} wishes={wishes.length}
+      onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
+    {showShapeRetry && <ShapeRetry {...position} onLayout={measure('retry')} onPress={retryShapes} />}
+    <LocateButton {...position} onLayout={measure('locate')} toastHeight={wide ? 0 : toastHeight} onPress={() => setLocate(value => value + 1)} />
+    {notice && <Toast {...position} onLayout={measure('toast')} wide={wide} notice={notice} onClose={dismissNotice}
+      onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
+  </View>;
+
+  return <SheetTopContext.Provider value={setFormTop}><View testID="result-screen" style={styles.screen} onLayout={onLayout}>
     <ResultMap markers={scene.markers} routes={scene.routes} focusDate={day.date} focusIds={scene.focusIds}
-      selectedId={selectedWishId ?? card?.visitId ?? null} topInset={topInset} bottomInset={panelHeight}
+      selectedId={selectedWishId ?? card?.visitId ?? null} topInset={topInset} bottomInset={mapBottom}
       overlay={overlay} dimmed={failed} locateRequest={locate} onSelectMarker={selectMarker} />
+    {coverMap && <View testID="result-map-cover" pointerEvents="none" style={styles.cover} />}
     <SafeAreaView testID="result-top-controls" edges={['top', 'left', 'right']} pointerEvents="box-none" style={styles.top}
       onLayout={event => setTopInset(event.nativeEvent.layout.height)}>
       <TopBar title={cityName(view.input.cityCode)} subtitle={`${periodLabel(view.input)} · ${lodgings}`}
         back={back} edit={editConditions} disabled={calculating} />
       <DateChips days={days} selected={day.date} onSelect={chooseDate} />
     </SafeAreaView>
-    <View testID="result-map-controls" pointerEvents="box-none" style={[StyleSheet.absoluteFill, { left: safe.left, right: safe.right }]}>
-      {!notice && <Legend onLayout={measure('legend')} wishes={wishes.length} bottom={controlsBottom} onAddWish={phase.kind === 'idle' ? openWishPicker : undefined} />}
-      {showShapeRetry && <ShapeRetry onLayout={measure('retry')} bottom={controlsBottom} onPress={retryShapes} />}
-      <LocateButton toastHeight={wide ? 0 : toastHeight} onLayout={measure('locate')} bottom={controlsBottom} onPress={() => setLocate(value => value + 1)} />
-      {notice && <Toast wide={wide} onLayout={measure('toast')} notice={notice} bottom={controlsBottom} onClose={dismissNotice}
-        onUndo={() => { dismissNotice(); itinerary.revert(); }} />}
-    </View>
+    {!controlsInPanel && controls}
     <PlacePanel day={day} index={selection.index} status={status} currency={currency} freeTime={freeTime(displayed?.availableByDate?.[day.date], day.timeZone)}
-      canAddWish={wishes.length > 0} height={panelHeight}
+      canAddWish={wishes.length > 0} height={panelHeight} mapControls={controlsInPanel && controls}
       actions={{
         onIndex: index => select({ date: day.date, index }), onSchedule: () => setSheet({ kind: 'SCHEDULE' }),
         onEdit: target => setSheet({ kind: 'EDIT', visitId: target.visitId }), onSwap: target => swap(target.arrival, target.arrival?.swap?.mode),
@@ -165,7 +181,11 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         onShowPrevious: () => setPreviousFor(phase), onRetry: itinerary.retry,
         onRevert: itinerary.revert, onEditConditions: editConditions,
       }} />
-    {sheet?.kind === 'SCHEDULE' && <ScheduleSheet date={day.date} day={scheduleDay} places={scheduleView.places}
+    {formOpen && <>
+      <View testID="result-shade-above-credits" pointerEvents="none" style={[styles.shade, { top: 0, bottom: coverMap ? 0 : mapBottom + result.mapAttributionHeight }]} />
+      {!coverMap && <View testID="result-shade-below-credits" pointerEvents="none" style={[styles.shade, { bottom: 0, height: mapBottom }]} />}
+    </>}
+    {scheduleOpen && <ScheduleSheet date={day.date} day={scheduleDay} places={scheduleView.places}
       currency={currency} efficiency={displayed?.efficiency ?? null} history={showPrevious ? 'failed' : conflict ? 'conflict' : undefined}
       onSwap={status.kind === 'READY' ? (leg, mode) => { setSheet(null); swap(leg, mode); } : undefined}
       estimated={!!displayed?.comparisons.some(leg => leg.selected.mode === 'TAXI')} close={() => setSheet(null)}
@@ -187,10 +207,13 @@ export function ResultScreen({ tripId, itinerary, map: ResultMap, back, editCond
         const previousDate = editOf(edit.id).fixedDate;
         itinerary.apply({ kind: 'WISH', visitId: edit.id, date: edit.fixedDate, previousDate }, withVisit(constraints, edit));
       }} />}
-  </View>;
+  </View></SheetTopContext.Provider>;
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  cover: { ...StyleSheet.absoluteFill, backgroundColor: colors.background },
+  shade: { position: 'absolute', left: 0, right: 0, backgroundColor: `rgba(0,0,0,${motion.sheet.backdropOpacity})` },
+  panelControls: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.cardGap, paddingHorizontal: spacing.screen },
   top: { position: 'absolute', top: 0, left: 0, right: 0 },
 });

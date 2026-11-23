@@ -1,5 +1,5 @@
-import { useEffect, useState, type ComponentRef, type PropsWithChildren, type ReactNode, type Ref } from 'react';
-import { Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { createContext, useContext, useEffect, useLayoutEffect, useState, type ComponentRef, type PropsWithChildren, type ReactNode, type Ref } from 'react';
+import { Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, layout, motion, radius, size, spacing, text } from '../../theme';
 import { useMotionPreference, useReducedMotion } from '../../theme/use-reduced-motion';
@@ -34,9 +34,14 @@ export function FormCard({ title, children }: PropsWithChildren<{ title?: string
 
 type SheetProps = PropsWithChildren<{ title: string; close?: () => void; footer?: ReactNode }>;
 
-function SheetBody({ title, footer, close, children, expanded }: SheetProps & { expanded?: boolean }) {
+/** An edge-to-edge host can reserve the visible part of its map while a form or keyboard covers the rest. */
+export const SheetTopContext = createContext<((top: number | null) => void) | null>(null);
+
+function SheetBody({ title, footer, close, children, expanded, onLayout }: SheetProps & {
+  expanded?: boolean; onLayout?(event: LayoutChangeEvent): void;
+}) {
   return <SafeAreaView testID="form-sheet" accessibilityViewIsModal edges={['bottom']}
-    style={[styles.sheet, expanded ? styles.flex : styles.contentHeight]}>
+    onLayout={onLayout} style={[styles.sheet, expanded ? styles.flex : styles.contentHeight]}>
     <View style={styles.handle} />
     {expanded ? <View style={styles.sheetHeading}>
       <Text accessibilityRole="header" style={[text.title, styles.flex]}>{title}</Text>
@@ -52,19 +57,24 @@ function SheetBody({ title, footer, close, children, expanded }: SheetProps & { 
 
 export function FormSheet({ close, ...body }: SheetProps) {
   const reduced = useReducedMotion();
-  return <Modal transparent animationType={reduced ? 'none' : 'fade'} onRequestClose={close}>
-    <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {close && <Pressable accessibilityRole="button" accessibilityLabel="닫기" onPress={close} style={StyleSheet.absoluteFill} />}
-      <SheetBody {...body} />
-    </KeyboardAvoidingView>
+  const reportTop = useContext(SheetTopContext);
+  useLayoutEffect(() => {
+    if (!reportTop) return;
+    reportTop(0);
+    return () => reportTop(null);
+  }, [reportTop]);
+  const content = <KeyboardAvoidingView style={[styles.backdrop, !!reportTop && styles.clear]}
+    behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    {close && <Pressable accessibilityRole="button" accessibilityLabel="닫기" onPress={close} style={StyleSheet.absoluteFill} />}
+    <SheetBody {...body} onLayout={reportTop ? event => reportTop(event.nativeEvent.layout.y) : undefined} />
+  </KeyboardAvoidingView>;
+  return <Modal transparent statusBarTranslucent={!!reportTop} navigationBarTranslucent={!!reportTop}
+    animationType={reportTop || reduced ? 'none' : 'fade'} onRequestClose={close}>
+    {reportTop ? <SheetFade>{content}</SheetFade> : content}
   </Modal>;
 }
 
-/** A full-height scrolling sheet anchored below the underlying screen's safe area and top bar. */
-export function ExpandedFormSheet({ topOffset, close, ...body }: SheetProps & { topOffset: number; close(): void }) {
-  const safe = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const reduced = useMotionPreference();
+function useSheetProgress(reduced: boolean | null) {
   const [progress] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (reduced === null) return;
@@ -72,6 +82,22 @@ export function ExpandedFormSheet({ topOffset, close, ...body }: SheetProps & { 
     animation.start();
     return () => animation.stop();
   }, [progress, reduced]);
+  return progress;
+}
+
+/** Keep native dismissal synchronous with the restoration of the map's padding. */
+function SheetFade({ children }: PropsWithChildren) {
+  const reduced = useMotionPreference();
+  const progress = useSheetProgress(reduced);
+  return <Animated.View style={[styles.flex, { opacity: progress }]}>{children}</Animated.View>;
+}
+
+/** A full-height scrolling sheet anchored below the underlying screen's safe area and top bar. */
+export function ExpandedFormSheet({ topOffset, close, ...body }: SheetProps & { topOffset: number; close(): void }) {
+  const safe = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const reduced = useMotionPreference();
+  const progress = useSheetProgress(reduced);
   const top = safe.top + topOffset;
   const transition = reduced === false
     ? { transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [Math.max(0, height - top), 0] }) }] }
@@ -104,6 +130,7 @@ const styles = StyleSheet.create({
   content: { padding: spacing.cardOutside, gap: spacing.cardGap },
   footer: { ...layout.footer, backgroundColor: colors.card, gap: spacing.steps[1] },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: `rgba(0,0,0,${motion.sheet.backdropOpacity})` },
+  clear: { backgroundColor: 'transparent' },
   sheetHeading: { flexDirection: 'row', alignItems: 'center' },
   contentHeight: { maxHeight: '90%' },
   expanded: { position: 'absolute', bottom: 0 },
