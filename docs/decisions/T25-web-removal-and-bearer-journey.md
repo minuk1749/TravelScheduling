@@ -31,7 +31,7 @@
 |---|---|
 | T16 목록의 웹 전용 코드 삭제, 공유 열람 페이지만 남김 | `apps/server/tests/app-transition-design.test.ts`: §13.8의 지운 경로가 없고 남긴 경로가 있는지, 웹 페이지가 `share/[token]/page.tsx` 하나인지, `public/` 비어 있음, `next-auth` 의존성과 `verify-pwa` 호출 없음. `app-transition-contract.test.ts`: Auth.js 라우트·`src/auth.ts`가 없고 모든 사용자 API 모듈이 `RequestAuthenticator`를 쓰는지 |
 | 쿠키 경로 제거 | `bearer-ownership.test.ts`의 `T25: without a Bearer header…`: 모든 사용자 API가 쿠키만 있는 요청에 401. `mobile-session.test.ts`: 헤더 없음 401. `tests/e2e/route-shapes-auth.spec.ts`: 실제 서버에서 쿠키만 있는 요청 401 |
-| 흐름 1–10 Bearer HTTP 종단 시나리오 (실제 서버·DB·서비스, Google만 가짜) | `tests/e2e/journey.spec.ts`(`npm run test:e2e`). 로그인(다른 `aud` 401, 해시만 저장) → 여행 생성(장소 검색, DB 행) → 생활 설정(저장·오래된 revision 409) → 수용량 초과(같은 재시도 키는 같은 결과) → 추천 필수 선택 → 재검증 OK → 결과(구간 비교·요금·PREFER 반영·경로 모양) → 수정(희망 장소 날짜·시각·순서 고정, 구간 수단 고정, 다시 읽어도 유지) → 공유(익명 조회 일치, 375px 페이지, 재발급 시 이전 링크 404) → 로그아웃(해당 기기만)·탈퇴(사용자·여행·링크 삭제). 각 단계에서 다른 사용자 403 확인 |
+| 흐름 1–10 Bearer HTTP 종단 시나리오 (실제 서버·DB·서비스, Google만 가짜) | `tests/e2e/journey.spec.ts`(`npm run test:e2e`). 로그인(다른 `aud` 401, 해시만 저장) → 여행 생성(도쿄 추천 택시 정책 `WHEN_NEEDED`, 장소 검색, DB 행) → 생활 설정(저장·오래된 revision 409) → 수용량 초과(추천 최대 필수 개수 `requiredCount`가 1–5이고 추천 ID 수·미리보기에 배치된 추천 장소 수와 같음, 같은 재시도 키는 같은 결과) → 추천 필수 선택 → 재검증 OK → 결과(구간별 대중교통·택시의 소요시간·요금, PREFER 반영, 경로 모양) → 수정(희망 장소 날짜·시각·순서 고정, 구간 수단 고정, 다시 읽어도 유지) → 공유(익명 조회 일치, 375px 페이지, 재발급 시 이전 링크 404) → 로그아웃(해당 기기만)·탈퇴(사용자·여행·링크 삭제). 각 단계에서 다른 사용자 403 확인 |
 | 공유 페이지 표시 | `sharing-ui.test.ts`(익명 조회·디자인 변수·편집 제어 없음·재발급 링크 무효·재시도), `tests/e2e/sharing.spec.ts` |
 
 실제 Google 로그인·지도와 배포 서버는 사람이 확인한다(T26D).

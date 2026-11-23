@@ -59,6 +59,7 @@ test('T25 Bearer journey: login → create → settings → over capacity → se
   // Flows 2–3: the city profile recommends a taxi policy; places come from (fake) Google search; the trip is saved to PostgreSQL.
   const profile = await expectJson<{ profile: { currency: string } | null; recommendedPolicy: string }>(app.get('/api/city-profiles?cityCode=TOKYO'), 200);
   expect(profile.profile?.currency).toBe('JPY');
+  expect(profile.recommendedPolicy, 'Tokyo recommends "only when needed" before the traveler picks a policy').toBe('WHEN_NEEDED');
   const airport = await app.placeId('Haneda Airport'), hotel = await app.placeId('Ginza Hotel');
   const trip: TripCreation = {
     cityCode: 'TOKYO', timeZone: 'Asia/Tokyo', startDate: '2026-12-01', endDate: '2026-12-03', taxiPolicy: 'NEVER', luggageOption: 'VIA_LODGING',
@@ -91,8 +92,11 @@ test('T25 Bearer journey: login → create → settings → over capacity → se
   const key = randomUUID();
   const over = await app.generate(id, key);
   expect(over.status).toBe('OVER_CAPACITY');
-  const recommended = over.capacity.recommendation!.requiredVisitIds;
-  expect(recommended.length).toBeGreaterThan(0); expect(recommended.length).toBeLessThan(6);
+  const { requiredCount, requiredVisitIds: recommended } = over.capacity.recommendation!;
+  expect(requiredCount, 'the recommended maximum shown to the traveler').toBeGreaterThan(0);
+  expect(requiredCount).toBeLessThan(6);
+  expect(new Set(recommended).size).toBe(requiredCount);
+  expect(placedVisits(over).filter(visit => recommended.includes(visit)), 'the preview places every recommended required visit').toHaveLength(requiredCount);
   expect((await app.generate(id, key)).itineraryId, 'a retried request returns the same saved result').toBe(over.itineraryId);
 
   // Flow 6: choose exactly the recommended places as required, then re-verify the saved input.
@@ -111,7 +115,11 @@ test('T25 Bearer journey: login → create → settings → over capacity → se
   // Flow 7: the result compares transit and taxi with fares on every leg, follows the saved PREFER policy, and has road shapes.
   expect(verified.comparisons.length).toBeGreaterThan(0);
   for (const leg of verified.comparisons) {
-    for (const mode of ['TRANSIT', 'TAXI'] as const) expect(leg.alternatives[mode]?.fare, `${leg.from}→${leg.to} ${mode}`).toEqual(expect.any(Number));
+    for (const mode of ['TRANSIT', 'TAXI'] as const) {
+      const alternative = leg.alternatives[mode], label = `${leg.from}→${leg.to} ${mode}`;
+      expect(alternative?.fare, label).toEqual(expect.any(Number));
+      expect(Number.isFinite(alternative?.minutes) && alternative!.minutes >= 0, `${label} minutes`).toBe(true);
+    }
   }
   expect(verified.efficiency?.currency).toBe('JPY');
   expect(verified.comparisons.some(leg => leg.selected.mode === 'TAXI')).toBe(true);
