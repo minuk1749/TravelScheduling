@@ -17,7 +17,7 @@ test('3-5 and toast: switching a leg to taxi saves the leg mode, hides only that
   await press('택시 14분 약 ¥2,300로 바꾸기');
 
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
-  expect(body(f)).toEqual({ revision: view.revision, constraints: { ...original,
+  expect(body(f)).toEqual({ operationId: expect.any(String), expectedWriteVersion: view.writeVersion, revision: view.revision, constraints: { ...original,
     legModes: [{ date: D1, from: place('hotel'), to: place('museum'), mode: 'TAXI' }] } });
   expect(await screen.findByText('다시 계산 중')).toBeVisible();
   expect(screen.getByTestId('place-card-row')).toHaveStyle({ opacity: result.overlay.busy });
@@ -40,7 +40,8 @@ test('3-5 and toast: switching a leg to taxi saves the leg mode, hides only that
 
   await fireEvent.press(toast.getByRole('button', { name: '되돌리기' }));
   await waitFor(() => expect(f.generate).toHaveBeenCalledTimes(3));
-  expect(body(f, 1)).toEqual({ revision: '1'.padStart(64, 'b'), constraints: original });
+  expect(body(f, 1)).toEqual({ revision: '1'.padStart(64, 'b'), constraints: original, operationId: expect.any(String),
+    expectedWriteVersion: expect.any(String), expectedOperationId: body(f).operationId });
   expect(await screen.findByText('되돌리고 다시 계산했어요')).toBeVisible();
   expect(screen.queryByRole('button', { name: '되돌리기' })).toBeNull();
 });

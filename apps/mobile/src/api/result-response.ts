@@ -61,6 +61,8 @@ const input = fields({
 
 export function validSnapshot(value: unknown): value is ResultSnapshot {
   if (!record(value) || !text(value.revision) || !record(value.input) || !input(value.input)) return false;
+  if (value.writeVersion !== undefined && !text(value.writeVersion)) return false;
+  if (value.receipt !== undefined && !fields({ operationId: text, revision: text })(value.receipt)) return false;
   const { startDate, endDate } = value.input;
   if (typeof startDate !== 'string' || typeof endDate !== 'string') return false;
   try { tripDates(startDate, endDate); return true; } catch { return false; }

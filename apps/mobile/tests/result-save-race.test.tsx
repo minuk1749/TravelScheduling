@@ -26,9 +26,9 @@ test.each([
     input: { ...view.input, legModes: [existing] } }));
   const read = f.read.getMockImplementation()!;
   // The retry first reads the original revision. Only then does the original request commit.
-  f.read.mockImplementationOnce(read).mockImplementationOnce(() => {
+  f.read.mockImplementationOnce(read).mockImplementationOnce(operationId => {
     const current = f.current();
-    return json({ ...current, input: { ...current.input, visits: [...current.input.visits].reverse(),
+    return json({ ...current, receipt: { operationId, revision: current.revision }, input: { ...current.input, visits: [...current.input.visits].reverse(),
       legModes: [...current.input.legModes ?? []].reverse() } });
   });
   f.save.mockImplementationOnce(async replay => {
@@ -211,7 +211,7 @@ test('leaving while the late commit is being checked cancels the read and never 
   const verify = jest.fn<Promise<Response>, [RequestInit?]>().mockReturnValue(confirmation.promise);
   const transport = f.transport.getMockImplementation()!;
   f.transport.mockImplementation((url, options) => {
-    if (String(url).endsWith('/constraints') && !options?.method && f.save.mock.calls.length === 2) return verify(options);
+    if (new URL(String(url)).pathname.endsWith('/constraints') && !options?.method && f.save.mock.calls.length === 2) return verify(options);
     return transport(url, options);
   });
   await press('다시 계산');

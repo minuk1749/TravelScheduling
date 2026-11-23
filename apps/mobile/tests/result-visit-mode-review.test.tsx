@@ -48,7 +48,7 @@ test('reopen a visit-only timing conflict and release its incoming walk without 
   expect(f.generate).toHaveBeenCalledTimes(2);
   const expected = { ...constraintsFrom(booked.input), legModes: [elsewhere, outbound, prior] };
   expect(f.save).toHaveBeenCalledTimes(1);
-  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ revision: view.revision, constraints: expected });
+  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ operationId: expect.any(String), expectedWriteVersion: view.writeVersion, revision: view.revision, constraints: expected });
   expect(constraintsFrom(f.current().input)).toEqual(expected);
   expect(screen.getByRole('button', { name: '1번 메이지 신궁, 09:30부터 10:20까지', selected: true })).toBeVisible();
 });

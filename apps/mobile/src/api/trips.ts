@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { CityProfile } from '@travel/core/fare';
 import type { ItineraryResult } from '@travel/core/contracts/itinerary';
 import type { PlaceLocation, PlaceSummary } from '@travel/core/contracts/places';
-import type { Constraints, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
+import type { Constraints, ConstraintWriteOptions, ResultSnapshot, ResultView } from '@travel/core/contracts/results/model';
 import type { RouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import type { LivingSettings, SettingsView } from '@travel/core/contracts/settings/model';
 import type { TripCreation, TripSummary } from '@travel/core/contracts/trips/create';
@@ -42,11 +42,15 @@ class TripApi {
   location(id: string, signal: AbortSignal) {
     return this.api.request<{ place: PlaceLocation }>(`${place(id)}?fields=location`, { signal });
   }
-  savedInput(id: string, signal: AbortSignal) {
-    return this.api.request<ResultView>(`${trip(id)}/constraints`, { signal, validate: validResultView });
+  savedInput(id: string, signal: AbortSignal, operationId?: string) {
+    const query = operationId ? `?${new URLSearchParams({ operationId })}` : '';
+    return this.api.request<ResultView>(`${trip(id)}/constraints${query}`, { signal, validate: validResultView });
   }
-  saveConstraints(id: string, revision: string, constraints: Constraints, signal: AbortSignal) {
-    return this.api.request<ResultSnapshot>(`${trip(id)}/constraints`, { ...json('PUT', { revision, constraints }), signal, validate: validSnapshot });
+  saveConstraints(id: string, revision: string, constraints: Constraints, signal: AbortSignal,
+    operation?: ConstraintWriteOptions) {
+    return this.api.request<ResultSnapshot>(`${trip(id)}/constraints`, {
+      ...json('PUT', { revision, constraints, ...operation }), signal, validate: validSnapshot,
+    });
   }
   settings(id: string, signal: AbortSignal) {
     return this.api.request<SettingsView>(`${trip(id)}/settings`, { signal });

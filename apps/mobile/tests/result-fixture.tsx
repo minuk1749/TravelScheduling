@@ -2,7 +2,7 @@ import { renderRouter, screen } from 'expo-router/testing-library';
 import { Text } from 'react-native';
 import type { LegComparison, TripInputs } from '@travel/core/contracts/itinerary';
 import { parseConstraints } from '@travel/core/contracts/results/input';
-import type { ResultView } from '@travel/core/contracts/results/model';
+import { constraintsFrom, type ResultView } from '@travel/core/contracts/results/model';
 import type { SavedRouteShapesResponse } from '@travel/core/contracts/route-shapes';
 import Generate from '../app/(app)/trips/[id]/generate';
 import type { GeneratedTrip } from '../src/api/trips';
@@ -30,7 +30,7 @@ const visit = (id: Name, minutes: number, extra: Partial<TripInputs['visits'][nu
   ({ id, place: ref(id), kind: 'ATTRACTION', minutes, priority: 'REQUIRED', ...extra });
 
 export const view: ResultView = {
-  revision: REVISION,
+  revision: REVISION, writeVersion: '72f35d6d-354e-422f-aa8b-916da9c01ff1',
   places: Object.fromEntries((Object.keys(names) as Name[]).map(id => [place(id), {
     googlePlaceId: `google-${id}`, name: names[id], attributions: [],
     coordinates: { latitude: points[id][0], longitude: points[id][1] },
@@ -114,14 +114,18 @@ export function conflictTrip(inputHash: string): GeneratedTrip {
 /** Polyline of two points near the hotel and museum (Google sample encoding). */
 export const ROAD = '_p~iF~ps|U_ulLnnqC';
 
-export function resultFixture(initial: ResultView = view) {
+export function resultFixture(initial: ResultView = view, { legacy = false } = {}) {
   const f = fixture(JSON.stringify(session));
-  let current = initial;
-  let revision = 0;
+  let current = { ...initial, writeVersion: legacy ? undefined : initial.writeVersion ?? view.writeVersion };
+  const revisions = new Map([[JSON.stringify(constraintsFrom(initial.input)), initial.revision]]);
+  let writes = 0;
+  let latestOperation: string | undefined;
   const generate = jest.fn<Promise<Response>, []>().mockImplementation(async () => json(trip(current.revision)));
   const save = jest.fn<Promise<Response>, [RequestInit]>().mockImplementation(async options => {
     const body = JSON.parse(String(options.body));
-    if (body.revision !== current.revision) return json({ code: 'STALE_INPUT', error: '저장된 설정을 다시 불러와 주세요.' }, 409);
+    if (body.revision !== current.revision || (!legacy && (
+      (body.expectedWriteVersion !== undefined && body.expectedWriteVersion !== current.writeVersion) ||
+      (body.expectedOperationId !== undefined && body.expectedOperationId !== latestOperation)))) return json({ code: 'STALE_INPUT', error: '저장된 설정을 다시 불러와 주세요.' }, 409);
     const parsed = parseConstraints(body.constraints, current.input);
     const edits = new Map(parsed.visits.map(row => [row.id, row]));
     const visits = current.input.visits.map(row => {
@@ -129,10 +133,19 @@ export function resultFixture(initial: ResultView = view) {
       return { ...row, priority: edit.priority, fixedDate: edit.fixedDate ?? undefined,
         fixedTime: edit.fixedTime ?? undefined, fixedOrder: edit.fixedOrder ?? undefined };
     });
-    current = { ...current, revision: String(++revision).padStart(64, 'b'), input: { ...current.input, visits, legModes: parsed.legModes } };
-    return json({ input: current.input, revision: current.revision });
+    const input = { ...current.input, visits, legModes: parsed.legModes };
+    const key = JSON.stringify(constraintsFrom(input));
+    writes++;
+    const revision = revisions.get(key) ?? String(writes).padStart(64, 'b');
+    revisions.set(key, revision);
+    const writeVersion = legacy ? undefined : `7fe23568-0ec0-426f-aebe-${String(writes).padStart(12, '0')}`;
+    latestOperation = legacy ? undefined : body.operationId;
+    current = { ...current, input, revision, writeVersion };
+    return json({ input, revision, writeVersion, receipt: latestOperation ? { operationId: latestOperation, revision } : undefined });
   });
-  const read = jest.fn(() => json(current));
+  const read = jest.fn((operationId?: string | null) => json({ ...current,
+    receipt: operationId && operationId === latestOperation ? { operationId, revision: current.revision } : undefined }));
+
   const shapes = jest.fn<Promise<Response>, [URL]>().mockImplementation(async () => json({
     inputHash: current.revision, itineraryId: ITINERARY_A,
     legs: trip(current.revision).comparisons.map(row => ({ date: row.date, kind: row.kind, from: row.from, to: row.to,
@@ -143,7 +156,7 @@ export function resultFixture(initial: ResultView = view) {
     const url = new URL(String(input));
     if (url.pathname === '/api/trips/trip/itinerary' && options.method === 'POST') return generate();
     if (url.pathname === '/api/trips/trip/itinerary/shapes') return shapes(url);
-    if (url.pathname === '/api/trips/trip/constraints') return options.method === 'PUT' ? save(options) : read();
+    if (url.pathname === '/api/trips/trip/constraints') return options.method === 'PUT' ? save(options) : read(url.searchParams.get('operationId'));
     return json({ code: 'NOT_FOUND', error: '요청을 찾을 수 없어요.' }, 404);
   });
   return { ...f, generate, save, read, shapes, current: () => current };

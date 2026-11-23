@@ -50,7 +50,7 @@ test.each([
   await fireEvent.press(sheet().getByRole('button', { name: '2일차에 추가하고 다시 계산' }));
   expect(await screen.findByText('2일차에 추가하고 다시 계산했어요')).toBeVisible();
   expect(f.save).toHaveBeenCalledTimes(1);
-  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ revision: view.revision, constraints: expected });
+  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ operationId: expect.any(String), expectedWriteVersion: view.writeVersion, revision: view.revision, constraints: expected });
   expect(f.generate).toHaveBeenCalledTimes(2);
   expect(f.save.mock.invocationCallOrder[0]).toBeLessThan(f.generate.mock.invocationCallOrder[1]);
   expect(screen.getByRole('button', { name: '2일 12.4', selected: true })).toBeVisible();

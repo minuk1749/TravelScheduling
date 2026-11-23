@@ -60,7 +60,7 @@ test.each(['departure', 'arrival', 'legacy'] as const)('an overnight %s transfer
   expect(await screen.findByText('이동수단 고정을 해제하고 다시 계산했어요')).toBeVisible();
   expect(f.save).toHaveBeenCalledTimes(1);
   const expected = { ...constraintsFrom(initial.input), legModes: [keep, opposite] };
-  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ revision: view.revision, constraints: expected });
+  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ operationId: expect.any(String), expectedWriteVersion: view.writeVersion, revision: view.revision, constraints: expected });
   expect(constraintsFrom(f.current().input)).toEqual(expected);
   expect(f.generate).toHaveBeenCalledTimes(2);
   expect(screen.getByRole('button', { name: `1번 메이지 신궁, ${time}부터 ${endTime}까지`, selected: true })).toBeVisible();

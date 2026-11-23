@@ -43,7 +43,7 @@ test('an initial airport conflict releases only the chosen saved mode before POS
   f.save.mockImplementationOnce(async options => { await pending.promise; return save(options); });
   await press(releaseAirport);
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
-  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ revision: view.revision, constraints: after });
+  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ operationId: expect.any(String), expectedWriteVersion: view.writeVersion, revision: view.revision, constraints: after });
   expect(f.generate).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('button', { name: releaseAirport })).toBeNull();
   await act(async () => pending.resolve());

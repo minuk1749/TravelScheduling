@@ -61,7 +61,7 @@ test('reopening a date-only conflict lets the traveler review and remove one sav
   await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
   expect(f.generate).toHaveBeenCalledTimes(1);
   const expected = { ...before, legModes: [priorDate, reverse] };
-  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ revision: view.revision, constraints: expected });
+  expect(JSON.parse(String(f.save.mock.calls[0][0].body))).toEqual({ operationId: expect.any(String), expectedWriteVersion: view.writeVersion, revision: view.revision, constraints: expected });
   await act(async () => pending.resolve());
   expect(await screen.findByText('이동수단 고정을 해제하고 다시 계산했어요')).toBeVisible();
   expect(constraintsFrom(f.current().input)).toEqual(expected);
