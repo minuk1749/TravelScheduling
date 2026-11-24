@@ -56,7 +56,9 @@ npx expo config --type public        # 이름·아이콘 경로가 의도대로�
 4. 같은 Wi-Fi의 기기 브라우저에서 `http://192.168.1.10:3000/api/trips`를 열어 `401` JSON이 오면 서버에 닿는 것이다. 열리지 않으면 컴퓨터 방화벽이 3000번 포트를 막고 있는지 본다.
 5. `apps/mobile/.env.local`에 `EXPO_PUBLIC_API_URL=http://192.168.1.10:3000`을 쓰고 개발 빌드를 실행한다(§3, §4의 Debug 빌드). 에뮬레이터·시뮬레이터는 iOS `http://localhost:3000`, Android `http://10.0.2.2:3000`이다.
 
-iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP를 허용하고, Android 개발(Debug) 빌드는 기본으로 HTTP를 허용한다. 그 밖의 주소는 HTTPS여야 한다.
+iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP 전송(ATS)을 허용하고, Android 개발(Debug) 빌드는 기본으로 HTTP를 허용한다. 그 밖의 주소는 HTTPS여야 한다.
+
+**iOS 로컬 네트워크 권한(iPhone만).** `NSAllowsLocalNetworking`은 HTTP 전송 정책일 뿐, 앱이 같은 Wi-Fi의 기기에 접근하는 권한을 대신하지 않는다. iOS는 앱별로 로컬 네트워크 접근을 따로 묻는다. 서버(A)에 처음 연결할 때 `"여행 동선"이(가) 로컬 네트워크의 기기를 찾아 연결하려고 합니다` 같은 알림이 뜨면 **허용**한다. 이 권한은 서버 API뿐 아니라 개발 빌드가 Metro(JS 제공)에 붙을 때도 쓰인다. 거부했거나 알림을 놓쳤다면 기기 브라우저에서는 401이 오는데(2-A 4단계) 앱만 서버에 연결되지 않는다. 이때는 iPhone 설정 ▸ 개인정보 보호 및 보안 ▸ 로컬 네트워크에서 `여행 동선`을 켜고 앱으로 돌아와 요청을 다시 시도한다(필요하면 앱을 종료했다가 다시 연다). 배포 서버(B)는 공용 인터넷 주소라 이 권한이 필요 없다. [Apple: 로컬 네트워크 개인정보 보호](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)
 
 ### B. 배포 서버에 붙기
 
@@ -249,6 +251,7 @@ Metro 없이 쓰려면 Release APK와 HTTPS 서버(B)를 쓴다.
 CI가 대신 검증하지 못하는 항목이다.
 
 - [ ] 홈 화면 아이콘과 앱 이름(`여행 동선`), 시작 화면 색
+- [ ] iOS + 로컬 서버(A): 첫 연결 때 로컬 네트워크 접근 허용 알림, 거부했다면 설정에서 켠 뒤 연결
 - [ ] Google 로그인 → `내 여행` 첫 화면 (서버 `aud` 설정 포함)
 - [ ] 선택한 서버 주소(A 또는 B)로 여행 생성 → 동선 결과 → 지도 표시
 - [ ] 결과 지도의 현재 위치 권한 요청
@@ -261,6 +264,7 @@ CI가 대신 검증하지 못하는 항목이다.
 |---|---|
 | 앱이 "서버 주소 설정을 확인해 주세요."를 표시 | 주소가 HTTPS가 아니거나(릴리스 빌드), 경로·쿼리가 있거나, 사설 IP 범위를 벗어났다. `EXPO_PUBLIC_API_URL`을 고친다. Release는 다시 빌드, Debug는 Metro를 `--clear`로 다시 시작해 앱을 다시 로드 |
 | 기기에서 서버에 접속되지 않음 | 같은 Wi-Fi인지, 서버를 `-H 0.0.0.0`으로 띄웠는지, 컴퓨터 방화벽 포트 3000, 컴퓨터 IP가 바뀌지 않았는지 |
+| iOS에서 브라우저는 서버 401을 받는데 앱만 서버·Metro에 연결되지 않음 | 로컬 네트워크 권한을 거부했다. 설정 ▸ 개인정보 보호 및 보안 ▸ 로컬 네트워크에서 `여행 동선`을 켜고 요청을 다시 시도(§2-A) |
 | iOS "Failed to register bundle identifier" | 번들 ID가 다른 개발자와 겹친다. `APP_BUNDLE_ID`를 본인 값으로 바꾸고 `prebuild --clean` |
 | iOS 앱이 열리자마자 종료됨 | 7일이 지났거나 개발자 앱이 신뢰되지 않았다. 재설치·신뢰 설정 |
 | Android Debug APK가 "Unable to load script" 빨간 화면 | Metro에 연결되지 않았다. `npx expo start --dev-client` 실행 여부, `adb reverse tcp:8081 tcp:8081`(USB) 또는 8081 방화벽과 개발 메뉴의 `192.168.1.10:8081` 형식 호스트 설정(Wi-Fi), §4-3 |

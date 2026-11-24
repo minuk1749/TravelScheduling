@@ -5,7 +5,7 @@
 - 앱 설정(`apps/mobile/app.config.ts`)을 `createConfig(env)` 함수로 나눠 환경 변수를 인자로 받는다. 기본 내보내기는 `createConfig(process.env)`이고, 테스트는 환경을 바꿔 같은 함수를 호출한다.
 - 앱 이름 `여행 동선`, 아이콘·적응형 아이콘·스플래시(`apps/mobile/assets/`, 스카이 블루 `#2A64A8` + 흰 핀)를 설정한다. 이미지는 `scripts/generate-icons.mjs`(Node 내장 모듈만 사용)로 만든 PNG를 커밋한다. 디자인을 바꿀 때만 다시 만든다. Expo SDK 58에는 최상위 `splash` 설정이 없어 스플래시는 `expo-splash-screen` plugin(`~58.0.14`, Expo가 지정한 버전)으로 설정하고, 이를 위해 이 의존성을 앱에 추가한다.
 - iOS 번들 ID와 Android 패키지명은 같은 값을 쓰며 환경 변수 `APP_BUNDLE_ID`로 정한다. 기본값은 `com.travelscheduling.app`이다. 두 플랫폼에서 모두 유효한 형식(각 단계가 영문자로 시작하고 영문·숫자만 사용, 두 단계 이상. iOS 번들 ID에 쓸 수 없는 밑줄은 거부. Android 패키지명이 Gradle namespace·네이티브 소스의 `package` 선언이 되므로 `class` 같은 Java·Kotlin 예약어 단계도 거부)만 받고 틀리면 설정 읽기 단계에서 오류를 낸다.
-- iOS에는 `NSAllowsLocalNetworking`(개발 빌드가 같은 Wi-Fi의 http 서버에 붙음)과 `ITSAppUsesNonExemptEncryption: false`를 둔다. 운영 주소의 HTTPS 강제는 기존 `src/api/origin.ts`가 계속 맡는다.
+- iOS에는 `NSAllowsLocalNetworking`(개발 빌드가 같은 Wi-Fi의 http 서버에 붙음)과 `ITSAppUsesNonExemptEncryption: false`를 둔다. 운영 주소의 HTTPS 강제는 기존 `src/api/origin.ts`가 계속 맡는다. 이 설정은 HTTP 전송(ATS)만 허용하며, iOS의 앱별 로컬 네트워크 접근 권한은 사용자가 첫 연결 때 허용해야 한다(거부 시 설정 앱에서 변경). 안내는 `docs/mobile-install.md` §2-A·문제 해결에 있다.
 - `expo prebuild`가 만드는 `apps/mobile/ios/`·`android/`는 저장소에 올리지 않는다(`.gitignore`). `app.config.ts`가 유일한 원본이다.
 - 설치 절차는 `docs/mobile-install.md`에 정리한다: 로컬 서버(같은 Wi-Fi, 개발 빌드)와 배포 서버(HTTPS, 릴리스) 두 연결 방식, iOS 직접 설치(무료 Apple ID, 처음 쓴 빌드 구성 그대로 7일마다 재설치), Android APK(공개된 템플릿 디버그 키 대신 `android/` 밖의 개인 키 저장소로 `apksigner` 재서명하고 그 SHA-1을 Google에 등록).
 
