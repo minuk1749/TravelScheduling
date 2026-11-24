@@ -22,7 +22,10 @@ CI는 아래 설정이 올바른지(`expo config`, 아이콘 파일·크기, 번
 
 확인 (**빌드·설치 직전에 매번**):
 
+처음 체크아웃했다면 먼저 **저장소 루트에서 Node 24로 `npm ci`를 한 번 실행**해 워크스페이스 의존성을 설치한다(`app.config.ts`가 쓰는 `expo-router`·`expo-font`·`expo-splash-screen` 등 프로젝트 플러그인이 여기서 설치되며, `npx`가 Expo CLI만 내려받는 것으로는 부족하다). 그 뒤 `apps/mobile`로 이동한다.
+
 ```sh
+npm ci                               # 저장소 루트, 처음 한 번 (의존성이 바뀌면 다시)
 cd apps/mobile
 npx expo config --type public        # 이름·아이콘 경로가 의도대로인지, ios.bundleIdentifier와 android.package가 .env.local의 APP_BUNDLE_ID와 같은지 확인
 ```
@@ -79,18 +82,28 @@ iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP를 허�
 
 Google 로그인 모듈이 네이티브이므로 **Expo Go로는 로그인할 수 없다.** 개발 빌드를 만든다.
 
-```sh
-cd apps/mobile
-npx expo config --type public | grep bundleIdentifier   # §1에서 .env.local에 정한 APP_BUNDLE_ID와 같은지 확인
-npx expo prebuild --platform ios                 # ios/ 폴더 생성 (저장소에는 올라가지 않는다)
-npx expo run:ios --device                        # Debug 빌드: Metro가 JS를 제공한다. 주소는 A(로컬)
-npx expo run:ios --device --configuration Release # Release 빌드: JS를 앱에 포함한다. 주소는 B(HTTPS)
-```
+1. 의존성을 설치했는지 확인하고(§1의 `npm ci`) 프로젝트를 만든다.
 
-1. 처음 `prebuild`가 끝나면 `ios/*.xcworkspace`를 Xcode로 열고 target ▸ Signing & Capabilities에서 **Automatically manage signing**을 켜고 Team을 본인 Apple ID(Personal Team)로 고른다. 번들 ID는 `APP_BUNDLE_ID`와 같아야 한다.
-2. 설치 뒤 기기에서 설정 ▸ 일반 ▸ VPN 및 기기 관리 ▸ 개발자 앱에서 본인 Apple ID를 **신뢰**한다.
-3. **7일마다 다시 설치한다.** 무료 Apple ID로 서명한 앱은 7일 뒤 실행되지 않는다. 처음 설치한 것과 **같은 빌드 구성으로** 같은 `ios/`에서 다시 실행하면 앱 데이터를 지우지 않고 덮어쓴다. 로컬 HTTP 서버(A)로 쓰던 Debug 빌드는 `npx expo run:ios --device`, 배포 HTTPS 서버(B)로 쓰던 Release 빌드는 `npx expo run:ios --device --configuration Release`다. 구성을 바꿔 설치하면(예: Debug → Release) 서버 주소 규칙이 달라져 기존 `EXPO_PUBLIC_API_URL`이 거부될 수 있다. 번들 ID를 바꾸면 다른 앱으로 설치되고 로그인 세션도 새로 시작한다. 무료 계정은 동시에 설치할 수 있는 앱 수와 번들 ID 등록 수에 제한이 있다.
-4. `app.config.ts`나 `APP_BUNDLE_ID`, 지도·로그인 키, 아이콘을 바꾸면 `npx expo prebuild --platform ios --clean`으로 `ios/`를 다시 만든 뒤 빌드한다.
+   ```sh
+   cd apps/mobile
+   npx expo config --type public | grep bundleIdentifier   # §1에서 .env.local에 정한 APP_BUNDLE_ID와 같은지 확인
+   npx expo prebuild --platform ios                 # ios/ 폴더 생성 (저장소에는 올라가지 않는다)
+   ```
+
+2. **빌드 전에 서명을 설정한다.** `ios/*.xcworkspace`를 Xcode로 열고 target ▸ Signing & Capabilities에서 **Automatically manage signing**을 켜고 Team을 본인 Apple ID(Personal Team)로 고른다. 번들 ID는 `APP_BUNDLE_ID`와 같아야 한다. `prebuild --clean`으로 `ios/`를 다시 만들면 서명 설정도 새로 만들어지므로 빌드 전에 이 단계를 다시 확인한다.
+3. 서버 연결 방식(§2)에 맞는 **한 가지만** 실행한다. 두 명령을 연달아 실행하면 나중에 설치한 앱이 먼저 설치한 앱을 덮어쓴다. 특히 로컬 HTTP 주소(A)를 쓰는데 Release를 설치하면 앱이 그 주소를 거부한다.
+
+   ```sh
+   # A. 로컬 서버(HTTP): Debug 빌드. Metro가 JS를 제공한다.
+   npx expo run:ios --device
+
+   # B. 배포 서버(HTTPS): Release 빌드. JS를 앱에 포함한다.
+   npx expo run:ios --device --configuration Release
+   ```
+
+4. 설치 뒤 기기에서 설정 ▸ 일반 ▸ VPN 및 기기 관리 ▸ 개발자 앱에서 본인 Apple ID를 **신뢰**한다.
+5. **7일마다 다시 설치한다.** 무료 Apple ID로 서명한 앱은 7일 뒤 실행되지 않는다. 처음 설치한 것과 **같은 빌드 구성으로** 같은 `ios/`에서 다시 실행하면 앱 데이터를 지우지 않고 덮어쓴다. 로컬 HTTP 서버(A)로 쓰던 Debug 빌드는 `npx expo run:ios --device`, 배포 HTTPS 서버(B)로 쓰던 Release 빌드는 `npx expo run:ios --device --configuration Release`다. 구성을 바꿔 설치하면(예: Debug → Release) 서버 주소 규칙이 달라져 기존 `EXPO_PUBLIC_API_URL`이 거부될 수 있다. 번들 ID를 바꾸면 다른 앱으로 설치되고 로그인 세션도 새로 시작한다. 무료 계정은 동시에 설치할 수 있는 앱 수와 번들 ID 등록 수에 제한이 있다.
+6. `app.config.ts`나 `APP_BUNDLE_ID`, 지도·로그인 키, 아이콘을 바꾸면 `npx expo prebuild --platform ios --clean`으로 `ios/`를 다시 만든 뒤, 2번처럼 Xcode에서 서명 설정을 확인하고 빌드한다.
 
 ## 4. Android APK 만들기
 
