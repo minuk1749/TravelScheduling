@@ -30,7 +30,7 @@ describe('app config', () => {
     expect(config.android?.package).toBe('io.github.me.travel');
   });
 
-  test.each(['travel', 'com.my-app.travel', '1com.app', 'com..app', 'com.app.', 'com.example.한글'])(
+  test.each(['travel', 'com.my-app.travel', '1com.app', 'com..app', 'com.app.', 'com.example.한글', 'com.my_trip.app', 'com.example.app_1'])(
     '형식이 틀린 APP_BUNDLE_ID %s를 거부한다', value => {
       expect(() => createConfig({ APP_BUNDLE_ID: value })).toThrow('APP_BUNDLE_ID');
     },

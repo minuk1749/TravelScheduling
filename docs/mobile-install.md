@@ -16,7 +16,7 @@ CI는 아래 설정이 올바른지(`expo config`, 아이콘 파일·크기, 번
 
 `apps/mobile/.env.example`을 `apps/mobile/.env.local`로 복사해 채운다. `EXPO_PUBLIC_*` 값은 **빌드할 때 앱 번들에 들어가므로** 값을 바꾸면 다시 빌드한다. 비밀 키(OAuth client secret, 서버 API 키)는 앱에 넣지 않는다.
 
-**`APP_BUNDLE_ID`를 본인 값으로 바꾼다.** 무료 Apple ID는 다른 개발자가 이미 쓰는 번들 ID로 서명할 수 없다. `io.github.내아이디.travel`처럼 영문·숫자·밑줄을 점으로 이은 두 단계 이상의 값이어야 하며, 형식이 틀리면 `expo config`가 오류로 알려 준다. 값을 바꾸면 Google Cloud의 iOS OAuth 클라이언트(번들 ID)와 Android OAuth 클라이언트(패키지명)도 같은 값으로 맞춘다.
+**`APP_BUNDLE_ID`를 본인 값으로 바꾼다.** 무료 Apple ID는 다른 개발자가 이미 쓰는 번들 ID로 서명할 수 없다. `io.github.myname.travel`처럼 영문자로 시작하고 영문·숫자만 쓰는 단계를 점으로 이은 두 단계 이상의 값이어야 하며(밑줄·하이픈은 iOS 번들 ID 규격과 맞지 않아 거부한다), 형식이 틀리면 `expo config`가 오류로 알려 준다. 값을 바꾸면 Google Cloud의 iOS OAuth 클라이언트(번들 ID)와 Android OAuth 클라이언트(패키지명)도 같은 값으로 맞춘다.
 
 확인:
 
@@ -65,7 +65,7 @@ Google 로그인 모듈이 네이티브이므로 **Expo Go로는 로그인할 �
 
 ```sh
 cd apps/mobile
-export APP_BUNDLE_ID=io.github.내아이디.travel   # 또는 .env.local에 기록
+export APP_BUNDLE_ID=io.github.myname.travel     # 또는 .env.local에 기록
 npx expo prebuild --platform ios                 # ios/ 폴더 생성 (저장소에는 올라가지 않는다)
 npx expo run:ios --device                        # Debug 빌드: Metro가 JS를 제공한다. 주소는 A(로컬)
 npx expo run:ios --device --configuration Release # Release 빌드: JS를 앱에 포함한다. 주소는 B(HTTPS)
@@ -73,26 +73,55 @@ npx expo run:ios --device --configuration Release # Release 빌드: JS를 앱에
 
 1. 처음 `prebuild`가 끝나면 `ios/*.xcworkspace`를 Xcode로 열고 target ▸ Signing & Capabilities에서 **Automatically manage signing**을 켜고 Team을 본인 Apple ID(Personal Team)로 고른다. 번들 ID는 `APP_BUNDLE_ID`와 같아야 한다.
 2. 설치 뒤 기기에서 설정 ▸ 일반 ▸ VPN 및 기기 관리 ▸ 개발자 앱에서 본인 Apple ID를 **신뢰**한다.
-3. **7일마다 다시 설치한다.** 무료 Apple ID로 서명한 앱은 7일 뒤 실행되지 않는다. 같은 `ios/`에서 `npx expo run:ios --device --configuration Release`를 다시 실행하면 데이터를 지우지 않고 덮어쓴다. 번들 ID를 바꾸면 다른 앱으로 설치되고 로그인 세션도 새로 시작한다. 무료 계정은 동시에 설치할 수 있는 앱 수와 번들 ID 등록 수에 제한이 있다.
+3. **7일마다 다시 설치한다.** 무료 Apple ID로 서명한 앱은 7일 뒤 실행되지 않는다. 처음 설치한 것과 **같은 빌드 구성으로** 같은 `ios/`에서 다시 실행하면 앱 데이터를 지우지 않고 덮어쓴다. 로컬 HTTP 서버(A)로 쓰던 Debug 빌드는 `npx expo run:ios --device`, 배포 HTTPS 서버(B)로 쓰던 Release 빌드는 `npx expo run:ios --device --configuration Release`다. 구성을 바꿔 설치하면(예: Debug → Release) 서버 주소 규칙이 달라져 기존 `EXPO_PUBLIC_API_URL`이 거부될 수 있다. 번들 ID를 바꾸면 다른 앱으로 설치되고 로그인 세션도 새로 시작한다. 무료 계정은 동시에 설치할 수 있는 앱 수와 번들 ID 등록 수에 제한이 있다.
 4. `app.config.ts`나 `APP_BUNDLE_ID`, 지도·로그인 키, 아이콘을 바꾸면 `npx expo prebuild --platform ios --clean`으로 `ios/`를 다시 만든 뒤 빌드한다.
 
 ## 4. Android APK 만들기
 
 준비: JDK 17, Android SDK(Android Studio로 설치하고 `ANDROID_HOME` 설정), 개발자 옵션의 USB 디버깅을 켠 기기.
 
+### 4-1. 빌드
+
 ```sh
 cd apps/mobile
-export APP_BUNDLE_ID=io.github.내아이디.travel
+export APP_BUNDLE_ID=io.github.myname.travel
 npx expo prebuild --platform android             # android/ 폴더 생성 (저장소에는 올라가지 않는다)
-npx expo run:android --device                    # Debug 빌드를 연결한 기기에 설치. 주소는 A(로컬)
-cd android && ./gradlew assembleRelease          # Release APK 생성. 주소는 B(HTTPS)
+(cd android && ./gradlew assembleDebug)          # Debug APK. 주소는 A(로컬)
+(cd android && ./gradlew assembleRelease)        # Release APK. 주소는 B(HTTPS)
 ```
 
-- 산출물: `apps/mobile/android/app/build/outputs/apk/release/app-release.apk`. 기기에 연결해 `adb install -r app-release.apk`로 설치하거나 APK 파일을 기기로 옮겨 연다(출처를 알 수 없는 앱 설치 허용 필요).
-- Expo 기본 템플릿은 Release에도 디버그 서명을 쓴다. 본인 기기에 직접 설치하는 용도로는 충분하다. 다른 사람에게 배포하거나 스토어에 올리려면 별도 서명 키가 필요하다.
-- **Google 로그인(Android)**: Google Cloud의 Android OAuth 클라이언트에 패키지명(`APP_BUNDLE_ID`)과 **서명 인증서 SHA-1**을 등록한다. SHA-1은 `cd android && ./gradlew signingReport`로 확인한다. Debug와 Release가 같은 디버그 키를 쓰면 SHA-1이 같다.
-- 지도 키는 Maps SDK for iOS·Android 키를 각각 앱(번들 ID/패키지명 + SHA-1)으로 제한한다.
-- 설정을 바꿨다면 `npx expo prebuild --platform android --clean` 뒤 다시 빌드한다.
+- 산출물(`apps/mobile` 기준): `android/app/build/outputs/apk/debug/app-debug.apk`, `android/app/build/outputs/apk/release/app-release.apk`.
+- Metro로 Debug 빌드를 바로 실행해 보려면 `npx expo run:android --device`를 쓴다. 이 경로는 아래 개인 키로 다시 서명하지 않으므로 **실제 Google 로그인 확인에는 쓰지 않는다**(§4-2).
+
+### 4-2. 개인 키로 서명하고 설치하기
+
+Expo SDK 58 템플릿은 Debug와 Release 모두 템플릿에 들어 있는 `debug.keystore`로 서명한다. 이 키는 공개 저장소에 있어 **누구나 같은 서명을 만들 수 있다.** 패키지명 + SHA-1 조합이 내 빌드를 식별해야 하는 Google OAuth 클라이언트와 지도 키 제한에는 이 키의 SHA-1을 등록하지 않는다. 본인만 가진 키로 APK를 다시 서명하고 그 인증서의 SHA-1을 등록한다.
+
+1. 개인 키 저장소를 **`android/` 밖**에 한 번만 만든다. `prebuild --clean`은 `android/`를 지우므로 키를 거기 두면 사라져 같은 서명으로 업데이트할 수 없다. 저장소에는 올리지 않고 백업해 둔다(분실하면 삭제 후 재설치해야 한다).
+
+   ```sh
+   mkdir -p ~/.android-keys
+   keytool -genkeypair -v -keystore ~/.android-keys/travel.keystore -alias travel \
+     -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+2. APK를 만든 뒤 개인 키로 서명한다. 서명은 빌드 뒤에 하므로 `prebuild --clean`을 해도 같은 키로 서명된다. `apksigner`는 Android SDK의 `build-tools/<버전>/`에 있다.
+
+   ```sh
+   cd apps/mobile
+   APKSIGNER=$ANDROID_HOME/build-tools/<설치된 버전>/apksigner
+   $APKSIGNER sign --ks ~/.android-keys/travel.keystore --ks-key-alias travel \
+     --out travel-release.apk android/app/build/outputs/apk/release/app-release.apk
+   $APKSIGNER verify --print-certs travel-release.apk   # 서명 인증서 SHA-1 확인
+   adb install -r travel-release.apk                    # 연결한 기기에 설치 (APK 파일을 기기로 옮겨 열어도 된다)
+   ```
+
+   Debug APK(`app-debug.apk`)도 같은 방법으로 서명해 설치한다. 같은 패키지의 앱이 다른 키(템플릿의 디버그 키 포함)로 서명돼 설치돼 있으면 `adb install -r`이 실패하므로 `adb uninstall <APP_BUNDLE_ID>` 뒤 설치한다(앱 데이터와 로그인 세션이 지워진다).
+
+3. 인증서 SHA-1은 위 `verify` 출력이나 `keytool -list -v -keystore ~/.android-keys/travel.keystore -alias travel`로 확인해 등록한다.
+   - **Google 로그인(Android)**: Google Cloud의 Android OAuth 클라이언트에 패키지명(`APP_BUNDLE_ID`)과 이 SHA-1을 등록한다.
+   - **지도 키**: Maps SDK for Android 키는 앱(패키지명 + 이 SHA-1)으로, iOS 키는 번들 ID로 제한한다.
+4. `app.config.ts`·`APP_BUNDLE_ID`·키·아이콘을 바꿨다면 `npx expo prebuild --platform android --clean` 뒤 다시 빌드·서명한다. 같은 키로 서명하므로 설치된 앱은 데이터를 지우지 않고 업데이트된다.
 
 ## 5. 설치 뒤 직접 확인할 것 (사람)
 

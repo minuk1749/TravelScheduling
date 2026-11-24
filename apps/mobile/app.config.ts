@@ -2,8 +2,9 @@ import type { ExpoConfig } from 'expo/config';
 
 /** 기본 번들 ID. 무료 Apple ID로 설치하려면 본인만의 값을 `APP_BUNDLE_ID`로 지정한다(docs/mobile-install.md). */
 export const DEFAULT_BUNDLE_ID = 'com.travelscheduling.app';
-// iOS 번들 ID와 Android 패키지명이 같은 값을 쓰므로 둘 다 허용하는 형식(영문자로 시작하는 두 단계 이상)만 받는다.
-const BUNDLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/;
+// iOS 번들 ID와 Android 패키지명이 같은 값을 쓴다. 밑줄은 iOS 번들 ID에 쓸 수 없으므로 각 단계는
+// 영문자로 시작하고 영문·숫자만 쓰는 두 단계 이상의 주소만 받는다.
+const BUNDLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/;
 
 const BRAND_BLUE = '#2A64A8'; // docs/design.md 스카이 블루 주 색
 
@@ -13,7 +14,7 @@ export type ConfigEnv = Readonly<Record<string, string | undefined>>;
 function bundleId(env: ConfigEnv): string {
   const value = env.APP_BUNDLE_ID?.trim() || DEFAULT_BUNDLE_ID;
   if (!BUNDLE_ID_PATTERN.test(value)) {
-    throw new Error('APP_BUNDLE_ID는 com.example.app처럼 영문·숫자·밑줄로 된 두 단계 이상의 주소여야 해요.');
+    throw new Error('APP_BUNDLE_ID는 com.example.app처럼 각 단계가 영문자로 시작하고 영문·숫자로만 된 두 단계 이상의 주소여야 해요.');
   }
   return value;
 }
