@@ -36,6 +36,20 @@ describe('app config', () => {
     },
   );
 
+  test.each(['com.class.travel', 'com.example.package', 'new.travel.app', 'com.example.fun', 'com.example.null'])(
+    'Java·Kotlin 예약어 단계가 있는 APP_BUNDLE_ID %s를 거부한다', value => {
+      expect(() => createConfig({ APP_BUNDLE_ID: value })).toThrow(/APP_BUNDLE_ID.*예약어/);
+    },
+  );
+
+  test('예약어를 포함할 뿐인 단계(classic)와 대소문자가 다른 단계는 두 플랫폼에 그대로 반영한다', () => {
+    for (const value of ['com.classic.travel', 'com.Class.travel']) {
+      const config = createConfig({ APP_BUNDLE_ID: value });
+      expect(config.ios?.bundleIdentifier).toBe(value);
+      expect(config.android?.package).toBe(value);
+    }
+  });
+
   test('빈 APP_BUNDLE_ID는 기본값을 쓴다', () => {
     expect(createConfig({ APP_BUNDLE_ID: '  ' }).ios?.bundleIdentifier).toBe(DEFAULT_BUNDLE_ID);
   });
@@ -97,5 +111,14 @@ describe('expo config CLI', () => {
     const config = resolved({ APP_BUNDLE_ID: 'io.github.me.travel' });
     expect(config.ios.bundleIdentifier).toBe('io.github.me.travel');
     expect(config.android.package).toBe('io.github.me.travel');
+    const classic = resolved({ APP_BUNDLE_ID: 'com.classic.travel' });
+    expect(classic.ios.bundleIdentifier).toBe('com.classic.travel');
+    expect(classic.android.package).toBe('com.classic.travel');
+  });
+
+  test('expo config가 예약어 단계의 APP_BUNDLE_ID를 오류로 알린다', () => {
+    expect(() => execFileSync(process.execPath, [expoCli, 'config', '--type', 'public', '--json'], {
+      cwd: root, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, APP_BUNDLE_ID: 'com.class.travel' },
+    })).toThrow(/예약어/);
   });
 });

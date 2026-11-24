@@ -6,6 +6,19 @@ export const DEFAULT_BUNDLE_ID = 'com.travelscheduling.app';
 // 영문자로 시작하고 영문·숫자만 쓰는 두 단계 이상의 주소만 받는다.
 const BUNDLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)+$/;
 
+// Android 패키지명의 각 단계는 Gradle namespace와 Java·Kotlin 소스의 `package` 선언에 그대로 쓰인다.
+// 예약어(예: `class`)가 한 단계라도 있으면 생성된 네이티브 소스를 컴파일할 수 없으므로 미리 거부한다.
+const NATIVE_PACKAGE_RESERVED_WORDS: ReadonlySet<string> = new Set([
+  // Java 예약어·리터럴
+  'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'const', 'continue',
+  'default', 'do', 'double', 'else', 'enum', 'extends', 'final', 'finally', 'float', 'for', 'goto', 'if',
+  'implements', 'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new', 'package', 'private',
+  'protected', 'public', 'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this',
+  'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while', 'true', 'false', 'null',
+  // Kotlin 하드 키워드(Java와 겹치지 않는 것)
+  'as', 'fun', 'in', 'is', 'object', 'typealias', 'typeof', 'val', 'var', 'when',
+]);
+
 const BRAND_BLUE = '#2A64A8'; // docs/design.md 스카이 블루 주 색
 
 /** 설정이 읽는 환경 변수. `NODE_ENV` 같은 다른 변수를 요구하지 않아 테스트가 필요한 값만 넘길 수 있다. */
@@ -15,6 +28,10 @@ function bundleId(env: ConfigEnv): string {
   const value = env.APP_BUNDLE_ID?.trim() || DEFAULT_BUNDLE_ID;
   if (!BUNDLE_ID_PATTERN.test(value)) {
     throw new Error('APP_BUNDLE_ID는 com.example.app처럼 각 단계가 영문자로 시작하고 영문·숫자로만 된 두 단계 이상의 주소여야 해요.');
+  }
+  const reserved = value.split('.').find(part => NATIVE_PACKAGE_RESERVED_WORDS.has(part));
+  if (reserved) {
+    throw new Error(`APP_BUNDLE_ID의 '${reserved}'는 Java·Kotlin 예약어라 Android 패키지명으로 쓸 수 없어요. 다른 단어로 바꿔 주세요(예: com.classic.travel).`);
   }
   return value;
 }
