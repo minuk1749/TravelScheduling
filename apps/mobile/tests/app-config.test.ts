@@ -4,6 +4,9 @@ import path from 'node:path';
 import { createConfig, DEFAULT_BUNDLE_ID } from '../app.config';
 
 const root = path.resolve(__dirname, '..');
+type PluginEntry = string | [string, Record<string, unknown>];
+const pluginOptions = (plugins: PluginEntry[] | undefined, name: string) =>
+  plugins?.find((entry): entry is [string, Record<string, unknown>] => Array.isArray(entry) && entry[0] === name)?.[1];
 const expoCli = require.resolve('expo/bin/cli', { paths: [root] });
 
 function pngSize(file: string): { width: number; height: number; colorType: number } {
@@ -51,14 +54,17 @@ describe('app config', () => {
 
   test('아이콘·적응형 아이콘·스플래시 파일이 있고 크기가 맞다', () => {
     const config = createConfig({});
-    const files = [config.icon, config.android?.adaptiveIcon?.foregroundImage, config.splash?.image];
+    const splash = pluginOptions(config.plugins as PluginEntry[], 'expo-splash-screen');
+    expect(splash).toMatchObject({ resizeMode: 'contain', backgroundColor: '#2A64A8' });
+    expect(config).not.toHaveProperty('splash');
+    const files = [config.icon, config.android?.adaptiveIcon?.foregroundImage, splash?.image];
     for (const file of files) {
       expect(file).toBeDefined();
       expect(existsSync(path.join(root, file as string))).toBe(true);
     }
     expect(pngSize(config.icon as string)).toEqual({ width: 1024, height: 1024, colorType: 6 });
     expect(pngSize(config.android?.adaptiveIcon?.foregroundImage as string).width).toBe(1024);
-    expect(pngSize(config.splash?.image as string).height).toBe(1024);
+    expect(pngSize(splash?.image as string).height).toBe(1024);
   });
 
   test('로컬 서버 접속과 위치 권한 설정을 유지한다', () => {

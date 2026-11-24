@@ -7,7 +7,10 @@ const BUNDLE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/;
 
 const BRAND_BLUE = '#2A64A8'; // docs/design.md 스카이 블루 주 색
 
-function bundleId(env: NodeJS.ProcessEnv): string {
+/** 설정이 읽는 환경 변수. `NODE_ENV` 같은 다른 변수를 요구하지 않아 테스트가 필요한 값만 넘길 수 있다. */
+export type ConfigEnv = Readonly<Record<string, string | undefined>>;
+
+function bundleId(env: ConfigEnv): string {
   const value = env.APP_BUNDLE_ID?.trim() || DEFAULT_BUNDLE_ID;
   if (!BUNDLE_ID_PATTERN.test(value)) {
     throw new Error('APP_BUNDLE_ID는 com.example.app처럼 영문·숫자·밑줄로 된 두 단계 이상의 주소여야 해요.');
@@ -15,14 +18,13 @@ function bundleId(env: NodeJS.ProcessEnv): string {
   return value;
 }
 
-export function createConfig(env: NodeJS.ProcessEnv): ExpoConfig {
+export function createConfig(env: ConfigEnv): ExpoConfig {
   const iosUrlScheme = env.GOOGLE_IOS_URL_SCHEME;
   const id = bundleId(env);
   return {
     name: '여행 동선', slug: 'travel-scheduling', version: '0.1.0', scheme: 'travel-scheduling',
     orientation: 'portrait', userInterfaceStyle: 'light', platforms: ['ios', 'android'],
     icon: './assets/icon.png',
-    splash: { image: './assets/splash-icon.png', resizeMode: 'contain', backgroundColor: BRAND_BLUE },
     ios: {
       bundleIdentifier: id,
       buildNumber: '1',
@@ -43,6 +45,8 @@ export function createConfig(env: NodeJS.ProcessEnv): ExpoConfig {
     },
     plugins: [
       'expo-router', 'expo-font', 'expo-secure-store',
+      // Expo SDK 58에는 최상위 `splash`가 없고 스플래시는 이 plugin으로 설정한다.
+      ['expo-splash-screen', { image: './assets/splash-icon.png', resizeMode: 'contain', backgroundColor: BRAND_BLUE }],
       ['react-native-maps', {
         iosGoogleMapsApiKey: env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY,
         androidGoogleMapsApiKey: env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY,
