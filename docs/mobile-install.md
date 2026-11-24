@@ -122,7 +122,7 @@ Expo SDK 58 템플릿은 Debug와 Release 모두 템플릿에 들어 있는 `deb
 3. 인증서 SHA-1은 위 `verify` 출력이나 `keytool -list -v -keystore ~/.android-keys/travel.keystore -alias travel`로 확인해 등록한다.
    - **Google 로그인(Android)**: Google Cloud의 Android OAuth 클라이언트에 패키지명(`APP_BUNDLE_ID`)과 이 SHA-1을 등록한다.
    - **지도 키**: Maps SDK for Android 키는 앱(패키지명 + 이 SHA-1)으로, iOS 키는 번들 ID로 제한한다.
-4. `app.config.ts`·`APP_BUNDLE_ID`·키·아이콘을 바꿨다면 `npx expo prebuild --platform android --clean` 뒤 다시 빌드·서명한다. 같은 키로 서명하므로 설치된 앱은 데이터를 지우지 않고 업데이트된다.
+4. `app.config.ts`·`APP_BUNDLE_ID`·키·아이콘을 바꿨다면 `npx expo prebuild --platform android --clean` 뒤 다시 빌드·서명한다. **패키지명(`APP_BUNDLE_ID`)과 서명 키가 모두 이전과 같을 때만** `adb install -r`이 기존 앱을 데이터와 로그인 세션을 유지한 채 업데이트한다. `APP_BUNDLE_ID`를 바꾸면 `android.package`가 달라지므로 새 APK는 **별도 앱으로 설치되고 기존 앱은 기기에 그대로 남는다.** 새 앱에서는 기존 로그인 세션을 이어 쓸 수 없으니 다시 로그인하고, 필요하면 기존 앱은 `adb uninstall <이전 APP_BUNDLE_ID>`로 지운다. 키를 바꾼 경우는 위 Debug APK 설명처럼 `adb uninstall` 뒤 설치한다.
 
 ### 4-3. 개인 키 Debug APK로 로컬 서버(A)에 로그인하기
 
