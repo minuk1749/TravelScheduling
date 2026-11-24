@@ -18,12 +18,16 @@ CI는 아래 설정이 올바른지(`expo config`, 아이콘 파일·크기, 번
 
 **`APP_BUNDLE_ID`를 본인 값으로 바꾼다.** 무료 Apple ID는 다른 개발자가 이미 쓰는 번들 ID로 서명할 수 없다. `io.github.myname.travel`처럼 영문자로 시작하고 영문·숫자만 쓰는 단계를 점으로 이은 두 단계 이상의 값이어야 한다. 밑줄·하이픈은 iOS 번들 ID 규격과 맞지 않아 거부하고, Android 패키지명이 되는 각 단계가 Java·Kotlin 예약어(`class`, `package`, `new`, `fun` 등)이면 네이티브 소스를 컴파일할 수 없으므로 거부한다(`com.class.travel` ✗, `com.classic.travel` ✓). 형식이 틀리면 `expo config`가 오류로 알려 준다. 값을 바꾸면 Google Cloud의 iOS OAuth 클라이언트(번들 ID)와 Android OAuth 클라이언트(패키지명)도 같은 값으로 맞춘다.
 
-확인:
+`APP_BUNDLE_ID`는 `apps/mobile/.env.local`에 한 번 적고 모든 빌드가 그 값을 쓰게 한다(`.env.example`에 같은 항목이 있다). 셸에서 `export`한 값은 `.env.local`보다 우선하므로, 빌드 명령 앞에서 다른 값을 다시 `export`하지 않는다. 이전에 `export`한 값이 셸에 남아 있으면 `unset APP_BUNDLE_ID`로 지운다.
+
+확인 (**빌드·설치 직전에 매번**):
 
 ```sh
 cd apps/mobile
-npx expo config --type public        # 이름·번들 ID·아이콘 경로가 의도대로인지 확인
+npx expo config --type public        # 이름·아이콘 경로가 의도대로인지, ios.bundleIdentifier와 android.package가 .env.local의 APP_BUNDLE_ID와 같은지 확인
 ```
+
+두 값이 `.env.local`에 적은 값과 다르면 빌드하지 않는다. 그대로 빌드하면 iOS 서명이나 Android Google 로그인이 등록한 식별자와 맞지 않는다. 본인 값을 적지 않았다면 두 값은 기본값 `com.travelscheduling.app`이다.
 
 ## 2. 서버 연결 방식 고르기
 
@@ -77,7 +81,7 @@ Google 로그인 모듈이 네이티브이므로 **Expo Go로는 로그인할 �
 
 ```sh
 cd apps/mobile
-export APP_BUNDLE_ID=io.github.myname.travel     # 또는 .env.local에 기록
+npx expo config --type public | grep bundleIdentifier   # §1에서 .env.local에 정한 APP_BUNDLE_ID와 같은지 확인
 npx expo prebuild --platform ios                 # ios/ 폴더 생성 (저장소에는 올라가지 않는다)
 npx expo run:ios --device                        # Debug 빌드: Metro가 JS를 제공한다. 주소는 A(로컬)
 npx expo run:ios --device --configuration Release # Release 빌드: JS를 앱에 포함한다. 주소는 B(HTTPS)
@@ -96,7 +100,7 @@ npx expo run:ios --device --configuration Release # Release 빌드: JS를 앱에
 
 ```sh
 cd apps/mobile
-export APP_BUNDLE_ID=io.github.myname.travel
+npx expo config --type public | grep package             # §1에서 .env.local에 정한 APP_BUNDLE_ID와 같은지 확인
 npx expo prebuild --platform android             # android/ 폴더 생성 (저장소에는 올라가지 않는다)
 (cd android && ./gradlew assembleDebug)          # Debug APK. 주소는 A(로컬)
 (cd android && ./gradlew assembleRelease)        # Release APK. 주소는 B(HTTPS)
