@@ -62,7 +62,7 @@ iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP를 허�
 
 1. 서버를 HTTPS로 배포한다(T26D). 서버 환경 변수(`DATABASE_URL`, `GOOGLE_MOBILE_CLIENT_IDS`, `GOOGLE_PLACES_API_KEY`, `GOOGLE_ROUTES_API_KEY`)와 전송 보안 요구는 [T29 결정](decisions/T29-transport-and-routes-budget.md)을 따른다.
 2. `apps/mobile/.env.local`에 `EXPO_PUBLIC_API_URL=https://api.example.com`(본인 주소, 경로·쿼리 없음)을 쓴다.
-3. 서버 주소를 바꾸면 Release 앱은 **다시 빌드해 설치**한다(주소가 JS 번들에 들어 있다). 서버 배포 위치가 바뀌어도 마찬가지다. Android Release는 같은 `android/` 빌드 디렉터리에서 `.env.local`의 주소만 바꾸면 Gradle이 JS 번들 작업을 건너뛰어 이전 주소가 남을 수 있으므로 `./gradlew assembleRelease --rerun-tasks`로 번들을 다시 만든다(§4-1). Debug 빌드는 Metro를 다시 시작해 앱을 다시 로드한다(§4-3). 주소를 바꾸기 전에 아래 "서버를 전환할 때"의 순서를 따른다.
+3. 서버 주소를 바꾸면 Release 앱은 **다시 빌드해 설치**한다(주소가 JS 번들에 들어 있다). 서버 배포 위치가 바뀌어도 마찬가지다. Android Release는 같은 `android/` 빌드 디렉터리에서 `.env.local`의 주소만 바꾸면 Gradle이 JS 번들 작업을 건너뛰어 이전 주소가 남을 수 있으므로 `./gradlew assembleRelease --rerun-tasks`로 번들을 다시 만든다(§4-1 B). Debug 빌드는 Metro를 다시 시작해 앱을 다시 로드한다(§4-3). 주소를 바꾸기 전에 아래 "서버를 전환할 때"의 순서를 따른다.
 
 ### 서버를 전환할 때 (A ↔ B, 또는 서버 주소 변경)
 
@@ -70,9 +70,9 @@ iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP를 허�
 
 1. **이전 서버 설정(주소를 바꾸기 전)에서** 앱의 `내 여행` ▸ 계정 ▸ **로그아웃**을 한다. 로그아웃은 서버 요청이 실패해도 기기의 토큰을 지운다. 이전 서버가 이미 내려가 있어도 이 단계는 필요하다. 로그아웃 뒤 **"기기에서 로그아웃했어요. 서버의 로그인 종료는 확인하지 못했어요."** 알림이 나오면 기기의 토큰만 지워졌고 이전 서버에서 세션이 폐기됐는지는 모르는 상태다. 로그인 화면으로 돌아왔다고 서버 폐기가 끝난 것이 아니다. 토큰이 기기에서 지워졌으니 새 서버로 전송되지는 않지만, 토큰은 발급 후 최대 30일까지 이전 서버에서 인증에 쓰일 수 있고, 만료된 세션 행도 이전 서버 DB에 이후까지 남을 수 있다(만료 행은 같은 사용자의 다음 세션 발급 때 정리한다). 이전 서버를 다시 쓸 수 있게 되면 아래 "이전 서버 DB에서 세션 폐기"로 지운다.
 2. **같은 이전 설정에서** 앱을 종료했다가 다시 열어 **로그인 화면이 나오는지 확인한다.** `내 여행` 화면이 열리면 토큰이 남은 것이므로 주소를 바꾸지 말고 로그아웃을 다시 한다. "로그인 정보를 지우지 못했어요" 같은 저장소 오류가 나오면 **다시 시도**로 삭제를 마치고, 로그인 화면이 나온 뒤에만 다음으로 간다. iOS는 같은 번들 ID로 앱을 삭제·재설치해도 Keychain에 토큰이 남을 수 있어([SecureStore 데이터 보존](https://docs.expo.dev/versions/latest/sdk/securestore/#data-persistence)) 삭제·재설치는 토큰 제거 방법이 아니다. 앱 안의 로그아웃으로만 지운다.
-3. 앱을 종료하고 `.env.local`의 `EXPO_PUBLIC_API_URL`을 바꾼다. Release는 다시 빌드·설치하고(Android는 `--rerun-tasks`, §4-1), Debug는 Metro를 `--clear`로 다시 시작해 앱을 다시 로드한다.
+3. 앱을 종료하고 `.env.local`의 `EXPO_PUBLIC_API_URL`을 바꾼다. Release는 다시 빌드·설치하고(Android는 `--rerun-tasks`, §4-1 B), Debug는 Metro를 `--clear`로 다시 시작해 앱을 다시 로드한다.
 4. 새 서버에 Google 로그인한다.
-5. 확인: 새 서버의 로그에서 첫 인증 요청이 `POST /api/session`(로그인)이고, 그 전에 `Authorization` 헤더가 있는 요청이 없는지 본다. 헤더가 있는 요청이 먼저 왔다면 이전 토큰이 새 서버로 전송된 것이니 아래 "이전 토큰이 새 서버로 전송됐다면"으로 이전 서버의 세션을 폐기한다.
+5. 확인: 1·2단계에서 이전 설정의 로그아웃과 로그인 화면을 확인했다면 기기에 토큰이 없었으므로 새 서버로 전송된 토큰은 없다. 1·2단계를 확인하기 전에 새 주소로 앱을 열었다면 토큰이 전송됐는지 판별할 수 없다고 보고, 바로 아래 "이전 토큰이 새 서버로 전송됐다면"으로 이전 서버의 세션을 폐기한다. 기본 Next.js 서버 로그와 서버 코드는 요청에 `Authorization` 헤더가 있었는지 기록하지 않는다. `GET /api/trips`의 401은 헤더가 없을 때와 이전 서버의 토큰을 보냈을 때 모두 발생하고, 새 서버의 401로 기기 토큰이 지워져도 이전 서버의 세션은 유효할 수 있다. 헤더 확인은 리버스 프록시 로그 등 요청별 헤더 유무를 이미 관측할 수 있는 환경에서만 보조로 쓴다. 이때도 토큰 원문을 로그에 남길 필요는 없고 남기지 않는다(헤더 유무만 본다).
 
 ### 이전 토큰이 새 서버로 전송됐다면
 
@@ -113,7 +113,7 @@ WHERE user_id = '<1에서 확정한 users.id>' ORDER BY created_at;
 
 계정 탈퇴(`DELETE /api/account`)도 모든 세션을 지우지만 여행 데이터까지 삭제되므로 이 목적에는 쓰지 않는다.
 
-**이미 주소를 바꿨는데 로그아웃하지 않았다면**: 앱을 열지 않는다(열면 이전 토큰이 새 주소로 전송된다). `.env.local`을 이전 주소로 되돌리고, Release는 이전 주소로 다시 빌드·설치하며(Android는 `--rerun-tasks`), Debug는 Metro를 `--clear`로 다시 시작한다. 그 상태에서 앱을 열어 로그아웃하고 로그인 화면을 확인한 뒤 위 3단계부터 진행한다. 이전 서버가 내려갔어도 로그아웃은 기기 토큰을 지우므로 이전 주소의 빌드로 열어 로그아웃할 수 있다. 앱을 이미 새 주소로 열었다면 새 서버 로그에서 `Authorization` 헤더가 있는 요청을 확인하고 위 "이전 토큰이 새 서버로 전송됐다면"으로 이전 서버 세션을 폐기한다. 토큰이 이미 지워졌다면 앱의 로그아웃으로는 폐기되지 않으니 "이전 서버 DB에서 세션 폐기"를 따른다. 이전 주소로 로그아웃해도 "서버의 로그인 종료는 확인하지 못했어요." 알림이 나오면 같은 DB 절차로 이어간다.
+**이미 주소를 바꿨는데 로그아웃하지 않았다면**: 앱을 열지 않는다(열면 이전 토큰이 새 주소로 전송된다). `.env.local`을 이전 주소로 되돌리고, Release는 이전 주소로 다시 빌드·설치하며(Android는 `--rerun-tasks`), Debug는 Metro를 `--clear`로 다시 시작한다. 그 상태에서 앱을 열어 로그아웃하고 로그인 화면을 확인한 뒤 위 3단계부터 진행한다. 이전 서버가 내려갔어도 로그아웃은 기기 토큰을 지우므로 이전 주소의 빌드로 열어 로그아웃할 수 있다. 앱을 이미 새 주소로 열었고 로그아웃을 확인하지 못했다면 토큰 전송 여부를 판별할 수 없으니 확인하려 하지 말고 위 "이전 토큰이 새 서버로 전송됐다면"으로 바로 이어서 이전 서버 세션을 폐기한다. 토큰이 이미 지워졌다면 앱의 로그아웃으로는 폐기되지 않으니 "이전 서버 DB에서 세션 폐기"를 따른다. 이전 주소로 로그아웃해도 "서버의 로그인 종료는 확인하지 못했어요." 알림이 나오면 같은 DB 절차로 이어간다.
 
 ## 3. iOS 직접 설치 (무료 Apple ID + Xcode)
 
@@ -150,25 +150,41 @@ Google 로그인 모듈이 네이티브이므로 **Expo Go로는 로그인할 �
 
 ### 4-1. 빌드
 
+먼저 프로젝트를 만든다.
+
 ```sh
 cd apps/mobile
 npx expo config --type public | grep package             # §1에서 .env.local에 정한 APP_BUNDLE_ID와 같은지 확인
 npx expo prebuild --platform android             # android/ 폴더 생성 (저장소에는 올라가지 않는다)
-(cd android && ./gradlew assembleDebug)          # Debug APK. 주소는 A(로컬)
-(cd android && ./gradlew assembleRelease)        # Release APK. 주소는 B(HTTPS)
 ```
 
-**같은 `android/`에서 서버 주소(`EXPO_PUBLIC_API_URL`)만 바꿔 Release를 다시 만들 때**는 `--rerun-tasks`를 붙인다. React Native 0.88.1의 번들 작업은 `.env.local`을 입력 파일로 추적하지 않아, 일반 `assembleRelease`는 JS 번들 작업을 최신 상태로 보고 건너뛰어 이전 주소가 APK에 남을 수 있다.
+서버 연결 방식(§2)에 맞는 **한 가지 경로만** 4-1부터 4-2까지 끝까지 따른다. 두 APK를 연달아 만들어 설치하면 나중에 설치한 앱이 먼저 설치한 앱을 덮어쓴다. 특히 `.env.local`에 로컬 HTTP 주소(A)를 둔 채 Release APK를 만들면 그 주소가 JS 번들에 들어가, 설치는 되지만 앱이 첫 로그인 요청에서 주소를 거부한다. A에서는 `assembleRelease`를 실행하지 않는다.
+
+- **A. 로컬 서버(HTTP): Debug APK.** `.env.local`의 `EXPO_PUBLIC_API_URL`은 사설 IP의 HTTP 주소다(§2-A).
+
+  ```sh
+  (cd android && ./gradlew assembleDebug)          # 산출물: android/app/build/outputs/apk/debug/app-debug.apk
+  ```
+
+  이어서 §4-2 2번의 **A**로 `app-debug.apk`를 서명·설치하고, §4-3으로 Metro에 연결한다. Debug APK에는 JS 번들이 없고 앱이 쓰는 주소는 Metro를 시작한 환경의 값이므로, 주소만 바꿀 때는 다시 빌드하지 않는다.
+
+- **B. 배포 서버(HTTPS): Release APK.** 빌드 전에 `.env.local`의 `EXPO_PUBLIC_API_URL`을 HTTPS 주소(§2-B)로 설정한다. 주소는 JS 번들에 들어간다.
+
+  ```sh
+  (cd android && ./gradlew assembleRelease)        # 산출물: android/app/build/outputs/apk/release/app-release.apk
+  ```
+
+  이어서 §4-2 2번의 **B**로 `app-release.apk`를 서명·설치한다. Release APK는 JS 번들을 포함하므로 Metro가 필요 없다.
+
+**같은 `android/`에서 서버 주소(`EXPO_PUBLIC_API_URL`)만 바꿔 Release를 다시 만들 때**(예: 로컬 주소로 만든 Release를 HTTPS 주소로 다시 만들 때)는 `--rerun-tasks`를 붙인다. React Native 0.88.1의 번들 작업은 `.env.local`을 입력 파일로 추적하지 않아, 일반 `assembleRelease`는 JS 번들 작업을 최신 상태로 보고 건너뛰어 이전 주소가 APK에 남을 수 있다.
 
 ```sh
-(cd android && ./gradlew assembleRelease --rerun-tasks)   # 번들을 다시 생성한다. 이어서 §4-2대로 서명·설치
+(cd android && ./gradlew assembleRelease --rerun-tasks)   # 번들을 다시 생성한다. 이어서 §4-2 2번 B대로 서명·설치
 ```
 
-새 APK가 새 주소를 쓰는지 확인하려면, 주소만 바꾼 두 번째 APK를 설치해 로그인 화면이 나온 뒤 새 서버의 로그에서 요청이 새 주소로 오는지 본다(전환 전 로그아웃 순서는 §2 "서버를 전환할 때"). `prebuild --clean`으로 `android/`를 새로 만든 경우에는 번들도 새로 만들어진다.
+새 APK가 새 주소를 쓰는지 확인하려면, 주소만 바꾼 두 번째 APK를 설치해 로그인 화면이 나온 뒤 새 서버가 요청을 받는지 본다(전환 전 로그아웃 순서는 §2 "서버를 전환할 때"). `prebuild --clean`으로 `android/`를 새로 만든 경우에는 번들도 새로 만들어진다.
 
-- 산출물(`apps/mobile` 기준): `android/app/build/outputs/apk/debug/app-debug.apk`, `android/app/build/outputs/apk/release/app-release.apk`.
-- Debug APK에는 JS 번들이 없다. 실행하려면 Metro에 연결해야 하며, 개인 키로 서명한 Debug APK를 쓰는 절차는 §4-3이다. `npx expo run:android --device`는 템플릿 키로 서명한 앱을 설치하므로 개인 키로 설치한 앱과 서명이 충돌하고 **실제 Google 로그인 확인에는 쓰지 않는다**(§4-2). 이 명령을 쓰려면 먼저 `adb uninstall <APP_BUNDLE_ID>`로 개인 키 앱을 지운다.
-- Release APK는 JS 번들을 포함하므로 Metro가 필요 없다. 주소는 B(HTTPS)다.
+`npx expo run:android --device`는 템플릿 키로 서명한 앱을 설치하므로 개인 키로 설치한 앱과 서명이 충돌하고 **실제 Google 로그인 확인에는 쓰지 않는다**(§4-2). 이 명령을 쓰려면 먼저 `adb uninstall <APP_BUNDLE_ID>`로 개인 키 앱을 지운다.
 
 ### 4-2. 개인 키로 서명하고 설치하기
 
@@ -182,18 +198,26 @@ Expo SDK 58 템플릿은 Debug와 Release 모두 템플릿에 들어 있는 `deb
      -keyalg RSA -keysize 2048 -validity 10000
    ```
 
-2. APK를 만든 뒤 개인 키로 서명한다. 서명은 빌드 뒤에 하므로 `prebuild --clean`을 해도 같은 키로 서명된다. `apksigner`는 Android SDK의 `build-tools/<버전>/`에 있다.
+2. 4-1에서 만든 APK를 개인 키로 서명한다. 서명은 빌드 뒤에 하므로 `prebuild --clean`을 해도 같은 키로 서명된다. `apksigner`는 Android SDK의 `build-tools/<버전>/`에 있다. 4-1에서 고른 경로 **한 가지만** 실행하고, 서명하는 파일은 바로 앞 4-1 단계에서 만든 APK여야 한다.
 
    ```sh
    cd apps/mobile
    APKSIGNER=$ANDROID_HOME/build-tools/<설치된 버전>/apksigner
+
+   # A. 로컬 서버(HTTP): 4-1 A의 Debug APK. 설치 뒤 §4-3으로 Metro에 연결한다.
+   $APKSIGNER sign --ks ~/.android-keys/travel.keystore --ks-key-alias travel \
+     --out travel-debug.apk android/app/build/outputs/apk/debug/app-debug.apk
+   $APKSIGNER verify --print-certs travel-debug.apk     # 서명 인증서 SHA-1 확인
+   adb install -r travel-debug.apk                      # 연결한 기기에 설치 (APK 파일을 기기로 옮겨 열어도 된다)
+
+   # B. 배포 서버(HTTPS): 4-1 B의 Release APK
    $APKSIGNER sign --ks ~/.android-keys/travel.keystore --ks-key-alias travel \
      --out travel-release.apk android/app/build/outputs/apk/release/app-release.apk
    $APKSIGNER verify --print-certs travel-release.apk   # 서명 인증서 SHA-1 확인
-   adb install -r travel-release.apk                    # 연결한 기기에 설치 (APK 파일을 기기로 옮겨 열어도 된다)
+   adb install -r travel-release.apk
    ```
 
-   Debug APK(`app-debug.apk`)도 같은 방법으로 서명해 설치하되, 실행하려면 Metro 연결이 필요하다(§4-3). 같은 패키지의 앱이 다른 키(템플릿의 디버그 키 포함)로 서명돼 설치돼 있으면 `adb install -r`이 실패하므로 `adb uninstall <APP_BUNDLE_ID>` 뒤 설치한다(앱 데이터와 로그인 세션이 지워진다).
+   Debug와 Release APK는 같은 패키지명이라 서로 덮어쓴다. 같은 패키지의 앱이 다른 키(템플릿의 디버그 키 포함)로 서명돼 설치돼 있으면 `adb install -r`이 실패하므로 `adb uninstall <APP_BUNDLE_ID>` 뒤 설치한다(앱 데이터와 로그인 세션이 지워진다).
 
 3. 인증서 SHA-1은 위 `verify` 출력이나 `keytool -list -v -keystore ~/.android-keys/travel.keystore -alias travel`로 확인해 등록한다.
    - **Google 로그인(Android)**: Google Cloud의 Android OAuth 클라이언트에 패키지명(`APP_BUNDLE_ID`)과 이 SHA-1을 등록한다.
@@ -202,7 +226,7 @@ Expo SDK 58 템플릿은 Debug와 Release 모두 템플릿에 들어 있는 `deb
 
 ### 4-3. 개인 키 Debug APK로 로컬 서버(A)에 로그인하기
 
-Debug APK는 JS를 앱에 담지 않고 실행할 때 Metro(개발 서버, 8081번 포트)에서 받는다. 개인 키로 서명한 Debug APK(§4-2의 2번, `app-debug.apk`를 같은 방법으로 서명해 설치)로 같은 Wi-Fi의 로컬 API 서버에 Google 로그인하려면 다음 순서로 Metro를 연결한다.
+Debug APK는 JS를 앱에 담지 않고 실행할 때 Metro(개발 서버, 8081번 포트)에서 받는다. 개인 키로 서명한 Debug APK(§4-2 2번의 A, `travel-debug.apk`)로 같은 Wi-Fi의 로컬 API 서버에 Google 로그인하려면 다음 순서로 Metro를 연결한다.
 
 1. API 서버를 §2-A대로 `npm run dev -- -H 0.0.0.0`으로 띄우고, Metro를 실행할 `apps/mobile/.env.local`에 `EXPO_PUBLIC_API_URL=http://<컴퓨터 사설 IP>:3000`을 쓴다. Debug APK는 JS를 Metro에서 받으므로 앱이 쓰는 서버 주소는 APK를 빌드한 환경이 아니라 **Metro를 시작한 환경의 값**이다.
 2. 컴퓨터에서 Metro를 시작한다.
