@@ -55,7 +55,16 @@ iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP를 허�
 
 1. 서버를 HTTPS로 배포한다(T26D). 서버 환경 변수(`DATABASE_URL`, `GOOGLE_MOBILE_CLIENT_IDS`, `GOOGLE_PLACES_API_KEY`, `GOOGLE_ROUTES_API_KEY`)와 전송 보안 요구는 [T29 결정](decisions/T29-transport-and-routes-budget.md)을 따른다.
 2. `apps/mobile/.env.local`에 `EXPO_PUBLIC_API_URL=https://api.example.com`(본인 주소, 경로·쿼리 없음)을 쓴다.
-3. 서버 주소를 바꾸면 Release 앱은 **다시 빌드해 설치**한다(주소가 JS 번들에 들어 있다). 서버 배포 위치가 바뀌어도 마찬가지다. Debug 빌드는 Metro를 다시 시작해 앱을 다시 로드한다(§4-3).
+3. 서버 주소를 바꾸면 Release 앱은 **다시 빌드해 설치**한다(주소가 JS 번들에 들어 있다). 서버 배포 위치가 바뀌어도 마찬가지다. Android Release는 같은 `android/` 빌드 디렉터리에서 `.env.local`의 주소만 바꾸면 Gradle이 JS 번들 작업을 건너뛰어 이전 주소가 남을 수 있으므로 `./gradlew assembleRelease --rerun-tasks`로 번들을 다시 만든다(§4-1). Debug 빌드는 Metro를 다시 시작해 앱을 다시 로드한다(§4-3). 주소를 바꾸기 전에 아래 "서버를 전환할 때"의 순서를 따른다.
+
+### 서버를 전환할 때 (A ↔ B, 또는 서버 주소 변경)
+
+앱은 로그인 세션 토큰을 서버 주소와 무관한 기기 저장소 키 하나(`travel.session.v1`)에 두고, 복원한 토큰을 **현재 `EXPO_PUBLIC_API_URL`로** 보낸다. 로그인한 채 주소만 바꾸면 이전 서버의 Bearer 토큰이 새 서버로 전송된다. 다음 순서를 지킨다.
+
+1. **주소를 바꾸기 전에**, 이전 서버에 연결된 상태에서 앱의 `내 여행` ▸ 계정 ▸ **로그아웃**을 한다. 로그아웃은 서버 요청이 실패해도 기기의 토큰을 지운다. 이전 서버가 이미 내려가 있어도 이 단계는 필요하다.
+2. 앱을 종료하고 `.env.local`의 `EXPO_PUBLIC_API_URL`을 바꾼다. Release는 다시 빌드·설치하고(Android는 `--rerun-tasks`, §4-1), Debug는 Metro를 `--clear`로 다시 시작해 앱을 다시 로드한다.
+3. 새 서버에 Google 로그인한다.
+4. 확인: 앱을 열었을 때 로그인 화면이 나와야 한다. 로그인 전에 `내 여행` 화면이 열린다면 이전 토큰이 남아 있는 것이므로 새 주소로 요청을 보내기 전에 앱을 지우고(iOS 삭제, Android `adb uninstall <APP_BUNDLE_ID>`) 다시 설치한다. 새 서버의 로그에서 첫 인증 요청이 `POST /api/session`(로그인)이고, 그 전에 `Authorization` 헤더가 있는 요청이 없는지 본다.
 
 ## 3. iOS 직접 설치 (무료 Apple ID + Xcode)
 
@@ -89,6 +98,14 @@ npx expo prebuild --platform android             # android/ 폴더 생성 (저�
 (cd android && ./gradlew assembleDebug)          # Debug APK. 주소는 A(로컬)
 (cd android && ./gradlew assembleRelease)        # Release APK. 주소는 B(HTTPS)
 ```
+
+**같은 `android/`에서 서버 주소(`EXPO_PUBLIC_API_URL`)만 바꿔 Release를 다시 만들 때**는 `--rerun-tasks`를 붙인다. React Native 0.88.1의 번들 작업은 `.env.local`을 입력 파일로 추적하지 않아, 일반 `assembleRelease`는 JS 번들 작업을 최신 상태로 보고 건너뛰어 이전 주소가 APK에 남을 수 있다.
+
+```sh
+(cd android && ./gradlew assembleRelease --rerun-tasks)   # 번들을 다시 생성한다. 이어서 §4-2대로 서명·설치
+```
+
+새 APK가 새 주소를 쓰는지 확인하려면, 주소만 바꾼 두 번째 APK를 설치해 로그인 화면이 나온 뒤 새 서버의 로그에서 요청이 새 주소로 오는지 본다(전환 전 로그아웃 순서는 §2 "서버를 전환할 때"). `prebuild --clean`으로 `android/`를 새로 만든 경우에는 번들도 새로 만들어진다.
 
 - 산출물(`apps/mobile` 기준): `android/app/build/outputs/apk/debug/app-debug.apk`, `android/app/build/outputs/apk/release/app-release.apk`.
 - Debug APK에는 JS 번들이 없다. 실행하려면 Metro에 연결해야 하며, 개인 키로 서명한 Debug APK를 쓰는 절차는 §4-3이다. `npx expo run:android --device`는 템플릿 키로 서명한 앱을 설치하므로 개인 키로 설치한 앱과 서명이 충돌하고 **실제 Google 로그인 확인에는 쓰지 않는다**(§4-2). 이 명령을 쓰려면 먼저 `adb uninstall <APP_BUNDLE_ID>`로 개인 키 앱을 지운다.
@@ -140,7 +157,7 @@ Debug APK는 JS를 앱에 담지 않고 실행할 때 Metro(개발 서버, 8081�
    - **USB 연결(권장):** 기기를 USB로 연결하고 `adb reverse tcp:8081 tcp:8081`을 실행한다. 기기의 `localhost:8081`이 컴퓨터의 Metro로 이어진다. USB를 뺐다 꽂거나 `adb`를 재시작하면 다시 실행한다.
    - **같은 Wi-Fi:** 컴퓨터 방화벽에서 8081번 포트를 허용한다. 앱을 열면 Metro에 닿지 못해 "Unable to load script" 빨간 화면이 나온다. 개발 메뉴(기기를 흔들거나 `adb shell input keyevent 82`)에서 **Dev Settings ▸ Debug server host & port for device**를 열고 `192.168.1.10:8081`처럼 **`http://` 없이 호스트와 포트만** 입력한다(서버 주소 `http://192.168.1.10:3000`과 입력 형식이 다르다). 그 뒤 개발 메뉴의 **Reload**로 JS를 다시 받는다.
 4. 기기에 설치된 `여행 동선` 앱을 **직접 연다**(`expo run:android`를 쓰지 않으므로 앱이 자동으로 열리지 않는다). 앱이 Metro에서 JS를 받으면 로그인 화면이 열리고, Google 로그인 뒤 API 서버(`EXPO_PUBLIC_API_URL`)로 요청한다.
-5. JS 코드만 바꿨다면 앱을 다시 설치하지 않고 Metro가 새로 고친다. **서버 주소(`EXPO_PUBLIC_API_URL`)만 바꿨다면** `.env.local`을 고치고 Metro를 다시 시작(`npx expo start --dev-client --clear`)한 뒤 앱을 전체 다시 로드(개발 메뉴의 Reload)한다. 다시 빌드하지 않는다. 네이티브 설정(`app.config.ts`, `APP_BUNDLE_ID`, 지도·로그인 키, 아이콘)을 바꿨다면 다시 빌드·서명·설치한다.
+5. JS 코드만 바꿨다면 앱을 다시 설치하지 않고 Metro가 새로 고친다. **서버 주소(`EXPO_PUBLIC_API_URL`)만 바꿨다면** 먼저 이전 서버에서 앱을 로그아웃해 기기 세션을 지운 뒤(§2 "서버를 전환할 때"; 로그인한 채 바꾸면 이전 서버의 토큰이 새 서버로 전송된다), `.env.local`을 고치고 Metro를 다시 시작(`npx expo start --dev-client --clear`)한 뒤 앱을 전체 다시 로드(개발 메뉴의 Reload)한다. 다시 빌드하지 않는다. 네이티브 설정(`app.config.ts`, `APP_BUNDLE_ID`, 지도·로그인 키, 아이콘)을 바꿨다면 다시 빌드·서명·설치한다.
 
 Metro 없이 쓰려면 Release APK와 HTTPS 서버(B)를 쓴다.
 
