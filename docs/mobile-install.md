@@ -85,11 +85,17 @@ iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP 전송(A
 ```sh
 unset EXPO_PUBLIC_API_URL                     # 셸에 남은 값을 지운다 (빌드·Metro를 실행할 셸에서)
 printenv EXPO_PUBLIC_API_URL                  # 아무것도 출력되지 않아야 한다
-grep -n EXPO_PUBLIC_API_URL apps/mobile/.env* # 저장소 루트에서. 적용될 값이 의도한 서버 주소인지 확인
+grep -nHs -E '^[[:space:]]*(export[[:space:]]+)?EXPO_PUBLIC_API_URL[[:space:]]*=' \
+  apps/mobile/.env apps/mobile/.env.local \
+  apps/mobile/.env.development apps/mobile/.env.development.local \
+  apps/mobile/.env.production apps/mobile/.env.production.local
+# 저장소 루트에서. Expo가 읽는 환경 파일의 할당문만 출력한다. 적용될 값이 의도한 서버 주소인지 확인
 ```
 
+이 명령은 Expo가 읽는 파일(`.env`, `.env.local`, 모드별 `.env.development[.local]`·`.env.production[.local]`)만 본다. 읽지 않는 `.env.example`은 검사하지 않으므로 §1에서 복사한 뒤에도 예제의 `http://localhost:3000`이 섞이지 않고, 예제 파일은 고치지 않는다. 없는 파일은 조용히 건너뛴다(`-s`). 주석 줄은 출력되지 않는다.
+
 - `printenv`가 값을 출력하면 `unset`이 적용되지 않은 것이다. 같은 셸에서 다시 지우고 확인한다. 이 셸이 읽는 프로파일(`.zshrc` 등)이 값을 `export`한다면 거기서도 지운다.
-- `grep`에는 `.env.local` 한 줄만 나오는 것이 안전하다. `.env`, `.env.development`처럼 같은 변수를 적은 파일이 더 있으면 로더의 파일 우선순위에 기대지 말고 의도한 값만 남긴다.
+- 기본 구성(`.env.local`만 있음)에서는 `apps/mobile/.env.local:1:EXPO_PUBLIC_API_URL=…` 한 줄만 나오는 것이 안전하다. `.env`, `.env.development`, `.env.production`처럼 같은 변수를 적은 파일이 더 있으면 두 줄 이상 나오므로, 로더의 파일 우선순위에 기대지 말고 의도한 값만 남긴다.
 - 적용될 주소가 의도한 서버(주소를 바꾸는 경우 새 서버, 되돌리는 경우 이전 서버)가 아니면 앱을 열지 않는다. 고친 뒤 이 확인을 처음부터 다시 한다.
 - 앱은 주소가 틀려도 열자마자 복원한 토큰을 그 주소로 보내므로, 이 확인을 마치기 전에는 앱을 열지 않는다.
 
