@@ -774,7 +774,7 @@ export const documentedResultMap: [
 | 서버 | 기존 HTTP·SQL·구조 테스트(PostgreSQL 16), T18 Bearer·JWKS 픽스처, T19 경로 모양 픽스처, T25 Bearer HTTP 종단 시나리오(흐름 1–10, Google만 가짜) | 실제 Google 키·약관 범위, 배포 서버(T26D) |
 | 앱 화면 | `jest-expo` + React Native Testing Library 컴포넌트 테스트. 목 API 클라이언트·가짜 지도·가짜 보안 저장소. `docs/design.md` 9절 상태별 렌더링, "입력 → 저장 → 다시 열면 값 유지" | 실제 화면 모양, 글꼴 렌더링, 제스처 감각(카드 넘김), 동작 줄이기 |
 | 앱 순수 계산 | 장소 카드 선택·이전/다음·스와이프·강조 구간, 도심 밖·구간 색·polyline 해독, 결과 날짜 모델 단위 테스트 | 없음 |
-| 앱 빌드 | `expo export --platform ios`·`--platform android` JS 번들 생성, `tsc --noEmit`, ESLint. T26에서 `expo config` 검사 | 네이티브 빌드·설치(Xcode, APK), 7일 재설치 |
+| 앱 빌드 | `expo export --platform ios`·`--platform android` JS 번들 생성, `tsc --noEmit`, ESLint. T26 `tests/app-config.test.ts`가 `expo config`·번들 ID 형식·아이콘 파일 검사([T26 결정](decisions/T26-device-install-config.md), [설치 안내](mobile-install.md)) | 네이티브 빌드·설치(Xcode, APK), 7일 재설치 |
 | 로그인·지도 SDK | 네이티브 모듈은 목으로 대체해 흐름만 검사 | 실제 Google 로그인(iOS·Android), Google 지도 표시, OS 공유 시트, Keychain/Keystore 보관 |
 
 `npm run test:e2e`(Playwright)는 T25부터 웹 화면 대신 [Bearer HTTP 종단 시나리오](../apps/server/tests/e2e/journey.spec.ts)를 실행한다.

@@ -12,3 +12,6 @@ test-results/
 .ctl/
 *.tsbuildinfo
 .expo/
+# `expo prebuild`가 app.config.ts에서 만드는 네이티브 프로젝트(docs/mobile-install.md)
+apps/mobile/ios/
+apps/mobile/android/

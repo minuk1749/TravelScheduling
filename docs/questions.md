@@ -69,6 +69,17 @@
 
 구현 결정과 검증: [T20 앱 골격·인증](decisions/T20-mobile-shell-and-auth.md).
 
+## T26 기기 설치 가정
+
+| 항목 | 질문 | 채택한 가정과 처리 |
+|---|---|---|
+| T26 번들 ID | 번들 ID·패키지명을 무엇으로 하는가? | 기본 `com.travelscheduling.app`, 환경 변수 `APP_BUNDLE_ID`로 변경한다. 무료 Apple ID는 겹치는 ID를 거부하므로 사람이 본인 값을 정하고 Google OAuth 클라이언트도 같은 값으로 맞춘다 |
+| T26 아이콘 | 아이콘 디자인 기준이 없다 | 디자인 문서의 스카이 블루와 흰 핀으로 임시 아이콘을 만들었다. 최종 아이콘은 사람이 같은 크기 PNG로 교체할 수 있다 |
+| T26 Android 서명 | APK를 어떤 키로 서명하는가? | Expo 템플릿의 디버그 키는 공개되어 있어 Google 자격증명(SHA-1)에 등록하지 않는다. 본인 개인 키 저장소(`android/` 밖)로 빌드 뒤 `apksigner`로 다시 서명하고 그 SHA-1을 등록한다. 스토어 배포용 서명은 범위 밖이다 |
+| T26 빌드 방식 | EAS 대신 로컬 빌드를 쓰는가? | 요구사항(무료 Apple ID + Xcode, APK)에 맞춰 로컬 `expo prebuild`·`run:ios`·Gradle을 안내한다 |
+
+결정과 검증: [T26 결정](decisions/T26-device-install-config.md).
+
 ## T15A 남은 구조 문제와 사람 결정 항목
 
 최종 전체 점검([목록](t15a-audit.md), [결정](decisions/T15A-final-audit.md))에서 동작·데이터·운영 정책을 바꿔야 해서 자동 작업으로 처리하지 않은 항목이다.
