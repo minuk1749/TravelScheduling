@@ -80,23 +80,21 @@ iOS는 설정(`NSAllowsLocalNetworking`)으로 로컬 네트워크 HTTP 전송(A
 
 #### 적용될 서버 주소 확인 (앱을 열기 전에 매번)
 
-`EXPO_PUBLIC_API_URL`은 Metro나 Release 빌드를 실행하는 **셸의 환경 변수가 `.env.local`보다 우선한다.** 이전에 `export`한 새 서버 주소가 셸에 남아 있으면 `.env.local`을 이전 주소로 되돌려도 앱은 새 주소로 빌드되어, 복원한 기기 토큰이 새 서버로 전송된다. 서버를 바꿀 때와 되돌릴 때 모두 빌드·Metro를 시작하기 전에 같은 셸에서 확인한다.
+`EXPO_PUBLIC_API_URL`은 Metro나 Release 빌드를 실행하는 **셸의 환경 변수가 `.env.local`보다 우선한다.** 이전에 `export`한 새 서버 주소가 셸에 남아 있으면 `.env.local`을 이전 주소로 되돌려도 앱은 새 주소로 빌드되어, 복원한 기기 토큰이 새 서버로 전송된다. 또 `.env.local`에 `EXPO_PUBLIC_API_URL=${API_ORIGIN}`처럼 변수를 참조해 적었다면 파일 내용만으로는 주소를 알 수 없고 셸의 `API_ORIGIN`에 따라 달라진다. 그래서 파일을 읽어 보여 주지 않고 **Expo가 쓰는 환경 로더(`@expo/env`)로 해석한 값**을 확인한다. 서버를 바꿀 때와 되돌릴 때 모두 빌드·Metro를 시작하기 전에, **빌드·Metro를 실행할 그 셸에서** 확인한다.
 
 ```sh
-unset EXPO_PUBLIC_API_URL                     # 셸에 남은 값을 지운다 (빌드·Metro를 실행할 셸에서)
-printenv EXPO_PUBLIC_API_URL                  # 아무것도 출력되지 않아야 한다
-grep -nHs -E '^[[:space:]]*(export[[:space:]]+)?EXPO_PUBLIC_API_URL[[:space:]]*=' \
-  apps/mobile/.env apps/mobile/.env.local \
-  apps/mobile/.env.development apps/mobile/.env.development.local \
-  apps/mobile/.env.production apps/mobile/.env.production.local
-# 저장소 루트에서. Expo가 읽는 환경 파일의 할당문만 출력한다. 적용될 값이 의도한 서버 주소인지 확인
+cd apps/mobile                                # 저장소 루트에서 이동 (npm ci를 마친 상태)
+unset EXPO_PUBLIC_API_URL                     # 셸에 직접 export한 값을 지운다
+# Release 빌드(production 모드)가 쓸 주소. Debug·Metro는 마지막 단어를 development로 바꿔 한 번 더 실행한다.
+node -e "const { loadProjectEnv } = require('@expo/env'); loadProjectEnv(process.cwd(), { mode: process.argv[1], silent: true }); console.log(process.env.EXPO_PUBLIC_API_URL || '(미설정)')" production
 ```
 
-이 명령은 Expo가 읽는 파일(`.env`, `.env.local`, 모드별 `.env.development[.local]`·`.env.production[.local]`)만 본다. 읽지 않는 `.env.example`은 검사하지 않으므로 §1에서 복사한 뒤에도 예제의 `http://localhost:3000`이 섞이지 않고, 예제 파일은 고치지 않는다. 없는 파일은 조용히 건너뛴다(`-s`). 주석 줄은 출력되지 않는다.
+이 명령은 Expo CLI와 같은 로더로 `.env`, `.env.local`, 모드별 `.env.development[.local]`·`.env.production[.local]`을 읽고, 변수 치환(`${API_ORIGIN}`)과 셸 환경 변수 우선순위까지 적용한 **최종 `EXPO_PUBLIC_API_URL` 한 개**를 출력한다. 읽지 않는 `.env.example`은 반영되지 않으므로 §1에서 복사한 뒤에도 예제의 `http://localhost:3000`이 섞이지 않는다. 이 명령은 파일을 고치지 않는다. 출력은 빌드·Metro를 시작할 셸의 값이므로 **다른 터미널·셸에서 실행한 결과는 의미가 없다.**
 
-- `printenv`가 값을 출력하면 `unset`이 적용되지 않은 것이다. 같은 셸에서 다시 지우고 확인한다. 이 셸이 읽는 프로파일(`.zshrc` 등)이 값을 `export`한다면 거기서도 지운다.
-- 기본 구성(`.env.local`만 있음)에서는 `apps/mobile/.env.local:1:EXPO_PUBLIC_API_URL=…` 한 줄만 나오는 것이 안전하다. `.env`, `.env.development`, `.env.production`처럼 같은 변수를 적은 파일이 더 있으면 두 줄 이상 나오므로, 로더의 파일 우선순위에 기대지 말고 의도한 값만 남긴다.
-- 적용될 주소가 의도한 서버(주소를 바꾸는 경우 새 서버, 되돌리는 경우 이전 서버)가 아니면 앱을 열지 않는다. 고친 뒤 이 확인을 처음부터 다시 한다.
+- **출력이 의도한 서버 주소(주소를 바꾸는 경우 새 서버, 되돌리는 경우 이전 서버)와 정확히 같을 때만** 앱을 연다. 다르거나 `(미설정)`이면 앱을 열지 않고, `.env.local`(또는 변수 참조라면 셸의 `API_ORIGIN`)을 고친 뒤 이 확인을 처음부터 다시 한다. Release와 Debug가 서로 다른 주소를 쓰도록 모드별 파일을 두었다면 두 모드를 모두 확인한다.
+- `.env.local`에 주소를 직접 적었다면(`EXPO_PUBLIC_API_URL=https://api.example.com`) 그 주소가 출력된다. `.env.local`이 `.env`·`.env.production` 같은 다른 파일보다 우선하므로 출력이 곧 적용될 값이다.
+- `${API_ORIGIN}`으로 적었다면 **셸의 `API_ORIGIN`을 의도한 서버로 정하고**(`export API_ORIGIN=https://api.example.com`) 확인한다. 값을 바꿨는데 출력이 바뀌지 않는다면 그 셸이 다른 값을 읽고 있으니 앱을 열지 않는다. `API_ORIGIN`을 `export`하지 않았거나 `unset`한 셸에서는 `(미설정)`이 출력되며, 이 상태로 빌드하면 앱은 서버 주소 설정 오류를 표시한다. 서버를 되돌릴 때는 `API_ORIGIN`도 이전 서버 값으로 되돌린 뒤 출력을 확인한다.
+- `unset EXPO_PUBLIC_API_URL`을 했는데도 출력이 의도와 다르면 이 셸이 읽는 프로파일(`.zshrc` 등)이 값을 `export`한 것일 수 있다. 거기서도 지우고 새 셸에서 처음부터 다시 확인한다.
 - 앱은 주소가 틀려도 열자마자 복원한 토큰을 그 주소로 보내므로, 이 확인을 마치기 전에는 앱을 열지 않는다.
 
 ### 이전 토큰이 새 서버로 전송됐다면
